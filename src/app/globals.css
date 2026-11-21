@@ -1,0 +1,137 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #FFF9F0;
+  color: #2B2622;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+input, select, textarea {
+  outline: none;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: #E8622C !important;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #E4D9C6;
+  border-radius: 4px;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translate(-50%, -20px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+button {
+  font-family: inherit;
+  transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+:focus-visible {
+  outline: 2.5px solid #E8622C;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.7);
+  }
+  60% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* no fill-mode: a lingering animation would trap fixed-position modals below the header/nav */
+.fade-up {
+  animation: fadeUp 0.28s ease;
+}
+
+.react-pop {
+  display: inline-block;
+  animation: pop 0.3s ease;
+}
+
+button[aria-pressed="true"] svg {
+  animation: pop 0.28s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .sheet-root {
+    background: #fff !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+  .care-sheet {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+  @page {
+    margin: 14mm;
+  }
+}
