@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Camera, X } from "lucide-react";
+import { Camera, Crop, X } from "lucide-react";
 import {
   btnStyle,
   inputStyle,
@@ -9,7 +9,11 @@ import {
   TASK_CATEGORIES,
 } from "@/lib/constants";
 import { todayISO } from "@/lib/dates";
-import { compressWallPhoto } from "@/lib/images";
+import {
+  compressWallPhoto,
+  isLikelyImageFile,
+  type ImageTransformState,
+} from "@/lib/images";
 import { useMembers } from "@/components/MembersContext";
 import type { FamilyEvent, FamilyTask, MemberId } from "@/types/family";
 import {
@@ -19,7 +23,18 @@ import {
   MemberPicker,
   ModalShell,
 } from "@/components/ui/Primitives";
+import {
+  ImageCropModal,
+  type ImageCropResult,
+} from "@/components/ui/ImageCropModal";
 import type { ComposerKind } from "./QuickAddSheet";
+
+interface DraftPostImage {
+  id: string;
+  dataUrl: string;
+  source: File | string;
+  transform?: ImageTransformState;
+}
 
 export function Composer({
   type,
@@ -67,7 +82,10 @@ export function Composer({
   const [notes, setNotes] = useState("");
   const [dueTime, setDueTime] = useState("");
   const [linkedEventId, setLinkedEventId] = useState("");
-  const [postImages, setPostImages] = useState<string[]>([]);
+  const [postImages, setPostImages] = useState<DraftPostImage[]>([]);
+  const [cropQueue, setCropQueue] = useState<File[]>([]);
+  const [queueTotal, setQueueTotal] = useState(0);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [processingPhotos, setProcessingPhotos] = useState(0);
   const [saving, setSaving] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
@@ -77,19 +95,91 @@ export function Composer({
     setParticipants((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   }
 
-  async function handleFiles(fileList: FileList | null) {
-    const remainingSlots = Math.max(0, 6 - postImages.length);
-    const files = Array.from(fileList || []).slice(0, remainingSlots);
-    if (files.length === 0) return;
+  function handleFiles(fileList: FileList | null) {
+    const remainingSlots = Math.max(0, 6 - postImages.length - cropQueue.length);
+    const selected = Array.from(fileList || []).slice(0, remainingSlots);
+    if (selected.length === 0) return;
+
+    const validFiles = selected.filter(isLikelyImageFile);
+    if (validFiles.length === 0) {
+      setPostError("Please select an image file (JPEG, PNG, or WebP).");
+      return;
+    }
+
+    setPostError(
+      validFiles.length < selected.length
+        ? "Some files were skipped because they are not supported images."
+        : null
+    );
+    setQueueTotal(validFiles.length);
+    setCropQueue(validFiles);
+  }
+
+  function handleCropApply(result: ImageCropResult) {
+    if (editingIndex !== null) {
+      setPostImages((imgs) =>
+        imgs.map((item, idx) =>
+          idx === editingIndex
+            ? { ...item, dataUrl: result.dataUrl, transform: result.transform }
+            : item
+        )
+      );
+      setEditingIndex(null);
+      return;
+    }
+
+    const currentFile = cropQueue[0];
+    if (!currentFile) return;
+
+    const nextId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setPostImages((imgs) =>
+      imgs.length < 6
+        ? [
+            ...imgs,
+            {
+              id: nextId,
+              dataUrl: result.dataUrl,
+              source: currentFile,
+              transform: result.transform,
+            },
+          ]
+        : imgs
+    );
+    setCropQueue((q) => {
+      const next = q.slice(1);
+      if (next.length === 0) setQueueTotal(0);
+      return next;
+    });
+  }
+
+  function handleCropCancel() {
+    if (editingIndex !== null) {
+      setEditingIndex(null);
+      return;
+    }
+    setCropQueue([]);
+    setQueueTotal(0);
+  }
+
+  async function handleAutoFitRest() {
+    const remaining = [...cropQueue];
+    setCropQueue([]);
+    setQueueTotal(0);
+    if (remaining.length === 0) return;
 
     setPostError(null);
-    setProcessingPhotos((count) => count + files.length);
+    setProcessingPhotos((count) => count + remaining.length);
 
     const failures: string[] = [];
-    for (const file of files) {
+    for (const file of remaining) {
       try {
         const compressed = await compressWallPhoto(file);
-        setPostImages((imgs) => (imgs.length < 6 ? [...imgs, compressed] : imgs));
+        const nextId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setPostImages((imgs) =>
+          imgs.length < 6
+            ? [...imgs, { id: nextId, dataUrl: compressed, source: file }]
+            : imgs
+        );
       } catch (err) {
         failures.push(
           err instanceof Error ? err.message : `Could not process "${file.name}".`
@@ -154,7 +244,7 @@ export function Composer({
       const err = await onAddPost({
         type: postType,
         content,
-        images: postImages,
+        images: postImages.map((img) => img.dataUrl),
       });
       setSaving(false);
       if (err) {
@@ -482,29 +572,72 @@ export function Composer({
             }}
           />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {postImages.map((src, i) => (
+            {postImages.map((img, i) => (
               <div
-                key={i}
+                key={img.id}
                 style={{
                   position: "relative",
-                  width: 64,
-                  height: 64,
+                  width: 68,
+                  height: 68,
                   borderRadius: 10,
                   overflow: "hidden",
+                  border: "1px solid #EFE4D2",
                 }}
               >
-                <img
-                  src={src}
-                  alt=""
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
                 <button
-                  onClick={() => removeImage(i)}
+                  type="button"
+                  onClick={() => setEditingIndex(i)}
+                  aria-label={`Adjust photo ${i + 1}`}
+                  title="Tap to zoom or reposition"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    padding: 0,
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                    display: "block",
+                  }}
+                >
+                  <img
+                    src={img.dataUrl}
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingIndex(i)}
+                  aria-label={`Edit framing for photo ${i + 1}`}
+                  title="Edit framing"
                   style={{
                     position: "absolute",
-                    top: 2,
-                    right: 2,
-                    background: "rgba(20,17,14,0.65)",
+                    bottom: 3,
+                    left: 3,
+                    background: "rgba(20,17,14,0.72)",
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "2px 5px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 3,
+                    cursor: "pointer",
+                    color: "#fff",
+                    fontSize: 9.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  <Crop size={9} color="#fff" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeImage(i)}
+                  aria-label={`Remove photo ${i + 1}`}
+                  style={{
+                    position: "absolute",
+                    top: 3,
+                    right: 3,
+                    background: "rgba(20,17,14,0.68)",
                     border: "none",
                     borderRadius: "50%",
                     width: 18,
@@ -519,14 +652,14 @@ export function Composer({
                 </button>
               </div>
             ))}
-            {postImages.length + processingPhotos < 6 && (
+            {postImages.length + processingPhotos + cropQueue.length < 6 && (
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={saving}
                 style={{
-                  width: 64,
-                  height: 64,
+                  width: 68,
+                  height: 68,
                   borderRadius: 10,
                   border: "1.5px dashed #E4D9C6",
                   background: "#FFFDF9",
@@ -544,6 +677,11 @@ export function Composer({
               </button>
             )}
           </div>
+          {postImages.length > 0 && (
+            <div style={{ fontSize: 11.5, color: "#8A7F70", marginTop: 6 }}>
+              Tap any photo to zoom or adjust its framing before posting.
+            </div>
+          )}
           {processingPhotos > 0 && (
             <div style={{ fontSize: 12, color: "#8A7F70", marginTop: 8 }}>
               Optimizing {processingPhotos} photo
@@ -589,6 +727,38 @@ export function Composer({
             ? "Processing photos..."
             : "Save"}
       </button>
+
+      {editingIndex !== null && postImages[editingIndex] && (
+        <ImageCropModal
+          mode="wall"
+          source={postImages[editingIndex].source}
+          initialTransform={postImages[editingIndex].transform}
+          defaultAspectKey={postImages.length > 1 ? "1:1" : "4:3"}
+          onCancel={handleCropCancel}
+          onApply={handleCropApply}
+        />
+      )}
+
+      {editingIndex === null && cropQueue.length > 0 && (
+        <ImageCropModal
+          mode="wall"
+          source={cropQueue[0]}
+          defaultAspectKey={
+            postImages.length + cropQueue.length > 1 ? "1:1" : "4:3"
+          }
+          queueInfo={
+            queueTotal > 1
+              ? {
+                  current: queueTotal - cropQueue.length + 1,
+                  total: queueTotal,
+                  onAutoFitRest: handleAutoFitRest,
+                }
+              : undefined
+          }
+          onCancel={handleCropCancel}
+          onApply={handleCropApply}
+        />
+      )}
     </ModalShell>
   );
 }
