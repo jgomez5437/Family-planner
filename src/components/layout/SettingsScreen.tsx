@@ -200,6 +200,8 @@ export function SettingsScreen({
 
   async function handleRegenerateCode() {
     setRegenerating(true);
+    setCopiedCode(false);
+    setCopiedLink(false);
     await onRegenerateInviteCode();
     setRegenerating(false);
   }

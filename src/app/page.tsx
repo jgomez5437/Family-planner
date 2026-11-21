@@ -29,6 +29,7 @@ export default async function HomePage({
       initialState={initialState}
       initialInviteCode={invitePreview?.inviteCode || rawInvite || null}
       invitedFamilyName={invitePreview?.name || null}
+      initialInviteInvalid={Boolean(rawInvite && !invitePreview)}
     />
   );
 }

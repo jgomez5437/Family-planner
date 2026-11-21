@@ -23,10 +23,12 @@ export function AuthScreen({
   onAuthenticated,
   initialInviteCode = null,
   invitedFamilyName = null,
+  initialInviteInvalid = false,
 }: {
   onAuthenticated: (state: FamilyStatePayload) => void;
   initialInviteCode?: string | null;
   invitedFamilyName?: string | null;
+  initialInviteInvalid?: boolean;
 }) {
   const normalizedInitialInvite = (initialInviteCode || "").trim().toUpperCase();
   const [tab, setTab] = useState<"login" | "register">(
@@ -36,7 +38,7 @@ export function AuthScreen({
     normalizedInitialInvite ? "join" : "create"
   );
   const [inviteLinkActive, setInviteLinkActive] = useState<boolean>(
-    Boolean(normalizedInitialInvite)
+    Boolean(normalizedInitialInvite) && !initialInviteInvalid
   );
 
   // Login fields
@@ -54,7 +56,11 @@ export function AuthScreen({
   const [familyName, setFamilyName] = useState("");
   const [inviteCode, setInviteCode] = useState(normalizedInitialInvite);
 
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    initialInviteInvalid
+      ? "This invite link is no longer valid or has expired. Ask a family member for a new link or enter a valid code below."
+      : null
+  );
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -124,6 +130,9 @@ export function AuthScreen({
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 404 && familyMode === "join") {
+          setInviteLinkActive(false);
+        }
         setError(data.error || "Could not create account.");
         return;
       }
