@@ -8,7 +8,7 @@ import type {
   ProfilesMap,
   ScheduledDose,
 } from "@/types/family";
-import { memberById } from "./constants";
+import { findMemberById } from "./constants";
 import {
   fmtDayLong,
   fmtShortDate,
@@ -110,12 +110,14 @@ export function buildSheet({
   meds,
   profiles,
   events,
+  members,
 }: {
   kidIds: MemberId[];
   days: number;
   meds: Medication[];
   profiles: ProfilesMap;
   events: FamilyEvent[];
+  members: Member[];
 }): SheetSection[] {
   const today = todayISO(0);
   const dates = Array.from({ length: days }, (_, i) => todayISO(i));
@@ -134,7 +136,7 @@ export function buildSheet({
       (e) => e.participants?.includes(kidId) && e.date >= today && e.date <= last
     );
     return {
-      kid: memberById(kidId),
+      kid: findMemberById(kidId, members),
       profile: profiles[kidId] || { allergies: "", doctor: "", contact: "", notes: "" },
       scheduled,
       asNeeded,
@@ -152,12 +154,14 @@ export function buildSheetText(
     preparedBy,
     doseLog,
     rangeLabel,
+    members,
   }: {
     forWho: string;
     extra: string;
     preparedBy: string;
     doseLog: DoseLogMap;
     rangeLabel: string;
+    members: Member[];
   }
 ): string {
   const lines: string[] = [];
@@ -189,7 +193,7 @@ export function buildSheetText(
         day.doses.forEach((d) => {
           const entry = doseLog[d.key];
           lines.push(
-            `  ${fmtTime(d.time)}  ${d.med.name} ${d.med.dose}  ${entry ? `[x] given by ${memberById(entry.by).name} ${entry.at}` : "[ ] given: ____"}`
+            `  ${fmtTime(d.time)}  ${d.med.name} ${d.med.dose}  ${entry ? `[x] given by ${findMemberById(entry.by, members).name} ${entry.at}` : "[ ] given: ____"}`
           );
         });
       });

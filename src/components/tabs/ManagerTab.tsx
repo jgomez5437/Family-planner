@@ -14,15 +14,14 @@ import {
   btnStyle,
   CARD_SHADOW,
   CATEGORY_META,
-  CHILDREN,
   iconBtnStyle,
   inputStyle,
   managerCard,
   MED_FREQUENCIES,
-  memberById,
   pillStyle,
   textBtn,
 } from "@/lib/constants";
+import { useMembers } from "@/components/MembersContext";
 import {
   fmtDayLong,
   fmtShortDate,
@@ -72,6 +71,7 @@ export function DoseChip({
   entry?: DoseLogEntry;
   onToggle: (dose: ScheduledDose) => void;
 }) {
+  const { memberById } = useMembers();
   const given = !!entry;
   return (
     <button
@@ -216,6 +216,7 @@ function ManagerOverview({
   onToggleDose,
   onSelectKid,
   onOpenSheet,
+  onAddChild,
 }: {
   meds: Medication[];
   doseLog: DoseLogMap;
@@ -224,7 +225,9 @@ function ManagerOverview({
   onToggleDose: (dose: ScheduledDose) => void;
   onSelectKid: (kidId: MemberId) => void;
   onOpenSheet: (kidIds: MemberId[]) => void;
+  onAddChild?: () => void;
 }) {
+  const { childrenMembers, memberById } = useMembers();
   const today = todayISO(0);
   const nowT = nowHHMM();
   const todays = meds
@@ -258,25 +261,27 @@ function ManagerOverview({
         >
           Family Manager
         </div>
-        <button
-          onClick={() => onOpenSheet(CHILDREN.map((c) => c.id))}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            background: "#fff",
-            border: "1.5px solid #EFE4D2",
-            borderRadius: 10,
-            padding: "8px 12px",
-            fontSize: 12.5,
-            fontWeight: 700,
-            cursor: "pointer",
-            color: "#2B2622",
-            minHeight: 38,
-          }}
-        >
-          <Printer size={15} /> Caregiver sheet
-        </button>
+        {childrenMembers.length > 0 && (
+          <button
+            onClick={() => onOpenSheet(childrenMembers.map((c) => c.id))}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "#fff",
+              border: "1.5px solid #EFE4D2",
+              borderRadius: 10,
+              padding: "8px 12px",
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: "pointer",
+              color: "#2B2622",
+              minHeight: 38,
+            }}
+          >
+            <Printer size={15} /> Caregiver sheet
+          </button>
+        )}
       </div>
       <div style={{ fontSize: 13, color: "#948C80", marginBottom: 18 }}>
         Who takes what, who has appointments, and what a sitter needs to know.
@@ -399,63 +404,76 @@ function ManagerOverview({
         </div>
       )}
 
-      <SectionLabel text="Kids" style={{ marginTop: 18 }} />
-      {CHILDREN.map((kid) => {
-        const kidMeds = meds.filter(
-          (m) => m.kidId === kid.id && medIsCurrent(m)
-        );
-        const nextDoses = kidMeds
-          .map((m) => nextDose(m, doseLog))
-          .filter((d): d is ScheduledDose => d !== null)
-          .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-        const nextAppt = groupKidSeries(events, kid.id)[0];
-        const allergies = profiles[kid.id]?.allergies;
-        return (
-          <button
-            key={kid.id}
-            onClick={() => onSelectKid(kid.id)}
-            style={{
-              ...managerCard,
-              width: "100%",
-              textAlign: "left",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-            }}
-          >
-            <AvatarDot id={kid.id} size={46} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15.5, fontWeight: 700 }}>{kid.name}</div>
-              <div style={{ fontSize: 12.5, color: "#6B6259", marginTop: 2 }}>
-                {kidMeds.length === 0
-                  ? "No medications"
-                  : `${kidMeds.length} medication${kidMeds.length > 1 ? "s" : ""}`}
-                {nextDoses[0] && ` · next ${nextDoseLabel(nextDoses[0])}`}
+      <SectionHeader
+        title="Kids"
+        action={onAddChild ? "+ Add child" : undefined}
+        onAction={onAddChild}
+      />
+      {childrenMembers.length === 0 ? (
+        <EmptyState
+          text="No children added yet."
+          sub="Add a child profile to track medications, allergies, and caregiver sheets."
+          actionLabel={onAddChild ? "+ Add a Child" : undefined}
+          onAction={onAddChild}
+        />
+      ) : (
+        childrenMembers.map((kid) => {
+          const kidMeds = meds.filter(
+            (m) => m.kidId === kid.id && medIsCurrent(m)
+          );
+          const nextDoses = kidMeds
+            .map((m) => nextDose(m, doseLog))
+            .filter((d): d is ScheduledDose => d !== null)
+            .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+          const nextAppt = groupKidSeries(events, kid.id)[0];
+          const allergies = profiles[kid.id]?.allergies;
+          return (
+            <button
+              key={kid.id}
+              onClick={() => onSelectKid(kid.id)}
+              style={{
+                ...managerCard,
+                width: "100%",
+                textAlign: "left",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <AvatarDot id={kid.id} size={46} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15.5, fontWeight: 700 }}>{kid.name}</div>
+                <div style={{ fontSize: 12.5, color: "#6B6259", marginTop: 2 }}>
+                  {kidMeds.length === 0
+                    ? "No medications"
+                    : `${kidMeds.length} medication${kidMeds.length > 1 ? "s" : ""}`}
+                  {nextDoses[0] && ` · next ${nextDoseLabel(nextDoses[0])}`}
+                </div>
+                {nextAppt && (
+                  <div style={{ fontSize: 12, color: "#948C80", marginTop: 2 }}>
+                    {nextAppt.recurrence ? "🔁 " : ""}
+                    {nextAppt.title} · {relativeDay(nextAppt.date)}
+                  </div>
+                )}
+                {allergies && (
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: "#C4402A",
+                      fontWeight: 600,
+                      marginTop: 3,
+                    }}
+                  >
+                    ⚠ Allergies: {allergies}
+                  </div>
+                )}
               </div>
-              {nextAppt && (
-                <div style={{ fontSize: 12, color: "#948C80", marginTop: 2 }}>
-                  {nextAppt.recurrence ? "🔁 " : ""}
-                  {nextAppt.title} · {relativeDay(nextAppt.date)}
-                </div>
-              )}
-              {allergies && (
-                <div
-                  style={{
-                    fontSize: 11.5,
-                    color: "#C4402A",
-                    fontWeight: 600,
-                    marginTop: 3,
-                  }}
-                >
-                  ⚠ Allergies: {allergies}
-                </div>
-              )}
-            </div>
-            <ChevronRightIcon size={18} color="#C9BEAC" />
-          </button>
-        );
-      })}
+              <ChevronRightIcon size={18} color="#C9BEAC" />
+            </button>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -518,6 +536,7 @@ function KidProfile({
   onAddAppointment: () => void;
   onOpenSheet: (kidIds: MemberId[]) => void;
 }) {
+  const { memberById } = useMembers();
   const kid = memberById(kidId);
   const kidMeds = meds.filter((m) => m.kidId === kidId && medIsCurrent(m));
   const series = groupKidSeries(events, kidId);
@@ -766,6 +785,7 @@ function MedModal({
   onSave: (med: Medication, isNew: boolean) => void;
   onDelete: () => void;
 }) {
+  const { memberById } = useMembers();
   const isEdit = !!med;
   const [name, setName] = useState(med?.name || "");
   const [dose, setDose] = useState(med?.dose || "");
@@ -997,6 +1017,7 @@ function CareInfoModal({
   onClose: () => void;
   onSave: (data: ChildProfile) => void;
 }) {
+  const { memberById } = useMembers();
   const [allergies, setAllergies] = useState(profile.allergies || "");
   const [doctor, setDoctor] = useState(profile.doctor || "");
   const [contact, setContact] = useState(profile.contact || "");
@@ -1073,6 +1094,7 @@ export function ManagerTab({
   onOpenEvent,
   onAddAppointment,
   onOpenSheet,
+  onAddChild,
 }: {
   meds: Medication[];
   doseLog: DoseLogMap;
@@ -1085,6 +1107,7 @@ export function ManagerTab({
   onOpenEvent: (e: FamilyEvent) => void;
   onAddAppointment: (kidId: MemberId) => void;
   onOpenSheet: (kidIds: MemberId[]) => void;
+  onAddChild?: () => void;
 }) {
   const [kidId, setKidId] = useState<MemberId | null>(null);
   const [medModal, setMedModal] = useState<{
@@ -1127,6 +1150,7 @@ export function ManagerTab({
           onToggleDose={onToggleDose}
           onSelectKid={setKidId}
           onOpenSheet={onOpenSheet}
+          onAddChild={onAddChild}
         />
       )}
 
@@ -1207,6 +1231,7 @@ export function CaregiverSheet({
   preparedBy: string;
   onClose: () => void;
 }) {
+  const { members, childrenMembers, memberById } = useMembers();
   const [kidIds, setKidIds] = useState<MemberId[]>(initialKidIds);
   const [days, setDays] = useState(3);
   const [forWho, setForWho] = useState("");
@@ -1215,8 +1240,8 @@ export function CaregiverSheet({
   const [showText, setShowText] = useState(false);
 
   const sections = useMemo(
-    () => buildSheet({ kidIds, days, meds, profiles, events }),
-    [kidIds, days, meds, profiles, events]
+    () => buildSheet({ kidIds, days, meds, profiles, events, members }),
+    [kidIds, days, meds, profiles, events, members]
   );
   const today = todayISO(0);
   const rangeLabel =
@@ -1229,15 +1254,16 @@ export function CaregiverSheet({
     preparedBy,
     doseLog,
     rangeLabel,
+    members,
   });
 
   function toggleKid(id: MemberId) {
     setKidIds((ids) => {
       if (ids.includes(id))
         return ids.length > 1 ? ids.filter((x) => x !== id) : ids;
-      return CHILDREN.map((c) => c.id).filter(
-        (c) => c === id || ids.includes(c)
-      );
+      return childrenMembers
+        .map((c) => c.id)
+        .filter((c) => c === id || ids.includes(c));
     });
   }
 
@@ -1355,7 +1381,7 @@ export function CaregiverSheet({
         >
           <FieldLabel>Who&apos;s it for?</FieldLabel>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {CHILDREN.map((c) => (
+            {childrenMembers.map((c) => (
               <button
                 key={c.id}
                 onClick={() => toggleKid(c.id)}

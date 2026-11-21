@@ -7,8 +7,8 @@ import {
   CARD_SHADOW,
   CATEGORY_META,
   inputStyle,
-  memberById,
 } from "@/lib/constants";
+import { useMembers } from "@/components/MembersContext";
 import {
   countdownLabel,
   fmtTime,
@@ -141,6 +141,7 @@ export function AppointmentCard({
   onEdit: () => void;
   onHistory: () => void;
 }) {
+  const { memberById } = useMembers();
   const meta = CATEGORY_META[event.category] || CATEGORY_META.Other;
   const cd = countdownLabel(event.date);
   return (
@@ -458,6 +459,7 @@ export function EventDetailModal({
   onClose: () => void;
   onToggleTask?: (id: string) => void;
 }) {
+  const { memberById } = useMembers();
   const relatedTasks = (tasks || []).filter(
     (t) => t.linkedEventId === event.masterId || t.linkedEventId === event.id
   );
@@ -613,6 +615,7 @@ export function HistoryTimeline({
 }: {
   history: EventHistoryEntry[];
 }) {
+  const { memberById } = useMembers();
   return (
     <div>
       {history.map((h, i) => (

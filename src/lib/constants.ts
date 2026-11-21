@@ -19,17 +19,53 @@ import type React from "react";
 
 export const CARD_SHADOW = "0 1px 2px rgba(74,50,24,0.05), 0 6px 18px rgba(74,50,24,0.06)";
 
-export const MEMBERS: Member[] = [
-  { id: "dad",  name: "Dad",  emoji: "👨", color: "#1F6F5C", light: "#E4F1EC" },
-  { id: "mom",  name: "Mom",  emoji: "👩", color: "#E8622C", light: "#FCE9DF" },
-  { id: "alex", name: "Alex", emoji: "👦", color: "#3E6FD9", light: "#E6ECFC", isChild: true },
-  { id: "mia",  name: "Mia",  emoji: "👧", color: "#B25CC9", light: "#F3E5F7", isChild: true },
-];
+export const MEMBER_COLOR_PALETTES = [
+  { name: "Forest", color: "#1F6F5C", light: "#E4F1EC" },
+  { name: "Terracotta", color: "#E8622C", light: "#FCE9DF" },
+  { name: "Cobalt", color: "#3E6FD9", light: "#E6ECFC" },
+  { name: "Plum", color: "#B25CC9", light: "#F3E5F7" },
+  { name: "Ochre", color: "#C9972B", light: "#FBF1D9" },
+  { name: "Rose", color: "#D94E73", light: "#FDE7EE" },
+  { name: "Teal", color: "#1E8898", light: "#E2F4F7" },
+  { name: "Slate", color: "#5E6B78", light: "#EAEFF3" },
+] as const;
 
-export const CHILDREN = MEMBERS.filter((m) => m.isChild);
+export const MEMBER_EMOJIS = [
+  "👩",
+  "👨",
+  "🧑",
+  "👧",
+  "👦",
+  "🧒",
+  "👶",
+  "👵",
+  "👴",
+  "🌟",
+  "🐶",
+  "🐱",
+] as const;
 
-export const memberById = (id?: MemberId | null): Member =>
-  MEMBERS.find((m) => m.id === id) || MEMBERS[0];
+export const FALLBACK_MEMBER: Member = {
+  id: "unknown",
+  name: "Family Member",
+  emoji: "🧑",
+  color: "#6B6259",
+  light: "#F5EFE3",
+};
+
+export function findMemberById(
+  id: MemberId | null | undefined,
+  membersList: Member[]
+): Member {
+  if (!id) return membersList[0] || FALLBACK_MEMBER;
+  return (
+    membersList.find((m) => m.id === id) || {
+      ...FALLBACK_MEMBER,
+      id,
+      name: "Former Member",
+    }
+  );
+}
 
 export const CATEGORY_META: Record<string, { icon: LucideIcon; color: string }> = {
   Family:      { icon: Users,          color: "#1F6F5C" },

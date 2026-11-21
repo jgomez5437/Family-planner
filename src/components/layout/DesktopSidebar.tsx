@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, Plus } from "lucide-react";
-import { MEMBERS, memberById, TABS } from "@/lib/constants";
+import { ChevronDown, LogOut, Plus, Settings, Users } from "lucide-react";
+import { TABS } from "@/lib/constants";
+import { useMembers } from "@/components/MembersContext";
 import type { MemberId } from "@/types/family";
 import { AvatarDot } from "@/components/ui/Primitives";
 
@@ -11,17 +12,22 @@ export function DesktopSidebar({
   tab,
   setTab,
   currentUser,
-  setCurrentUser,
   onQuickAdd,
+  onOpenSettings,
+  onSignOut,
 }: {
   familyName: string;
   tab: string;
   setTab: (tab: string) => void;
   currentUser: MemberId;
-  setCurrentUser: (id: MemberId) => void;
   onQuickAdd: () => void;
+  onOpenSettings: (screen?: "root" | "family" | "account") => void;
+  onSignOut: () => void;
 }) {
-  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const { memberById } = useMembers();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const me = memberById(currentUser);
+
   return (
     <div
       style={{
@@ -42,7 +48,11 @@ export function DesktopSidebar({
           fontFamily: "'Baloo 2', sans-serif",
           fontSize: 18,
           fontWeight: 700,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
         }}
+        title={familyName}
       >
         {familyName}
       </div>
@@ -93,46 +103,78 @@ export function DesktopSidebar({
               }}
             >
               <Icon size={17} strokeWidth={active ? 2.4 : 2} />
-              <span style={{ fontSize: 13.5, fontWeight: active ? 700 : 500 }}>{t.label}</span>
+              <span style={{ fontSize: 13.5, fontWeight: active ? 700 : 500 }}>
+                {t.label}
+              </span>
             </button>
           );
         })}
       </div>
 
-      <div style={{ padding: 12, borderTop: "1px solid #EFE4D2", position: "relative" }}>
+      <div
+        style={{
+          padding: 12,
+          borderTop: "1px solid #EFE4D2",
+          position: "relative",
+        }}
+      >
         <div
           style={{
             fontSize: 9.5,
             fontWeight: 700,
-            color: "#C9BEAC",
+            color: "#A69C8E",
             letterSpacing: 0.5,
             padding: "0 2px 5px",
           }}
         >
-          VIEWING AS · DEMO
+          SIGNED IN AS
         </div>
         <button
-          onClick={() => setSwitcherOpen((s) => !s)}
-          title="Demo tool — not real sign-in"
+          onClick={() => setMenuOpen((s) => !s)}
           style={{
             display: "flex",
             alignItems: "center",
             gap: 8,
             width: "100%",
             background: "#FFFDF9",
-            border: `1.5px dashed ${memberById(currentUser).color}`,
+            border: `1.5px solid ${me.color}55`,
             borderRadius: 12,
             padding: "8px 10px",
             cursor: "pointer",
           }}
         >
-          <AvatarDot id={currentUser} size={24} />
-          <span style={{ fontSize: 13, fontWeight: 600, flex: 1, textAlign: "left" }}>
-            {memberById(currentUser).name}
-          </span>
-          <ChevronDown size={13} />
+          <AvatarDot id={currentUser} size={26} />
+          <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: "#2B2622",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {me.name}
+            </div>
+            {me.email && (
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: "#948C80",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {me.email}
+              </div>
+            )}
+          </div>
+          <ChevronDown size={13} color="#8A7F70" />
         </button>
-        {switcherOpen && (
+
+        {menuOpen && (
           <div
             style={{
               position: "absolute",
@@ -140,52 +182,66 @@ export function DesktopSidebar({
               right: 12,
               bottom: "108%",
               background: "#fff",
+              border: "1px solid #F1E8D9",
               borderRadius: 14,
-              boxShadow: "0 8px 28px rgba(0,0,0,0.15)",
+              boxShadow: "0 8px 28px rgba(0,0,0,0.14)",
               padding: 6,
               zIndex: 60,
             }}
           >
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenSettings("account");
+              }}
+              style={menuItemStyle}
+            >
+              <Settings size={15} color="#6B6259" /> Account Settings
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenSettings("family");
+              }}
+              style={menuItemStyle}
+            >
+              <Users size={15} color="#6B6259" /> Family &amp; Members
+            </button>
             <div
               style={{
-                fontSize: 10.5,
-                color: "#A69C8E",
-                padding: "7px 10px 6px",
-                lineHeight: 1.4,
-                borderBottom: "1px solid #F3ECE0",
-                marginBottom: 4,
+                height: 1,
+                background: "#F3ECE0",
+                margin: "4px 6px",
               }}
+            />
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onSignOut();
+              }}
+              style={{ ...menuItemStyle, color: "#C4402A" }}
             >
-              <span style={{ fontWeight: 700, color: "#6B6259" }}>Demo tool</span> — switches whose
-              view you&apos;re testing. Not real sign-in.
-            </div>
-            {MEMBERS.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => {
-                  setCurrentUser(m.id);
-                  setSwitcherOpen(false);
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  width: "100%",
-                  background: currentUser === m.id ? m.light : "transparent",
-                  border: "none",
-                  borderRadius: 10,
-                  padding: "8px 10px",
-                  cursor: "pointer",
-                  fontSize: 13.5,
-                  fontWeight: 500,
-                }}
-              >
-                <AvatarDot id={m.id} size={20} /> {m.name}
-              </button>
-            ))}
+              <LogOut size={15} color="#C4402A" /> Sign Out
+            </button>
           </div>
         )}
       </div>
     </div>
   );
 }
+
+const menuItemStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  width: "100%",
+  background: "transparent",
+  border: "none",
+  borderRadius: 10,
+  padding: "9px 10px",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 600,
+  color: "#2B2622",
+  textAlign: "left",
+};

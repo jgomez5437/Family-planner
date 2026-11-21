@@ -2,7 +2,8 @@
 
 import React, { useMemo, useState } from "react";
 import { CheckSquare, Search, X } from "lucide-react";
-import { CARD_SHADOW, CATEGORY_META, memberById } from "@/lib/constants";
+import { CARD_SHADOW, CATEGORY_META } from "@/lib/constants";
+import { useMembers } from "@/components/MembersContext";
 import { relativeDay } from "@/lib/dates";
 import type { FamilyEvent, FamilyTask, WallPost } from "@/types/family";
 import { AvatarDot, SectionLabel } from "@/components/ui/Primitives";
@@ -216,6 +217,7 @@ function SearchResultRow({
     }
   | { kind: "task"; data: FamilyTask; query: string; onOpenEvent?: undefined }
   | { kind: "post"; data: WallPost; query: string; onOpenEvent?: undefined }) {
+  const { memberById } = useMembers();
   if (kind === "event") {
     const meta = CATEGORY_META[data.category] || CATEGORY_META.Other;
     const Icon = meta.icon;

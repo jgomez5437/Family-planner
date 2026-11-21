@@ -13,7 +13,8 @@ import {
   Stethoscope,
   type LucideIcon,
 } from "lucide-react";
-import { CARD_SHADOW, CATEGORY_META, MEMBERS, memberById } from "@/lib/constants";
+import { CARD_SHADOW, CATEGORY_META } from "@/lib/constants";
+import { useMembers } from "@/components/MembersContext";
 import { countdownLabel, fmtTime, nowHHMM, relativeDay } from "@/lib/dates";
 import { recurrenceLabel } from "@/lib/recurrence";
 import type {
@@ -215,6 +216,7 @@ export function HomeTab({
   isDesktop: boolean;
   pendingDoses?: ScheduledDose[];
 }) {
+  const { members, memberById } = useMembers();
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -500,7 +502,7 @@ export function HomeTab({
           scrollPaddingLeft: 16,
         }}
       >
-        {MEMBERS.map((m) => (
+        {members.map((m) => (
           <FamilyStatusCard
             key={m.id}
             member={m}
@@ -618,6 +620,7 @@ function TimelineRow({
   onOpenEvent?: () => void;
   currentUser: MemberId;
 }) {
+  const { memberById } = useMembers();
   const { kind, data, time, status } = item;
   const meta =
     kind === "event"

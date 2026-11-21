@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import { CheckCircle2, Circle } from "lucide-react";
-import { CARD_SHADOW, memberById } from "@/lib/constants";
+import { CARD_SHADOW } from "@/lib/constants";
+import { useMembers } from "@/components/MembersContext";
 import { relativeDay, todayISO } from "@/lib/dates";
 import { recurrenceLabel } from "@/lib/recurrence";
 import type { FamilyTask, MemberId } from "@/types/family";
@@ -149,6 +150,7 @@ export function TaskRow({
   compact?: boolean;
   onOpenLinkedEvent?: (task: FamilyTask) => void;
 }) {
+  const { memberById } = useMembers();
   const overdue = !task.completed && task.dueDate < todayISO(0);
   return (
     <div

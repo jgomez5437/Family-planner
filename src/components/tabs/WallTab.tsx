@@ -4,13 +4,13 @@ import React, { useState } from "react";
 import { ChevronLeft, ChevronRight, Send, X } from "lucide-react";
 import {
   CARD_SHADOW,
-  memberById,
   POST_TYPE_COLORS,
   POST_TYPE_EMOJI,
   REACTION_LABELS,
   REACTIONS,
 } from "@/lib/constants";
-import type { MemberId, WallPost } from "@/types/family";
+import { useMembers } from "@/components/MembersContext";
+import type { Member, MemberId, WallPost } from "@/types/family";
 import { AvatarDot, EmptyState } from "@/components/ui/Primitives";
 import type { ComposerKind } from "@/components/layout/QuickAddSheet";
 
@@ -32,6 +32,7 @@ export function WallTab({
     postType?: string
   ) => void;
 }) {
+  const { memberById } = useMembers();
   const me = memberById(currentUser);
   return (
     <div style={{ maxWidth: 640, margin: "0 auto" }}>
@@ -147,7 +148,11 @@ const clampStyle: React.CSSProperties = {
   overflow: "hidden",
 };
 
-function reactionSummary(post: WallPost, currentUser?: MemberId) {
+function reactionSummary(
+  post: WallPost,
+  memberById: (id?: MemberId | null) => Member,
+  currentUser?: MemberId
+) {
   const reactions = post.reactions || {};
   const ids = [...new Set(Object.values(reactions).flat())];
   if (!ids.length) return null;
@@ -181,6 +186,7 @@ export function PostCard({
   currentUser?: MemberId;
   compact?: boolean;
 }) {
+  const { memberById } = useMembers();
   const author = memberById(post.author);
   const color = POST_TYPE_COLORS[post.type] || "#6B6259";
   const emoji = POST_TYPE_EMOJI[post.type] || "💬";
@@ -191,7 +197,7 @@ export function PostCard({
     !compact && comments.length > 0
   );
   const [draft, setDraft] = useState("");
-  const summary = reactionSummary(post, currentUser);
+  const summary = reactionSummary(post, memberById, currentUser);
 
   function sendComment() {
     const text = draft.trim();
