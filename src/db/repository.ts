@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { getDb } from "./index";
+import { getReadyDb } from "./index";
 import {
   activities,
   childProfiles,
@@ -117,7 +117,7 @@ async function resolveMemberName(
   familyId: string,
   memberId: MemberId
 ): Promise<string> {
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     try {
       const rows = await db
@@ -149,7 +149,7 @@ async function createSession(
   const token = generateSessionToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
 
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     await db.insert(sessions).values({
       token,
@@ -174,7 +174,7 @@ export async function getSessionContext(
 ): Promise<AuthSession | null> {
   if (!token) return null;
   const now = new Date();
-  const db = getDb();
+  const db = await getReadyDb();
 
   if (db) {
     try {
@@ -233,7 +233,7 @@ export async function getAuthenticatedSession(): Promise<AuthSession | null> {
 
 export async function deleteSession(token: string | null): Promise<void> {
   if (!token) return;
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     try {
       await db.delete(sessions).where(eq(sessions.token, token));
@@ -289,7 +289,7 @@ export async function registerAccount(
   const avatarUrl = input.avatarUrl?.trim() ? input.avatarUrl.trim() : null;
   const passwordHash = hashPassword(password);
 
-  const db = getDb();
+  const db = await getReadyDb();
 
   if (db) {
     // Check if an account with this email already has a password
@@ -534,7 +534,7 @@ export async function loginAccount(
     };
   }
 
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     const rows = await db
       .select()
@@ -586,7 +586,7 @@ export async function getFamilyState(
   familyId: string,
   currentUserId: MemberId
 ): Promise<FamilyStatePayload | null> {
-  const db = getDb();
+  const db = await getReadyDb();
 
   if (db) {
     try {
@@ -816,7 +816,7 @@ export async function recordActivity(
     targetEventId: targetEvent?.id || null,
   };
 
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     try {
       await db.insert(activities).values({
@@ -846,7 +846,7 @@ export async function updateFamilyName(
   name: string
 ): Promise<string> {
   const trimmed = name.trim();
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     await db
       .update(families)
@@ -863,7 +863,7 @@ export async function regenerateFamilyInviteCode(
   familyId: string
 ): Promise<string> {
   const nextCode = generateInviteCode();
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     await db
       .update(families)
@@ -910,7 +910,7 @@ export async function addFamilyMember(
     email,
   };
 
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     await db.insert(members).values({
       id: newMember.id,
@@ -976,7 +976,7 @@ export async function updateFamilyMember(
   memberId: MemberId,
   updates: UpdateMemberInput
 ): Promise<{ ok: true; member: Member } | { ok: false; error: string }> {
-  const db = getDb();
+  const db = await getReadyDb();
   const normalizedEmail =
     updates.email !== undefined
       ? updates.email?.trim()
@@ -1139,7 +1139,7 @@ export async function deleteFamilyMember(
   familyId: string,
   memberId: MemberId
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     const famMembers = await db
       .select()
@@ -1214,7 +1214,7 @@ export async function createEventRecord(
     ],
   };
 
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     await db.insert(events).values({
       id: full.id,
@@ -1262,7 +1262,7 @@ export async function updateEventRecord(
   currentUser: MemberId
 ): Promise<FamilyEvent | null> {
   const [masterId, occDate] = id.includes("::") ? id.split("::") : [id, null];
-  const db = getDb();
+  const db = await getReadyDb();
   const fam = getMemoryStore().families.get(familyId);
 
   let target: FamilyEvent | undefined;
@@ -1383,7 +1383,7 @@ export async function deleteEventRecord(
   scope: "instance" | "series"
 ): Promise<void> {
   const [masterId, occDate] = id.includes("::") ? id.split("::") : [id, null];
-  const db = getDb();
+  const db = await getReadyDb();
   const fam = getMemoryStore().families.get(familyId);
 
   if (occDate && scope === "instance") {
@@ -1445,7 +1445,7 @@ export async function createTaskRecord(
     exceptions: tk.exceptions || [],
   };
 
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     await db.insert(tasks).values({
       id: full.id,
@@ -1488,7 +1488,7 @@ export async function toggleTaskRecord(
   currentUser: MemberId
 ): Promise<FamilyTask | null> {
   const [masterId, occDate] = id.includes("::") ? id.split("::") : [id, null];
-  const db = getDb();
+  const db = await getReadyDb();
   const fam = getMemoryStore().families.get(familyId);
 
   let target: FamilyTask | undefined;
@@ -1588,7 +1588,7 @@ export async function saveMedicationRecord(
   isNew: boolean,
   currentUser: MemberId
 ): Promise<Medication> {
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     if (isNew) {
       await db.insert(medications).values({
@@ -1642,7 +1642,7 @@ export async function deleteMedicationRecord(
   familyId: string,
   id: string
 ): Promise<void> {
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     await db
       .delete(medications)
@@ -1664,7 +1664,7 @@ export async function toggleDoseRecord(
   time: string,
   currentUser: MemberId
 ): Promise<{ given: boolean; entry?: { by: MemberId; at: string } }> {
-  const db = getDb();
+  const db = await getReadyDb();
   const fam = getMemoryStore().families.get(familyId);
 
   let wasGiven = Boolean(fam?.doseLog[key]);
@@ -1720,7 +1720,7 @@ export async function saveChildProfileRecord(
   data: ChildProfile,
   currentUser: MemberId
 ): Promise<ChildProfile> {
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     const existing = await db
       .select()
@@ -1791,7 +1791,7 @@ export async function createPostRecord(
     comments: [],
   };
 
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     await db.insert(posts).values({
       id: full.id,
@@ -1823,7 +1823,7 @@ export async function togglePostReactionRecord(
   emoji: string,
   currentUser: MemberId
 ): Promise<void> {
-  const db = getDb();
+  const db = await getReadyDb();
   if (db) {
     const postRows = await db
       .select({ id: posts.id })
@@ -1887,7 +1887,7 @@ export async function addPostCommentRecord(
   };
 
   let postAuthor: MemberId | null = null;
-  const db = getDb();
+  const db = await getReadyDb();
 
   if (db) {
     const postRows = await db
