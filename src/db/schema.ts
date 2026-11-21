@@ -13,27 +13,39 @@ import type {
   TaskOverride,
 } from "@/types/family";
 
-export const DEFAULT_FAMILY_ID = "default-family";
-
 export const families = pgTable("families", {
-  id: text("id").primaryKey().default(DEFAULT_FAMILY_ID),
-  name: text("name").notNull().default("The Martinez Family"),
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  inviteCode: text("invite_code").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const members = pgTable("members", {
-  id: text("id").primaryKey(), // e.g. 'dad', 'mom', 'alex', 'mia'
+  id: text("id").primaryKey(),
   familyId: text("family_id")
     .notNull()
-    .references(() => families.id, { onDelete: "cascade" })
-    .default(DEFAULT_FAMILY_ID),
+    .references(() => families.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   emoji: text("emoji").notNull(),
   color: text("color").notNull(),
   light: text("light").notNull(),
   isChild: boolean("is_child").notNull().default(false),
-  email: text("email"), // Reserved for future individual authentication accounts
+  role: text("role").notNull().default("adult"), // 'admin' | 'adult' | 'child'
+  email: text("email"),
+  passwordHash: text("password_hash"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const sessions = pgTable("sessions", {
+  token: text("token").primaryKey(),
+  memberId: text("member_id")
+    .notNull()
+    .references(() => members.id, { onDelete: "cascade" }),
+  familyId: text("family_id")
+    .notNull()
+    .references(() => families.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -43,8 +55,7 @@ export const childProfiles = pgTable("child_profiles", {
     .references(() => members.id, { onDelete: "cascade" }),
   familyId: text("family_id")
     .notNull()
-    .references(() => families.id, { onDelete: "cascade" })
-    .default(DEFAULT_FAMILY_ID),
+    .references(() => families.id, { onDelete: "cascade" }),
   allergies: text("allergies").notNull().default(""),
   doctor: text("doctor").notNull().default(""),
   contact: text("contact").notNull().default(""),
@@ -56,8 +67,7 @@ export const events = pgTable("events", {
   id: text("id").primaryKey(),
   familyId: text("family_id")
     .notNull()
-    .references(() => families.id, { onDelete: "cascade" })
-    .default(DEFAULT_FAMILY_ID),
+    .references(() => families.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   notes: text("notes").notNull().default(""),
@@ -87,8 +97,7 @@ export const tasks = pgTable("tasks", {
   id: text("id").primaryKey(),
   familyId: text("family_id")
     .notNull()
-    .references(() => families.id, { onDelete: "cascade" })
-    .default(DEFAULT_FAMILY_ID),
+    .references(() => families.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   category: text("category").notNull().default("Household"),
   assignedTo: text("assigned_to"),
@@ -115,8 +124,7 @@ export const medications = pgTable("medications", {
   id: text("id").primaryKey(),
   familyId: text("family_id")
     .notNull()
-    .references(() => families.id, { onDelete: "cascade" })
-    .default(DEFAULT_FAMILY_ID),
+    .references(() => families.id, { onDelete: "cascade" }),
   kidId: text("kid_id")
     .notNull()
     .references(() => members.id, { onDelete: "cascade" }),
@@ -134,8 +142,7 @@ export const doseLogs = pgTable("dose_logs", {
   key: text("key").primaryKey(), // `${medId}|${date}|${time}`
   familyId: text("family_id")
     .notNull()
-    .references(() => families.id, { onDelete: "cascade" })
-    .default(DEFAULT_FAMILY_ID),
+    .references(() => families.id, { onDelete: "cascade" }),
   medId: text("med_id")
     .notNull()
     .references(() => medications.id, { onDelete: "cascade" }),
@@ -148,8 +155,7 @@ export const posts = pgTable("posts", {
   id: text("id").primaryKey(),
   familyId: text("family_id")
     .notNull()
-    .references(() => families.id, { onDelete: "cascade" })
-    .default(DEFAULT_FAMILY_ID),
+    .references(() => families.id, { onDelete: "cascade" }),
   author: text("author").notNull(),
   type: text("type").notNull().default("Update"),
   content: text("content").notNull().default(""),
@@ -182,8 +188,7 @@ export const activities = pgTable("activities", {
   id: text("id").primaryKey(),
   familyId: text("family_id")
     .notNull()
-    .references(() => families.id, { onDelete: "cascade" })
-    .default(DEFAULT_FAMILY_ID),
+    .references(() => families.id, { onDelete: "cascade" }),
   text: text("text").notNull(),
   sub: text("sub"),
   by: text("by").notNull(),

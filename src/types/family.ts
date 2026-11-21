@@ -1,5 +1,7 @@
 export type MemberId = string;
 
+export type MemberRole = "admin" | "adult" | "child";
+
 export interface Member {
   id: MemberId;
   name: string;
@@ -7,6 +9,7 @@ export interface Member {
   color: string;
   light: string;
   isChild?: boolean;
+  role?: MemberRole;
   email?: string | null;
 }
 
@@ -161,7 +164,10 @@ export interface ActivityItem {
 }
 
 export interface FamilyStatePayload {
+  familyId: string;
   familyName: string;
+  inviteCode: string;
+  currentUser: Member;
   members: Member[];
   events: FamilyEvent[];
   tasks: FamilyTask[];

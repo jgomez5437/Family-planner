@@ -4,15 +4,15 @@ import React from "react";
 import { Check, X } from "lucide-react";
 import {
   CATEGORY_META,
-  MEMBERS,
-  memberById,
   overlayStyle,
   pillStyle,
   sheetStyle,
 } from "@/lib/constants";
+import { useMembers } from "@/components/MembersContext";
 import type { MemberId } from "@/types/family";
 
 export function AvatarDot({ id, size = 22 }: { id?: MemberId | null; size?: number }) {
+  const { memberById } = useMembers();
   const m = memberById(id);
   return (
     <div
@@ -294,9 +294,10 @@ export function MemberPicker({
   selected: MemberId[];
   onToggle: (id: MemberId) => void;
 }) {
+  const { members } = useMembers();
   return (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-      {MEMBERS.map((m) => (
+      {members.map((m) => (
         <button
           key={m.id}
           onClick={() => onToggle(m.id)}

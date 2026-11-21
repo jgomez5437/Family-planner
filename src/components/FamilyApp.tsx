@@ -1,11 +1,16 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Settings as SettingsIcon } from "lucide-react";
+import {
+  LogOut,
+  Plus,
+  Search,
+  Settings as SettingsIcon,
+  Users,
+} from "lucide-react";
 import {
   DESKTOP_BREAKPOINT,
-  MEMBERS,
-  memberById,
+  findMemberById,
   TABS,
 } from "@/lib/constants";
 import { fmtTime, nowClock, relativeDay, todayISO, uid } from "@/lib/dates";
@@ -19,11 +24,13 @@ import type {
   FamilyStatePayload,
   FamilyTask,
   Medication,
+  Member,
   MemberId,
   ProfilesMap,
   ScheduledDose,
   WallPost,
 } from "@/types/family";
+import { MembersProvider } from "@/components/MembersContext";
 import { AvatarDot, LiveToast } from "@/components/ui/Primitives";
 import { DesktopSidebar } from "@/components/layout/DesktopSidebar";
 import {
@@ -32,7 +39,14 @@ import {
 } from "@/components/layout/QuickAddSheet";
 import { Composer } from "@/components/layout/Composer";
 import { SearchOverlay } from "@/components/layout/SearchOverlay";
-import { SettingsScreen } from "@/components/layout/SettingsScreen";
+import {
+  SettingsScreen,
+  type SettingsSubScreen,
+} from "@/components/layout/SettingsScreen";
+import {
+  MemberModal,
+  type MemberFormData,
+} from "@/components/layout/MemberModal";
 import { HomeTab } from "@/components/tabs/HomeTab";
 import { CaregiverSheet, ManagerTab } from "@/components/tabs/ManagerTab";
 import { TasksTab } from "@/components/tabs/TasksTab";
@@ -54,11 +68,15 @@ function useIsDesktop(): boolean {
 
 export default function FamilyApp({
   initialState,
+  onSignedOut,
 }: {
   initialState: FamilyStatePayload;
+  onSignedOut: () => void;
 }) {
   const isDesktop = useIsDesktop();
-  const [currentUser, setCurrentUser] = useState<MemberId>("mom");
+  const currentUser: MemberId = initialState.currentUser.id;
+  const [members, setMembers] = useState<Member[]>(initialState.members);
+  const [inviteCode, setInviteCode] = useState(initialState.inviteCode);
   const [tab, setTab] = useState("home");
   const [events, setEvents] = useState<FamilyEvent[]>(initialState.events);
   const [tasks, setTasks] = useState<FamilyTask[]>(initialState.tasks);
@@ -79,12 +97,16 @@ export default function FamilyApp({
   const [profiles, setProfiles] = useState<ProfilesMap>(initialState.profiles);
   const [sheet, setSheet] = useState<{ kidIds: MemberId[] } | null>(null);
   const [historyModal, setHistoryModal] = useState<FamilyEvent | null>(null);
-  const [online, setOnline] = useState(true);
-  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsScreen, setSettingsScreen] =
+    useState<SettingsSubScreen | null>(null);
+  const [addChildModalOpen, setAddChildModalOpen] = useState(false);
   const [familyName, setFamilyName] = useState(initialState.familyName);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const memberById = (id?: MemberId | null) => findMemberById(id, members);
+  const me = memberById(currentUser);
 
   function fireToast(msg: string) {
     setToast(msg);
@@ -111,6 +133,127 @@ export default function FamilyApp({
         ...a,
       ].slice(0, 20)
     );
+  }
+
+  /* ---- AUTH & MEMBER ACTIONS ---- */
+
+  async function handleSignOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* ignore */
+    }
+    onSignedOut();
+  }
+
+  async function handleAddMember(data: MemberFormData): Promise<string | null> {
+    try {
+      const res = await fetch("/api/members", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) return json.error || "Could not add member.";
+      const added: Member = json.member;
+      setMembers((ms) => [...ms, added]);
+      if (added.isChild) {
+        setProfiles((p) => ({
+          ...p,
+          [added.id]: p[added.id] || {
+            allergies: "",
+            doctor: "",
+            contact: "",
+            notes: "",
+          },
+        }));
+      }
+      pushActivity(
+        `${memberById(currentUser).name} added ${added.name} to the family`,
+        added.isChild ? "Child profile" : "Family member",
+        currentUser
+      );
+      fireToast(`${added.name} added`);
+      return null;
+    } catch {
+      return "Network error while adding member.";
+    }
+  }
+
+  async function handleUpdateMember(
+    memberId: MemberId,
+    data: Partial<MemberFormData> & { password?: string }
+  ): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/members/${encodeURIComponent(memberId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) return json.error || "Could not update member.";
+      const updated: Member = json.member;
+      setMembers((ms) => ms.map((m) => (m.id === memberId ? updated : m)));
+      if (updated.isChild) {
+        setProfiles((p) => ({
+          ...p,
+          [updated.id]: p[updated.id] || {
+            allergies: "",
+            doctor: "",
+            contact: "",
+            notes: "",
+          },
+        }));
+      }
+      fireToast("Profile updated");
+      return null;
+    } catch {
+      return "Network error while updating profile.";
+    }
+  }
+
+  async function handleDeleteMember(
+    memberId: MemberId
+  ): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/members/${encodeURIComponent(memberId)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (!res.ok) return json.error || "Could not remove member.";
+      if (memberId === currentUser) {
+        await handleSignOut();
+        return null;
+      }
+      setMembers((ms) => ms.filter((m) => m.id !== memberId));
+      setMeds((ms) => ms.filter((m) => m.kidId !== memberId));
+      setProfiles((p) => {
+        const next = { ...p };
+        delete next[memberId];
+        return next;
+      });
+      fireToast("Member removed");
+      return null;
+    } catch {
+      return "Network error while removing member.";
+    }
+  }
+
+  async function handleRegenerateInviteCode() {
+    try {
+      const res = await fetch("/api/family", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regenerateInviteCode: true }),
+      });
+      const json = await res.json();
+      if (res.ok && json.inviteCode) {
+        setInviteCode(json.inviteCode);
+        fireToast("New invite code generated");
+      }
+    } catch {
+      fireToast("Could not regenerate invite code");
+    }
   }
 
   /* ---- ACTIONS (Optimistic UI + Backend API calls) ---- */
@@ -146,10 +289,10 @@ export default function FamilyApp({
       await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event: full, currentUser }),
+        body: JSON.stringify({ event: full }),
       });
     } catch {
-      /* offline or background error handled gracefully */
+      /* background sync */
     }
   }
 
@@ -243,7 +386,7 @@ export default function FamilyApp({
       await fetch(`/api/events/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ field, value, reason, scope, currentUser }),
+        body: JSON.stringify({ field, value, reason, scope }),
       });
     } catch {
       /* background sync */
@@ -306,7 +449,7 @@ export default function FamilyApp({
       await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task: full, currentUser }),
+        body: JSON.stringify({ task: full }),
       });
     } catch {
       /* background sync */
@@ -370,7 +513,7 @@ export default function FamilyApp({
       await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentUser }),
+        body: JSON.stringify({}),
       });
     } catch {
       /* background sync */
@@ -402,7 +545,7 @@ export default function FamilyApp({
       await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ post: full, currentUser }),
+        body: JSON.stringify({ post: full }),
       });
     } catch {
       /* background sync */
@@ -426,7 +569,7 @@ export default function FamilyApp({
       await fetch(`/api/posts/${encodeURIComponent(postId)}/reactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emoji, currentUser }),
+        body: JSON.stringify({ emoji }),
       });
     } catch {
       /* background sync */
@@ -456,7 +599,7 @@ export default function FamilyApp({
       await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, currentUser, commentId: comment.id }),
+        body: JSON.stringify({ text, commentId: comment.id }),
       });
     } catch {
       /* background sync */
@@ -510,7 +653,6 @@ export default function FamilyApp({
           kidId: dose.med.kidId,
           medName: dose.med.name,
           time: dose.time,
-          currentUser,
         }),
       });
     } catch {
@@ -536,13 +678,13 @@ export default function FamilyApp({
         await fetch("/api/meds", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ med, currentUser }),
+          body: JSON.stringify({ med }),
         });
       } else {
         await fetch(`/api/meds/${encodeURIComponent(med.id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ med, currentUser }),
+          body: JSON.stringify({ med }),
         });
       }
     } catch {
@@ -576,7 +718,7 @@ export default function FamilyApp({
       await fetch(`/api/profiles/${encodeURIComponent(kidId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: data, currentUser }),
+        body: JSON.stringify({ profile: data }),
       });
     } catch {
       /* background sync */
@@ -629,478 +771,512 @@ export default function FamilyApp({
 
   if (sheet) {
     return (
-      <div
-        style={{
-          fontFamily: "'Inter', system-ui, sans-serif",
-          color: "#2B2622",
-        }}
-      >
-        <CaregiverSheet
-          initialKidIds={sheet.kidIds}
-          meds={meds}
-          profiles={profiles}
-          events={sortedUpcomingEvents}
-          doseLog={doseLog}
-          preparedBy={memberById(currentUser).name}
-          onClose={() => setSheet(null)}
-        />
-      </div>
+      <MembersProvider members={members}>
+        <div
+          style={{
+            fontFamily: "'Inter', system-ui, sans-serif",
+            color: "#2B2622",
+          }}
+        >
+          <CaregiverSheet
+            initialKidIds={sheet.kidIds}
+            meds={meds}
+            profiles={profiles}
+            events={sortedUpcomingEvents}
+            doseLog={doseLog}
+            preparedBy={me.name}
+            onClose={() => setSheet(null)}
+          />
+        </div>
+      </MembersProvider>
     );
   }
 
   return (
-    <div
-      style={{
-        fontFamily: "'Inter', system-ui, sans-serif",
-        background: "#FFF9F0",
-        minHeight: "100vh",
-        color: "#2B2622",
-        display: "flex",
-      }}
-    >
-      <LiveToast toast={toast} />
+    <MembersProvider members={members}>
+      <div
+        style={{
+          fontFamily: "'Inter', system-ui, sans-serif",
+          background: "#FFF9F0",
+          minHeight: "100vh",
+          color: "#2B2622",
+          display: "flex",
+        }}
+      >
+        <LiveToast toast={toast} />
 
-      {isDesktop && (
-        <DesktopSidebar
-          familyName={familyName}
-          tab={tab}
-          setTab={setTab}
-          currentUser={currentUser}
-          setCurrentUser={setCurrentUser}
-          onQuickAdd={() => setQuickAddOpen(true)}
-        />
-      )}
+        {isDesktop && (
+          <DesktopSidebar
+            familyName={familyName}
+            tab={tab}
+            setTab={setTab}
+            currentUser={currentUser}
+            onQuickAdd={() => setQuickAddOpen(true)}
+            onOpenSettings={(s) => setSettingsScreen(s || "root")}
+            onSignOut={handleSignOut}
+          />
+        )}
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Top bar */}
-        <div
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 50,
-            background: "rgba(255,249,240,0.86)",
-            backdropFilter: "blur(14px)",
-            WebkitBackdropFilter: "blur(14px)",
-            borderBottom: "1px solid #F1E8D9",
-            padding: isDesktop ? "16px 32px" : "14px 18px 12px",
-          }}
-        >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Top bar */}
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
+              position: "sticky",
+              top: 0,
+              zIndex: 50,
+              background: "rgba(255,249,240,0.86)",
+              backdropFilter: "blur(14px)",
+              WebkitBackdropFilter: "blur(14px)",
+              borderBottom: "1px solid #F1E8D9",
+              padding: isDesktop ? "16px 32px" : "14px 18px 12px",
             }}
           >
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                minWidth: 0,
-                flex: 1,
+                justifyContent: "space-between",
               }}
             >
-              {!isDesktop && (
-                <div
-                  title={familyName}
-                  style={{
-                    fontFamily: "'Baloo 2', sans-serif",
-                    fontSize: 17,
-                    fontWeight: 700,
-                    color: "#2B2622",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    minWidth: 0,
-                  }}
-                >
-                  {familyName}
-                </div>
-              )}
-              {isDesktop && (
-                <div
-                  style={{
-                    fontFamily: "'Baloo 2', sans-serif",
-                    fontSize: 19,
-                    fontWeight: 700,
-                    color: "#2B2622",
-                    textTransform: "capitalize",
-                  }}
-                >
-                  {TABS.find((t) => t.id === tab)?.label || "Home"}
-                </div>
-              )}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                flexShrink: 0,
-              }}
-            >
-              <button
-                onClick={() => setSearchOpen(true)}
-                title="Search"
-                aria-label="Search"
+              <div
                 style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  width: 34,
-                  height: 34,
-                  borderRadius: 10,
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  color: "#6B6259",
-                  flexShrink: 0,
+                  gap: 8,
+                  minWidth: 0,
+                  flex: 1,
                 }}
               >
-                <Search size={18} />
-              </button>
-              <button
-                onClick={() => setSettingsOpen(true)}
-                title="Settings"
-                aria-label="Settings"
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  width: 34,
-                  height: 34,
-                  borderRadius: 10,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#6B6259",
-                  flexShrink: 0,
-                }}
-              >
-                <SettingsIcon size={18} />
-              </button>
-              {!isDesktop && (
-                <button
-                  onClick={() => setQuickAddOpen(true)}
-                  title="Quick add"
-                  aria-label="Quick add"
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: "50%",
-                    background: "#E8622C",
-                    color: "#fff",
-                    border: "none",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    flexShrink: 0,
-                    boxShadow: "0 2px 8px rgba(232,98,44,0.35)",
-                    marginLeft: 2,
-                  }}
-                >
-                  <Plus size={20} strokeWidth={2.75} />
-                </button>
-              )}
-              {!isDesktop && (
-                <div style={{ position: "relative" }}>
-                  <button
-                    onClick={() => setSwitcherOpen((s) => !s)}
-                    title="Demo tool — not real sign-in"
-                    aria-label={`Demo: viewing as ${memberById(currentUser).name}. Tap to switch.`}
+                {!isDesktop && (
+                  <div
+                    title={familyName}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      background: "#FFFDF9",
-                      border: `1.5px dashed ${memberById(currentUser).color}`,
-                      borderRadius: 999,
-                      padding: "5px 12px 5px 6px",
-                      cursor: "pointer",
+                      fontFamily: "'Baloo 2', sans-serif",
+                      fontSize: 17,
+                      fontWeight: 700,
+                      color: "#2B2622",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      minWidth: 0,
                     }}
                   >
-                    <AvatarDot id={currentUser} size={22} />
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>
-                      {memberById(currentUser).name}
-                    </span>
-                  </button>
-                  {switcherOpen && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        right: 0,
-                        top: "115%",
-                        background: "#fff",
-                        borderRadius: 14,
-                        boxShadow: "0 8px 28px rgba(0,0,0,0.15)",
-                        padding: 6,
-                        zIndex: 60,
-                        minWidth: 190,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 10.5,
-                          color: "#A69C8E",
-                          padding: "7px 10px 6px",
-                          lineHeight: 1.4,
-                          borderBottom: "1px solid #F3ECE0",
-                          marginBottom: 4,
-                        }}
-                      >
-                        <span style={{ fontWeight: 700, color: "#6B6259" }}>
-                          Demo tool
-                        </span>{" "}
-                        — switches whose view you&apos;re testing. Not real
-                        sign-in.
-                      </div>
-                      {MEMBERS.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => {
-                            setCurrentUser(m.id);
-                            setSwitcherOpen(false);
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            width: "100%",
-                            background:
-                              currentUser === m.id ? m.light : "transparent",
-                            border: "none",
-                            borderRadius: 10,
-                            padding: "8px 10px",
-                            cursor: "pointer",
-                            fontSize: 13.5,
-                            fontWeight: 500,
-                          }}
-                        >
-                          <AvatarDot id={m.id} size={20} /> {m.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          {!online && (
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: 12,
-                background: "#FCE9DF",
-                color: "#B24A1D",
-                padding: "6px 10px",
-                borderRadius: 8,
-                fontWeight: 500,
-              }}
-            >
-              You&apos;re offline. Changes will sync when you&apos;re back online.
-            </div>
-          )}
-        </div>
-
-        {/* Content */}
-        <div
-          key={tab}
-          className="fade-up"
-          style={{
-            maxWidth: isDesktop ? 900 : 560,
-            margin: "0 auto",
-            padding: isDesktop ? "24px 32px 60px" : "18px 16px 90px",
-          }}
-        >
-          {tab === "home" && (
-            <HomeTab
-              currentUser={currentUser}
-              todaysEvents={todaysEvents}
-              todaysTasks={todaysTasks}
-              upcoming={sortedUpcomingEvents
-                .filter((e) => e.date > todayISO(0))
-                .slice(0, 5)}
-              posts={posts.slice(0, 3)}
-              activity={activity.slice(0, 4)}
-              toggleTask={toggleTask}
-              toggleReaction={toggleReaction}
-              openHistory={setHistoryModal}
-              goTab={setTab}
-              openComposer={openComposerFor}
-              isDesktop={isDesktop}
-              pendingDoses={pendingDoses}
-            />
-          )}
-          {tab === "manager" && (
-            <ManagerTab
-              meds={meds}
-              doseLog={doseLog}
-              profiles={profiles}
-              events={sortedUpcomingEvents}
-              onToggleDose={toggleDose}
-              onSaveMed={saveMed}
-              onDeleteMed={deleteMed}
-              onSaveProfile={saveProfile}
-              onOpenEvent={setHistoryModal}
-              onAddAppointment={(kidId) =>
-                openComposerFor("appointment", todayISO(0), [kidId])
-              }
-              onOpenSheet={(kidIds) => setSheet({ kidIds })}
-            />
-          )}
-          {tab === "tasks" && (
-            <TasksTab
-              tasks={expandedTasks}
-              toggleTask={toggleTask}
-              currentUser={currentUser}
-              openComposer={openComposerFor}
-              onOpenLinkedEvent={(task) => {
-                const master = events.find((e) => e.id === task.linkedEventId);
-                if (master) setHistoryModal(master);
-              }}
-            />
-          )}
-          {tab === "events" && (
-            <EventsTab
-              events={sortedUpcomingEvents}
-              openHistory={setHistoryModal}
-              openComposer={openComposerFor}
-              onUpdateTime={updateEventTime}
-              onDelete={deleteEvent}
-            />
-          )}
-          {tab === "wall" && (
-            <WallTab
-              posts={posts}
-              currentUser={currentUser}
-              toggleReaction={toggleReaction}
-              addComment={addComment}
-              openComposer={openComposerFor}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Bottom nav — mobile only */}
-      {!isDesktop && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            background: "rgba(255,253,249,0.92)",
-            backdropFilter: "blur(14px)",
-            WebkitBackdropFilter: "blur(14px)",
-            borderTop: "1px solid #F1E8D9",
-            display: "flex",
-            zIndex: 60,
-            paddingBottom: "max(6px, env(safe-area-inset-bottom))",
-          }}
-        >
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                aria-current={active ? "page" : undefined}
+                    {familyName}
+                  </div>
+                )}
+                {isDesktop && (
+                  <div
+                    style={{
+                      fontFamily: "'Baloo 2', sans-serif",
+                      fontSize: 19,
+                      fontWeight: 700,
+                      color: "#2B2622",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {TABS.find((t) => t.id === tab)?.label || "Home"}
+                  </div>
+                )}
+              </div>
+              <div
                 style={{
-                  flex: 1,
-                  background: "none",
-                  border: "none",
-                  padding: "8px 4px 5px",
-                  cursor: "pointer",
                   display: "flex",
-                  flexDirection: "column",
                   alignItems: "center",
-                  gap: 2,
-                  color: active ? "#E8622C" : "#A69C8E",
+                  gap: 6,
+                  flexShrink: 0,
                 }}
               >
-                <span
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  title="Search"
+                  aria-label="Search"
                   style={{
-                    width: 54,
-                    height: 30,
-                    borderRadius: 15,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    background: active ? "#FCE9DF" : "transparent",
-                    transition: "background 0.2s",
+                    color: "#6B6259",
+                    flexShrink: 0,
                   }}
                 >
-                  <Icon size={21} strokeWidth={active ? 2.4 : 2} />
-                </span>
-                <span
-                  style={{ fontSize: 10.5, fontWeight: active ? 700 : 500 }}
+                  <Search size={18} />
+                </button>
+                <button
+                  onClick={() => setSettingsScreen("root")}
+                  title="Settings"
+                  aria-label="Settings"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#6B6259",
+                    flexShrink: 0,
+                  }}
                 >
-                  {t.label}
-                </span>
-              </button>
-            );
-          })}
+                  <SettingsIcon size={18} />
+                </button>
+                {!isDesktop && (
+                  <button
+                    onClick={() => setQuickAddOpen(true)}
+                    title="Quick add"
+                    aria-label="Quick add"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: "50%",
+                      background: "#E8622C",
+                      color: "#fff",
+                      border: "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                      boxShadow: "0 2px 8px rgba(232,98,44,0.35)",
+                      marginLeft: 2,
+                    }}
+                  >
+                    <Plus size={20} strokeWidth={2.75} />
+                  </button>
+                )}
+                {!isDesktop && (
+                  <div style={{ position: "relative" }}>
+                    <button
+                      onClick={() => setUserMenuOpen((s) => !s)}
+                      aria-label={`Signed in as ${me.name}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        background: "#FFFDF9",
+                        border: `1.5px solid ${me.color}55`,
+                        borderRadius: 999,
+                        padding: "5px 11px 5px 6px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <AvatarDot id={currentUser} size={22} />
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>
+                        {me.name}
+                      </span>
+                    </button>
+                    {userMenuOpen && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          right: 0,
+                          top: "115%",
+                          background: "#fff",
+                          border: "1px solid #F1E8D9",
+                          borderRadius: 14,
+                          boxShadow: "0 8px 28px rgba(0,0,0,0.15)",
+                          padding: 6,
+                          zIndex: 60,
+                          minWidth: 196,
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: "6px 10px 8px",
+                            borderBottom: "1px solid #F3ECE0",
+                            marginBottom: 4,
+                          }}
+                        >
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>
+                            {me.name}
+                          </div>
+                          {me.email && (
+                            <div style={{ fontSize: 11, color: "#948C80" }}>
+                              {me.email}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            setSettingsScreen("account");
+                          }}
+                          style={mobileMenuItemStyle}
+                        >
+                          <SettingsIcon size={14} color="#6B6259" /> Account
+                          Settings
+                        </button>
+                        <button
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            setSettingsScreen("family");
+                          }}
+                          style={mobileMenuItemStyle}
+                        >
+                          <Users size={14} color="#6B6259" /> Family &amp;
+                          Members
+                        </button>
+                        <div
+                          style={{
+                            height: 1,
+                            background: "#F3ECE0",
+                            margin: "4px 6px",
+                          }}
+                        />
+                        <button
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            handleSignOut();
+                          }}
+                          style={{ ...mobileMenuItemStyle, color: "#C4402A" }}
+                        >
+                          <LogOut size={14} color="#C4402A" /> Sign Out
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div
+            key={tab}
+            className="fade-up"
+            style={{
+              maxWidth: isDesktop ? 900 : 560,
+              margin: "0 auto",
+              padding: isDesktop ? "24px 32px 60px" : "18px 16px 90px",
+            }}
+          >
+            {tab === "home" && (
+              <HomeTab
+                currentUser={currentUser}
+                todaysEvents={todaysEvents}
+                todaysTasks={todaysTasks}
+                upcoming={sortedUpcomingEvents
+                  .filter((e) => e.date > todayISO(0))
+                  .slice(0, 5)}
+                posts={posts.slice(0, 3)}
+                activity={activity.slice(0, 4)}
+                toggleTask={toggleTask}
+                toggleReaction={toggleReaction}
+                openHistory={setHistoryModal}
+                goTab={setTab}
+                openComposer={openComposerFor}
+                isDesktop={isDesktop}
+                pendingDoses={pendingDoses}
+              />
+            )}
+            {tab === "manager" && (
+              <ManagerTab
+                meds={meds}
+                doseLog={doseLog}
+                profiles={profiles}
+                events={sortedUpcomingEvents}
+                onToggleDose={toggleDose}
+                onSaveMed={saveMed}
+                onDeleteMed={deleteMed}
+                onSaveProfile={saveProfile}
+                onOpenEvent={setHistoryModal}
+                onAddAppointment={(kidId) =>
+                  openComposerFor("appointment", todayISO(0), [kidId])
+                }
+                onOpenSheet={(kidIds) => setSheet({ kidIds })}
+                onAddChild={() => setAddChildModalOpen(true)}
+              />
+            )}
+            {tab === "tasks" && (
+              <TasksTab
+                tasks={expandedTasks}
+                toggleTask={toggleTask}
+                currentUser={currentUser}
+                openComposer={openComposerFor}
+                onOpenLinkedEvent={(task) => {
+                  const master = events.find(
+                    (e) => e.id === task.linkedEventId
+                  );
+                  if (master) setHistoryModal(master);
+                }}
+              />
+            )}
+            {tab === "events" && (
+              <EventsTab
+                events={sortedUpcomingEvents}
+                openHistory={setHistoryModal}
+                openComposer={openComposerFor}
+                onUpdateTime={updateEventTime}
+                onDelete={deleteEvent}
+              />
+            )}
+            {tab === "wall" && (
+              <WallTab
+                posts={posts}
+                currentUser={currentUser}
+                toggleReaction={toggleReaction}
+                addComment={addComment}
+                openComposer={openComposerFor}
+              />
+            )}
+          </div>
         </div>
-      )}
 
-      {quickAddOpen && (
-        <QuickAddSheet
-          onClose={() => setQuickAddOpen(false)}
-          onSelect={(type) => {
-            openComposerFor(type);
-            setQuickAddOpen(false);
-          }}
-        />
-      )}
+        {/* Bottom nav — mobile only */}
+        {!isDesktop && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              background: "rgba(255,253,249,0.92)",
+              backdropFilter: "blur(14px)",
+              WebkitBackdropFilter: "blur(14px)",
+              borderTop: "1px solid #F1E8D9",
+              display: "flex",
+              zIndex: 60,
+              paddingBottom: "max(6px, env(safe-area-inset-bottom))",
+            }}
+          >
+            {TABS.map((t) => {
+              const Icon = t.icon;
+              const active = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  aria-current={active ? "page" : undefined}
+                  style={{
+                    flex: 1,
+                    background: "none",
+                    border: "none",
+                    padding: "8px 4px 5px",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 2,
+                    color: active ? "#E8622C" : "#A69C8E",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 54,
+                      height: 30,
+                      borderRadius: 15,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: active ? "#FCE9DF" : "transparent",
+                      transition: "background 0.2s",
+                    }}
+                  >
+                    <Icon size={21} strokeWidth={active ? 2.4 : 2} />
+                  </span>
+                  <span
+                    style={{ fontSize: 10.5, fontWeight: active ? 700 : 500 }}
+                  >
+                    {t.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-      {composerType && (
-        <Composer
-          type={composerType}
-          onClose={() => setComposerType(null)}
-          onAddEvent={addEvent}
-          onAddTask={addTask}
-          onAddPost={addPost}
-          initialDate={composerDate}
-          initialParticipants={composerParticipants}
-          initialPostType={composerPostType}
-          existingEvents={events}
-        />
-      )}
+        {quickAddOpen && (
+          <QuickAddSheet
+            onClose={() => setQuickAddOpen(false)}
+            onSelect={(type) => {
+              openComposerFor(type);
+              setQuickAddOpen(false);
+            }}
+          />
+        )}
 
-      {historyModal && (
-        <EventDetailModal
-          event={historyModal}
-          tasks={expandedTasks}
-          onToggleTask={toggleTask}
-          onClose={() => setHistoryModal(null)}
-        />
-      )}
+        {composerType && (
+          <Composer
+            type={composerType}
+            onClose={() => setComposerType(null)}
+            onAddEvent={addEvent}
+            onAddTask={addTask}
+            onAddPost={addPost}
+            initialDate={composerDate}
+            initialParticipants={composerParticipants}
+            initialPostType={composerPostType}
+            existingEvents={events}
+          />
+        )}
 
-      {searchOpen && (
-        <SearchOverlay
-          onClose={() => setSearchOpen(false)}
-          events={sortedUpcomingEvents}
-          tasks={expandedTasks}
-          posts={posts}
-          onOpenEvent={(e) => {
-            setSearchOpen(false);
-            setHistoryModal(e);
-          }}
-        />
-      )}
+        {historyModal && (
+          <EventDetailModal
+            event={historyModal}
+            tasks={expandedTasks}
+            onToggleTask={toggleTask}
+            onClose={() => setHistoryModal(null)}
+          />
+        )}
 
-      {settingsOpen && (
-        <SettingsScreen
-          onClose={() => setSettingsOpen(false)}
-          familyName={familyName}
-          onRenameFamily={renameFamily}
-          online={online}
-          onToggleOffline={() => setOnline((o) => !o)}
-        />
-      )}
-    </div>
+        {searchOpen && (
+          <SearchOverlay
+            onClose={() => setSearchOpen(false)}
+            events={sortedUpcomingEvents}
+            tasks={expandedTasks}
+            posts={posts}
+            onOpenEvent={(e) => {
+              setSearchOpen(false);
+              setHistoryModal(e);
+            }}
+          />
+        )}
+
+        {settingsScreen && (
+          <SettingsScreen
+            initialScreen={settingsScreen}
+            onClose={() => setSettingsScreen(null)}
+            familyName={familyName}
+            inviteCode={inviteCode}
+            currentUserId={currentUser}
+            onRenameFamily={renameFamily}
+            onRegenerateInviteCode={handleRegenerateInviteCode}
+            onAddMember={handleAddMember}
+            onUpdateMember={handleUpdateMember}
+            onDeleteMember={handleDeleteMember}
+            onSignOut={handleSignOut}
+          />
+        )}
+
+        {addChildModalOpen && (
+          <MemberModal
+            defaultIsChild={true}
+            onClose={() => setAddChildModalOpen(false)}
+            onSave={handleAddMember}
+          />
+        )}
+      </div>
+    </MembersProvider>
   );
 }
+
+const mobileMenuItemStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  width: "100%",
+  background: "transparent",
+  border: "none",
+  borderRadius: 10,
+  padding: "8px 10px",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 600,
+  color: "#2B2622",
+  textAlign: "left",
+};

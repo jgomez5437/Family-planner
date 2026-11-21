@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
-import { toggleTaskRecord } from "@/db/repository";
+import { getAuthenticatedSession, toggleTaskRecord } from "@/db/repository";
 
 export async function PATCH(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const session = await getAuthenticatedSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const { id } = await context.params;
   const decodedId = decodeURIComponent(id);
-  const body = await request.json();
-  const updated = await toggleTaskRecord(decodedId, body.currentUser || "mom");
+  const updated = await toggleTaskRecord(
+    session.familyId,
+    decodedId,
+    session.member.id
+  );
   if (!updated) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }

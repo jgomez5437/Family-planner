@@ -5,11 +5,11 @@ import { Camera, X } from "lucide-react";
 import {
   btnStyle,
   inputStyle,
-  MEMBERS,
   pillStyle,
   TASK_CATEGORIES,
 } from "@/lib/constants";
 import { todayISO } from "@/lib/dates";
+import { useMembers } from "@/components/MembersContext";
 import type { FamilyEvent, FamilyTask, MemberId } from "@/types/family";
 import {
   CategoryPicker,
@@ -40,6 +40,7 @@ export function Composer({
   initialParticipants?: MemberId[];
   initialPostType?: string;
 }) {
+  const { members } = useMembers();
   const isAppointment = type === "appointment";
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(initialDate || todayISO(0));
@@ -319,7 +320,7 @@ export function Composer({
             <button onClick={() => setAssignedTo("")} style={pillStyle(assignedTo === "")}>
               Unassigned
             </button>
-            {MEMBERS.map((m) => (
+            {members.map((m) => (
               <button
                 key={m.id}
                 onClick={() => setAssignedTo(m.id)}
