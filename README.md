@@ -57,4 +57,4 @@ Open the app, create your first account and family household, and invite other f
 
 1. Import this repository into **Vercel**.
 2. In your Vercel project dashboard, go to **Storage** → **Connect Store** → **Neon Postgres** (this automatically sets `DATABASE_URL` in your Vercel environment).
-3. Run `npx drizzle-kit push` locally (or add `drizzle-kit push && next build` as your build command) to create the tables in Neon.
+3. Deploy! The build script (`npm run build`) automatically cleans up any legacy sample rows and runs `drizzle-kit push --force` whenever `DATABASE_URL` is configured.
