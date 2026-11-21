@@ -7,11 +7,15 @@ import {
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
   Copy,
+  Link2,
   LogOut,
+  Mail,
+  MessageSquare,
   Monitor,
   Moon,
   Pencil,
   RefreshCw,
+  Share2,
   Sun,
   User,
   UserPlus,
@@ -78,7 +82,9 @@ export function SettingsScreen({
     if (canSaveName) onRenameFamily(trimmedName);
   }
 
-  const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [showShareFallback, setShowShareFallback] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [memberModalState, setMemberModalState] = useState<
     { mode: "add" } | { mode: "edit"; member: Member } | null
@@ -127,18 +133,75 @@ export function SettingsScreen({
   });
   const [appearance, setAppearance] = useState("system");
 
-  async function copyInviteCode() {
+  function getInviteLink(): string {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "";
+    return `${origin}/?invite=${encodeURIComponent(inviteCode)}`;
+  }
+
+  function getShareMessage(): string {
+    return `Join ${familyName} on Family Planner! Tap this link to create your account (the invite code is already included):`;
+  }
+
+  async function copyText(text: string): Promise<boolean> {
     try {
-      await navigator.clipboard.writeText(inviteCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2200);
+      await navigator.clipboard.writeText(text);
+      return true;
     } catch {
-      /* clipboard blocked */
+      try {
+        const el = document.createElement("textarea");
+        el.value = text;
+        el.setAttribute("readonly", "");
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(el);
+        return ok;
+      } catch {
+        return false;
+      }
     }
+  }
+
+  async function copyInviteCode() {
+    if (await copyText(inviteCode)) {
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2200);
+    }
+  }
+
+  async function copyInviteLink() {
+    if (await copyText(getInviteLink())) {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2200);
+    }
+  }
+
+  async function handleSendInviteLink() {
+    const url = getInviteLink();
+    const title = `Join ${familyName} on Family Planner`;
+    const text = getShareMessage();
+
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title, text, url });
+        return;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    setShowShareFallback((prev) => !prev);
   }
 
   async function handleRegenerateCode() {
     setRegenerating(true);
+    setCopiedCode(false);
+    setCopiedLink(false);
     await onRegenerateInviteCode();
     setRegenerating(false);
   }
@@ -325,7 +388,7 @@ export function SettingsScreen({
               <span style={{ flexShrink: 0 }}>{editingName.length}/32</span>
             </div>
 
-            <FieldLabel>Family Invite Code</FieldLabel>
+            <FieldLabel>Invite Family Members</FieldLabel>
             <div
               style={{
                 background: "#fff",
@@ -338,74 +401,249 @@ export function SettingsScreen({
             >
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
+                  fontSize: 12.5,
+                  color: "#6B6259",
+                  lineHeight: 1.4,
+                  marginBottom: 12,
+                }}
+              >
+                Send an invite link so family members can tap it to create an
+                account and join <strong>{familyName}</strong> automatically —
+                no code entry needed.
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
                   gap: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={handleSendInviteLink}
+                  style={{
+                    border: "none",
+                    background: "#E8622C",
+                    color: "#fff",
+                    borderRadius: 11,
+                    padding: "10px 12px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    boxShadow: "0 3px 10px rgba(232,98,44,0.24)",
+                  }}
+                >
+                  <Share2 size={14} /> Send Link
+                </button>
+                <button
+                  type="button"
+                  onClick={copyInviteLink}
+                  style={{
+                    border: "1.5px solid #EFE4D2",
+                    background: copiedLink ? "#E4F1EC" : "#FFF9F0",
+                    color: copiedLink ? "#155C4A" : "#2B2622",
+                    borderRadius: 11,
+                    padding: "10px 12px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                  }}
+                >
+                  {copiedLink ? <Check size={14} /> : <Link2 size={14} />}
+                  {copiedLink ? "Link Copied" : "Copy Link"}
+                </button>
+              </div>
+
+              {showShareFallback && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: 10,
+                    borderRadius: 11,
+                    background: "#FFF9F0",
+                    border: "1px solid #EFE4D2",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#8A7F70",
+                      marginBottom: 8,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Send invite link via
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 1fr",
+                      gap: 6,
+                    }}
+                  >
+                    <a
+                      href={`sms:?&body=${encodeURIComponent(
+                        `${getShareMessage()} ${getInviteLink()}`
+                      )}`}
+                      style={{
+                        textDecoration: "none",
+                        border: "1px solid #EFE4D2",
+                        background: "#fff",
+                        color: "#2B2622",
+                        borderRadius: 9,
+                        padding: "8px 6px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 5,
+                      }}
+                    >
+                      <MessageSquare size={13} color="#1F6F5C" /> Text
+                    </a>
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(
+                        `${getShareMessage()} ${getInviteLink()}`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        textDecoration: "none",
+                        border: "1px solid #EFE4D2",
+                        background: "#fff",
+                        color: "#2B2622",
+                        borderRadius: 9,
+                        padding: "8px 6px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 5,
+                      }}
+                    >
+                      <Share2 size={13} color="#25D366" /> WhatsApp
+                    </a>
+                    <a
+                      href={`mailto:?subject=${encodeURIComponent(
+                        `Join ${familyName} on Family Planner`
+                      )}&body=${encodeURIComponent(
+                        `${getShareMessage()}\n\n${getInviteLink()}`
+                      )}`}
+                      style={{
+                        textDecoration: "none",
+                        border: "1px solid #EFE4D2",
+                        background: "#fff",
+                        color: "#2B2622",
+                        borderRadius: 9,
+                        padding: "8px 6px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 5,
+                      }}
+                    >
+                      <Mail size={13} color="#E8622C" /> Email
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              <div
+                style={{
+                  borderTop: "1px solid #F3ECE0",
+                  marginTop: 12,
+                  paddingTop: 12,
                 }}
               >
                 <div
                   style={{
-                    fontFamily: "monospace",
-                    fontSize: 18,
-                    fontWeight: 800,
-                    letterSpacing: 1.5,
-                    color: "#2B2622",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#8A7F70",
+                    marginBottom: 6,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
                   }}
                 >
-                  {inviteCode}
+                  Or copy invite code
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button
-                    onClick={copyInviteCode}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                  }}
+                >
+                  <div
                     style={{
-                      border: "1.5px solid #EFE4D2",
-                      background: copied ? "#E4F1EC" : "#FFF9F0",
-                      color: copied ? "#155C4A" : "#2B2622",
-                      borderRadius: 10,
-                      padding: "7px 11px",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 5,
+                      fontFamily: "monospace",
+                      fontSize: 17,
+                      fontWeight: 800,
+                      letterSpacing: 1.5,
+                      color: "#2B2622",
                     }}
                   >
-                    {copied ? <Check size={13} /> : <Copy size={13} />}
-                    {copied ? "Copied" : "Copy"}
-                  </button>
-                  <button
-                    onClick={handleRegenerateCode}
-                    disabled={regenerating}
-                    title="Generate a new invite code"
-                    aria-label="Generate a new invite code"
-                    style={{
-                      border: "1.5px solid #EFE4D2",
-                      background: "#fff",
-                      color: "#6B6259",
-                      borderRadius: 10,
-                      padding: "7px 9px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <RefreshCw size={13} />
-                  </button>
+                    {inviteCode}
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={copyInviteCode}
+                      style={{
+                        border: "1.5px solid #EFE4D2",
+                        background: copiedCode ? "#E4F1EC" : "#FFF9F0",
+                        color: copiedCode ? "#155C4A" : "#2B2622",
+                        borderRadius: 10,
+                        padding: "7px 11px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                      }}
+                    >
+                      {copiedCode ? <Check size={13} /> : <Copy size={13} />}
+                      {copiedCode ? "Copied" : "Copy Code"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRegenerateCode}
+                      disabled={regenerating}
+                      title="Generate a new invite code"
+                      aria-label="Generate a new invite code"
+                      style={{
+                        border: "1.5px solid #EFE4D2",
+                        background: "#fff",
+                        color: "#6B6259",
+                        borderRadius: 10,
+                        padding: "7px 9px",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <RefreshCw size={13} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "#8A7F70",
-                  marginTop: 8,
-                  lineHeight: 1.4,
-                }}
-              >
-                Share this code with your partner or family members. They can enter it
-                when creating their account to join {familyName}.
               </div>
             </div>
 

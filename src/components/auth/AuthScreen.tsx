@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
-import { ArrowRight, KeyRound, LogIn, UserPlus, Users } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  KeyRound,
+  LogIn,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import {
   btnStyle,
   CARD_SHADOW,
@@ -14,11 +21,25 @@ import { AvatarPicker, AvatarPreview } from "@/components/ui/AvatarPicker";
 
 export function AuthScreen({
   onAuthenticated,
+  initialInviteCode = null,
+  invitedFamilyName = null,
+  initialInviteInvalid = false,
 }: {
   onAuthenticated: (state: FamilyStatePayload) => void;
+  initialInviteCode?: string | null;
+  invitedFamilyName?: string | null;
+  initialInviteInvalid?: boolean;
 }) {
-  const [tab, setTab] = useState<"login" | "register">("login");
-  const [familyMode, setFamilyMode] = useState<"create" | "join">("create");
+  const normalizedInitialInvite = (initialInviteCode || "").trim().toUpperCase();
+  const [tab, setTab] = useState<"login" | "register">(
+    normalizedInitialInvite ? "register" : "login"
+  );
+  const [familyMode, setFamilyMode] = useState<"create" | "join">(
+    normalizedInitialInvite ? "join" : "create"
+  );
+  const [inviteLinkActive, setInviteLinkActive] = useState<boolean>(
+    Boolean(normalizedInitialInvite) && !initialInviteInvalid
+  );
 
   // Login fields
   const [loginEmail, setLoginEmail] = useState("");
@@ -33,10 +54,28 @@ export function AuthScreen({
   const [avatarProcessing, setAvatarProcessing] = useState(false);
   const [paletteIdx, setPaletteIdx] = useState(0);
   const [familyName, setFamilyName] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
+  const [inviteCode, setInviteCode] = useState(normalizedInitialInvite);
 
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    initialInviteInvalid
+      ? "This invite link is no longer valid or has expired. Ask a family member for a new link or enter a valid code below."
+      : null
+  );
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (normalizedInitialInvite || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const urlCode = (params.get("invite") || params.get("code") || "")
+      .trim()
+      .toUpperCase();
+    if (urlCode) {
+      setInviteCode(urlCode);
+      setFamilyMode("join");
+      setTab("register");
+      setInviteLinkActive(true);
+    }
+  }, [normalizedInitialInvite]);
 
   const selectedPalette =
     MEMBER_COLOR_PALETTES[paletteIdx] || MEMBER_COLOR_PALETTES[0];
@@ -91,6 +130,9 @@ export function AuthScreen({
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 404 && familyMode === "join") {
+          setInviteLinkActive(false);
+        }
         setError(data.error || "Could not create account.");
         return;
       }
@@ -319,6 +361,72 @@ export function AuthScreen({
             </form>
           ) : (
             <form onSubmit={handleRegister}>
+              {inviteLinkActive && familyMode === "join" && inviteCode.trim() && (
+                <div
+                  style={{
+                    background: "#E4F1EC",
+                    border: "1px solid #C2E0D5",
+                    borderRadius: 14,
+                    padding: "11px 13px",
+                    marginBottom: 14,
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                  }}
+                >
+                  <CheckCircle2
+                    size={18}
+                    color="#155C4A"
+                    style={{ flexShrink: 0, marginTop: 1 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#155C4A",
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {invitedFamilyName
+                        ? `You're invited to join ${invitedFamilyName}`
+                        : "You're joining via an invite link"}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: "#2B6B5A",
+                        marginTop: 3,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      Invite code{" "}
+                      <strong style={{ fontFamily: "monospace" }}>
+                        {inviteCode.trim().toUpperCase()}
+                      </strong>{" "}
+                      is already applied — just create your account below.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInviteLinkActive(false)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#155C4A",
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                      padding: 0,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
+
               {/* Live Avatar Preview */}
               <div
                 style={{
@@ -347,9 +455,11 @@ export function AuthScreen({
                   <div style={{ fontSize: 12, color: "#8A7F70" }}>
                     {familyMode === "create"
                       ? familyName.trim() || "Starting a new family"
-                      : inviteCode.trim()
-                        ? `Joining ${inviteCode.trim().toUpperCase()}`
-                        : "Joining an existing family"}
+                      : inviteLinkActive && invitedFamilyName
+                        ? `Joining ${invitedFamilyName}`
+                        : inviteCode.trim()
+                          ? `Joining ${inviteCode.trim().toUpperCase()}`
+                          : "Joining an existing family"}
                   </div>
                 </div>
               </div>
@@ -424,100 +534,109 @@ export function AuthScreen({
                 ))}
               </div>
 
-              {/* Family setup mode */}
-              <label style={{ ...labelStyle, marginTop: 14 }}>Household</label>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 8,
-                  marginBottom: 10,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setFamilyMode("create")}
-                  style={{
-                    border: `1.5px solid ${
-                      familyMode === "create" ? "#E8622C" : "#EFE4D2"
-                    }`,
-                    background: familyMode === "create" ? "#FCE9DF" : "#fff",
-                    color: familyMode === "create" ? "#B24A1D" : "#6B6259",
-                    borderRadius: 12,
-                    padding: "9px 10px",
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                  }}
-                >
-                  <Users size={14} /> New Family
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFamilyMode("join")}
-                  style={{
-                    border: `1.5px solid ${
-                      familyMode === "join" ? "#E8622C" : "#EFE4D2"
-                    }`,
-                    background: familyMode === "join" ? "#FCE9DF" : "#fff",
-                    color: familyMode === "join" ? "#B24A1D" : "#6B6259",
-                    borderRadius: 12,
-                    padding: "9px 10px",
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                  }}
-                >
-                  <KeyRound size={14} /> Join w/ Code
-                </button>
-              </div>
-
-              {familyMode === "create" ? (
+              {/* Family setup mode (hidden when joining via invite link unless user clicks Change) */}
+              {!inviteLinkActive && (
                 <>
-                  <label style={labelStyle}>Family Name</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={32}
-                    placeholder="e.g. The Gomez Family"
-                    value={familyName}
-                    onChange={(e) => setFamilyName(e.target.value)}
-                    style={inputStyle}
-                  />
-                </>
-              ) : (
-                <>
-                  <label style={labelStyle}>Family Invite Code</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. FAM-7X9K2P"
-                    value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                    style={{
-                      ...inputStyle,
-                      textTransform: "uppercase",
-                      letterSpacing: 1,
-                      fontWeight: 700,
-                    }}
-                  />
+                  <label style={{ ...labelStyle, marginTop: 14 }}>
+                    Household
+                  </label>
                   <div
                     style={{
-                      fontSize: 11.5,
-                      color: "#8A7F70",
-                      marginTop: 5,
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 8,
+                      marginBottom: 10,
                     }}
                   >
-                    Ask a family member for their invite code in Settings → Family.
+                    <button
+                      type="button"
+                      onClick={() => setFamilyMode("create")}
+                      style={{
+                        border: `1.5px solid ${
+                          familyMode === "create" ? "#E8622C" : "#EFE4D2"
+                        }`,
+                        background: familyMode === "create" ? "#FCE9DF" : "#fff",
+                        color: familyMode === "create" ? "#B24A1D" : "#6B6259",
+                        borderRadius: 12,
+                        padding: "9px 10px",
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Users size={14} /> New Family
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFamilyMode("join")}
+                      style={{
+                        border: `1.5px solid ${
+                          familyMode === "join" ? "#E8622C" : "#EFE4D2"
+                        }`,
+                        background: familyMode === "join" ? "#FCE9DF" : "#fff",
+                        color: familyMode === "join" ? "#B24A1D" : "#6B6259",
+                        borderRadius: 12,
+                        padding: "9px 10px",
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <KeyRound size={14} /> Join w/ Code
+                    </button>
                   </div>
+
+                  {familyMode === "create" ? (
+                    <>
+                      <label style={labelStyle}>Family Name</label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={32}
+                        placeholder="e.g. The Gomez Family"
+                        value={familyName}
+                        onChange={(e) => setFamilyName(e.target.value)}
+                        style={inputStyle}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <label style={labelStyle}>Family Invite Code</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. FAM-7X9K2P"
+                        value={inviteCode}
+                        onChange={(e) =>
+                          setInviteCode(e.target.value.toUpperCase())
+                        }
+                        style={{
+                          ...inputStyle,
+                          textTransform: "uppercase",
+                          letterSpacing: 1,
+                          fontWeight: 700,
+                        }}
+                      />
+                      <div
+                        style={{
+                          fontSize: 11.5,
+                          color: "#8A7F70",
+                          marginTop: 5,
+                        }}
+                      >
+                        Ask a family member for their invite code or invite link
+                        in Settings → Family.
+                      </div>
+                    </>
+                  )}
                 </>
               )}
 
@@ -544,7 +663,9 @@ export function AuthScreen({
                     ? "Processing photo..."
                     : familyMode === "create"
                       ? "Create Family & Continue"
-                      : "Join Family & Continue"}
+                      : inviteLinkActive && invitedFamilyName
+                        ? `Join ${invitedFamilyName}`
+                        : "Join Family & Continue"}
                 {!submitting && !avatarProcessing && <ArrowRight size={16} />}
               </button>
             </form>

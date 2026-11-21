@@ -580,6 +580,39 @@ export async function loginAccount(
   return { ok: true, token, expiresAt, state };
 }
 
+export async function getFamilyPreviewByInviteCode(
+  rawCode: string
+): Promise<{ id: string; name: string; inviteCode: string } | null> {
+  const code = rawCode.trim().toUpperCase();
+  if (!code) return null;
+
+  const db = await getReadyDb();
+  if (db) {
+    try {
+      const rows = await db
+        .select({
+          id: families.id,
+          name: families.name,
+          inviteCode: families.inviteCode,
+        })
+        .from(families)
+        .where(eq(families.inviteCode, code))
+        .limit(1);
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  const store = getMemoryStore();
+  const found = [...store.families.values()].find(
+    (f) => f.inviteCode.toUpperCase() === code
+  );
+  return found
+    ? { id: found.id, name: found.name, inviteCode: found.inviteCode }
+    : null;
+}
+
 /* ---------------- Family State Loader ---------------- */
 
 export async function getFamilyState(
