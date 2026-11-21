@@ -7,7 +7,11 @@ try {
   // dotenv is optional when env vars are injected by Vercel
 }
 
-const url = process.env.DATABASE_URL;
+const url =
+  process.env.DATABASE_URL_UNPOOLED ||
+  process.env.POSTGRES_URL_NON_POOLING ||
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL;
 const isConfigured = Boolean(
   url &&
     url.startsWith("postgres") &&
@@ -22,7 +26,7 @@ if (!isConfigured) {
   process.exit(0);
 }
 
-console.log("[db:sync] Cleaning up any legacy sample data before schema push...");
+console.log("[db:sync] Applying idempotent schema updates and cleaning legacy data...");
 const sql = neon(url);
 
 await sql`
@@ -37,10 +41,12 @@ await sql`
   END $$;
 `;
 
+await sql`ALTER TABLE IF EXISTS "members" ADD COLUMN IF NOT EXISTS "avatar_url" text`;
+
 console.log("[db:sync] Pushing Drizzle schema to Neon Postgres...");
 const result = spawnSync("npx", ["drizzle-kit", "push", "--force"], {
   stdio: "inherit",
-  env: process.env,
+  env: { ...process.env, DATABASE_URL: url },
 });
 
 if (result.status !== 0) {
