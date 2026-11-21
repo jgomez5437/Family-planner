@@ -10,6 +10,7 @@ import {
   MEMBER_EMOJIS,
 } from "@/lib/constants";
 import type { FamilyStatePayload } from "@/types/family";
+import { AvatarPicker, AvatarPreview } from "@/components/ui/AvatarPicker";
 
 export function AuthScreen({
   onAuthenticated,
@@ -28,6 +29,8 @@ export function AuthScreen({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [emoji, setEmoji] = useState<string>(MEMBER_EMOJIS[0]);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarProcessing, setAvatarProcessing] = useState(false);
   const [paletteIdx, setPaletteIdx] = useState(0);
   const [familyName, setFamilyName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
@@ -66,6 +69,7 @@ export function AuthScreen({
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+    if (avatarProcessing) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -77,6 +81,7 @@ export function AuthScreen({
           email,
           password,
           emoji,
+          avatarUrl,
           color: selectedPalette.color,
           light: selectedPalette.light,
           mode: familyMode,
@@ -327,22 +332,14 @@ export function AuthScreen({
                   marginBottom: 14,
                 }}
               >
-                <div
-                  style={{
-                    width: 46,
-                    height: 46,
-                    borderRadius: "50%",
-                    background: `linear-gradient(145deg, ${selectedPalette.light}, #fff)`,
-                    border: `2px solid ${selectedPalette.color}`,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 24,
-                    flexShrink: 0,
-                  }}
-                >
-                  {emoji}
-                </div>
+                <AvatarPreview
+                  emoji={emoji}
+                  avatarUrl={avatarUrl}
+                  color={selectedPalette.color}
+                  light={selectedPalette.light}
+                  size={46}
+                  name={name.trim() || "Your Profile"}
+                />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700 }}>
                     {name.trim() || "Your Profile"}
@@ -391,35 +388,17 @@ export function AuthScreen({
                 style={inputStyle}
               />
 
-              {/* Emoji & Color Picker */}
+              {/* Avatar / Photo Picker */}
               <label style={{ ...labelStyle, marginTop: 14 }}>Avatar</label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {MEMBER_EMOJIS.map((em) => (
-                  <button
-                    key={em}
-                    type="button"
-                    onClick={() => setEmoji(em)}
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 10,
-                      border:
-                        emoji === em
-                          ? `2px solid ${selectedPalette.color}`
-                          : "1.5px solid #EFE4D2",
-                      background:
-                        emoji === em ? selectedPalette.light : "#fff",
-                      fontSize: 17,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {em}
-                  </button>
-                ))}
-              </div>
+              <AvatarPicker
+                emoji={emoji}
+                avatarUrl={avatarUrl}
+                color={selectedPalette.color}
+                light={selectedPalette.light}
+                onEmojiChange={setEmoji}
+                onAvatarUrlChange={setAvatarUrl}
+                onProcessingChange={setAvatarProcessing}
+              />
 
               <label style={{ ...labelStyle, marginTop: 12 }}>Color</label>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -544,7 +523,7 @@ export function AuthScreen({
 
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || avatarProcessing}
                 style={{
                   ...btnStyle,
                   width: "100%",
@@ -555,16 +534,18 @@ export function AuthScreen({
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 8,
-                  opacity: submitting ? 0.65 : 1,
+                  opacity: submitting || avatarProcessing ? 0.65 : 1,
                   boxShadow: "0 4px 14px rgba(232,98,44,0.3)",
                 }}
               >
                 {submitting
                   ? "Creating account..."
-                  : familyMode === "create"
-                    ? "Create Family & Continue"
-                    : "Join Family & Continue"}
-                {!submitting && <ArrowRight size={16} />}
+                  : avatarProcessing
+                    ? "Processing photo..."
+                    : familyMode === "create"
+                      ? "Create Family & Continue"
+                      : "Join Family & Continue"}
+                {!submitting && !avatarProcessing && <ArrowRight size={16} />}
               </button>
             </form>
           )}

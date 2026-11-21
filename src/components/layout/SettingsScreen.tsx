@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Bell,
   Check,
@@ -25,10 +25,10 @@ import {
   iconBtnStyle,
   inputStyle,
   MEMBER_COLOR_PALETTES,
-  MEMBER_EMOJIS,
 } from "@/lib/constants";
 import { useMembers } from "@/components/MembersContext";
 import type { Member, MemberId } from "@/types/family";
+import { AvatarPicker, AvatarPreview } from "@/components/ui/AvatarPicker";
 import { AvatarDot, FieldLabel } from "@/components/ui/Primitives";
 import { MemberModal, type MemberFormData } from "./MemberModal";
 
@@ -88,6 +88,10 @@ export function SettingsScreen({
   const [accountName, setAccountName] = useState(me.name);
   const [accountEmail, setAccountEmail] = useState(me.email || "");
   const [accountEmoji, setAccountEmoji] = useState(me.emoji);
+  const [accountAvatarUrl, setAccountAvatarUrl] = useState<string | null>(
+    me.avatarUrl || null
+  );
+  const [accountAvatarProcessing, setAccountAvatarProcessing] = useState(false);
   const [accountPaletteIdx, setAccountPaletteIdx] = useState(
     Math.max(
       0,
@@ -100,6 +104,19 @@ export function SettingsScreen({
     tone: "ok" | "error";
     text: string;
   } | null>(null);
+
+  useEffect(() => {
+    setAccountName(me.name);
+    setAccountEmail(me.email || "");
+    setAccountEmoji(me.emoji);
+    setAccountAvatarUrl(me.avatarUrl || null);
+    setAccountPaletteIdx(
+      Math.max(
+        0,
+        MEMBER_COLOR_PALETTES.findIndex((p) => p.color === me.color)
+      )
+    );
+  }, [me.name, me.email, me.emoji, me.avatarUrl, me.color]);
 
   const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({
     Events: true,
@@ -128,6 +145,7 @@ export function SettingsScreen({
 
   async function handleSaveAccount(e: React.FormEvent) {
     e.preventDefault();
+    if (accountAvatarProcessing) return;
     setAccountMessage(null);
     if (!accountName.trim()) {
       setAccountMessage({ tone: "error", text: "Name cannot be empty." });
@@ -147,6 +165,7 @@ export function SettingsScreen({
       name: accountName.trim(),
       email: accountEmail.trim() || null,
       emoji: accountEmoji,
+      avatarUrl: accountAvatarUrl,
       color: palette.color,
       light: palette.light,
       password: newPassword || undefined,
@@ -534,22 +553,24 @@ export function SettingsScreen({
                 marginBottom: 16,
               }}
             >
-              <div
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: "50%",
-                  background: `linear-gradient(145deg, ${(MEMBER_COLOR_PALETTES[accountPaletteIdx] || MEMBER_COLOR_PALETTES[0]).light}, #fff)`,
-                  border: `2px solid ${(MEMBER_COLOR_PALETTES[accountPaletteIdx] || MEMBER_COLOR_PALETTES[0]).color}`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 24,
-                  flexShrink: 0,
-                }}
-              >
-                {accountEmoji}
-              </div>
+              <AvatarPreview
+                emoji={accountEmoji}
+                avatarUrl={accountAvatarUrl}
+                color={
+                  (
+                    MEMBER_COLOR_PALETTES[accountPaletteIdx] ||
+                    MEMBER_COLOR_PALETTES[0]
+                  ).color
+                }
+                light={
+                  (
+                    MEMBER_COLOR_PALETTES[accountPaletteIdx] ||
+                    MEMBER_COLOR_PALETTES[0]
+                  ).light
+                }
+                size={48}
+                name={accountName || me.name}
+              />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>
                   {accountName || me.name}
@@ -590,33 +611,25 @@ export function SettingsScreen({
             />
 
             <FieldLabel style={{ marginTop: 12 }}>Avatar</FieldLabel>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {MEMBER_EMOJIS.map((em) => (
-                <button
-                  key={em}
-                  type="button"
-                  onClick={() => setAccountEmoji(em)}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    border:
-                      accountEmoji === em
-                        ? `2px solid ${(MEMBER_COLOR_PALETTES[accountPaletteIdx] || MEMBER_COLOR_PALETTES[0]).color}`
-                        : "1.5px solid #EFE4D2",
-                    background:
-                      accountEmoji === em
-                        ? (MEMBER_COLOR_PALETTES[accountPaletteIdx] ||
-                            MEMBER_COLOR_PALETTES[0]).light
-                        : "#fff",
-                    fontSize: 18,
-                    cursor: "pointer",
-                  }}
-                >
-                  {em}
-                </button>
-              ))}
-            </div>
+            <AvatarPicker
+              emoji={accountEmoji}
+              avatarUrl={accountAvatarUrl}
+              color={
+                (
+                  MEMBER_COLOR_PALETTES[accountPaletteIdx] ||
+                  MEMBER_COLOR_PALETTES[0]
+                ).color
+              }
+              light={
+                (
+                  MEMBER_COLOR_PALETTES[accountPaletteIdx] ||
+                  MEMBER_COLOR_PALETTES[0]
+                ).light
+              }
+              onEmojiChange={setAccountEmoji}
+              onAvatarUrlChange={setAccountAvatarUrl}
+              onProcessingChange={setAccountAvatarProcessing}
+            />
 
             <FieldLabel style={{ marginTop: 12 }}>Color</FieldLabel>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -659,17 +672,21 @@ export function SettingsScreen({
 
             <button
               type="submit"
-              disabled={accountSaving}
+              disabled={accountSaving || accountAvatarProcessing}
               style={{
                 ...btnStyle,
                 width: "100%",
                 marginTop: 18,
                 background: "#E8622C",
                 color: "#fff",
-                opacity: accountSaving ? 0.65 : 1,
+                opacity: accountSaving || accountAvatarProcessing ? 0.65 : 1,
               }}
             >
-              {accountSaving ? "Saving..." : "Save Changes"}
+              {accountSaving
+                ? "Saving..."
+                : accountAvatarProcessing
+                  ? "Processing photo..."
+                  : "Save Changes"}
             </button>
 
             <button

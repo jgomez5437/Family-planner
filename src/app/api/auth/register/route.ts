@@ -1,15 +1,25 @@
 import { NextResponse } from "next/server";
 import { setSessionCookie } from "@/lib/auth";
+import { validateAvatarUrl } from "@/lib/imageValidation";
 import { registerAccount } from "@/db/repository";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const avatarCheck = validateAvatarUrl(body.avatarUrl);
+    if (!avatarCheck.ok) {
+      return NextResponse.json(
+        { error: avatarCheck.error },
+        { status: avatarCheck.status }
+      );
+    }
+
     const result = await registerAccount({
       name: String(body.name || ""),
       email: String(body.email || ""),
       password: String(body.password || ""),
       emoji: typeof body.emoji === "string" ? body.emoji : undefined,
+      avatarUrl: avatarCheck.value ?? null,
       color: typeof body.color === "string" ? body.color : undefined,
       light: typeof body.light === "string" ? body.light : undefined,
       mode: body.mode === "join" ? "join" : "create",

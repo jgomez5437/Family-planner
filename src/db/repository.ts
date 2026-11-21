@@ -93,6 +93,7 @@ function toPublicMember(m: {
   id: string;
   name: string;
   emoji: string;
+  avatarUrl?: string | null;
   color: string;
   light: string;
   isChild?: boolean | null;
@@ -103,6 +104,7 @@ function toPublicMember(m: {
     id: m.id,
     name: m.name,
     emoji: m.emoji,
+    avatarUrl: m.avatarUrl || null,
     color: m.color,
     light: m.light,
     isChild: Boolean(m.isChild),
@@ -248,6 +250,7 @@ export interface RegisterAccountInput {
   email: string;
   password: string;
   emoji?: string;
+  avatarUrl?: string | null;
   color?: string;
   light?: string;
   mode: "create" | "join";
@@ -283,6 +286,7 @@ export async function registerAccount(
   const color = input.color || palette.color;
   const light = input.light || palette.light;
   const emoji = (input.emoji || "🧑").trim() || "🧑";
+  const avatarUrl = input.avatarUrl?.trim() ? input.avatarUrl.trim() : null;
   const passwordHash = hashPassword(password);
 
   const db = getDb();
@@ -328,6 +332,7 @@ export async function registerAccount(
         familyId,
         name,
         emoji,
+        avatarUrl,
         color,
         light,
         isChild: false,
@@ -369,6 +374,7 @@ export async function registerAccount(
           .set({
             name,
             emoji,
+            avatarUrl,
             color,
             light,
             passwordHash,
@@ -381,6 +387,7 @@ export async function registerAccount(
           familyId,
           name,
           emoji,
+          avatarUrl,
           color,
           light,
           isChild: false,
@@ -436,6 +443,7 @@ export async function registerAccount(
           familyId,
           name,
           emoji,
+          avatarUrl,
           color,
           light,
           isChild: false,
@@ -480,6 +488,7 @@ export async function registerAccount(
       memberId = invitedMatch.id;
       invitedMatch.name = name;
       invitedMatch.emoji = emoji;
+      invitedMatch.avatarUrl = avatarUrl;
       invitedMatch.color = color;
       invitedMatch.light = light;
       invitedMatch.passwordHash = passwordHash;
@@ -490,6 +499,7 @@ export async function registerAccount(
         familyId: targetFamily.id,
         name,
         emoji,
+        avatarUrl,
         color,
         light,
         isChild: false,
@@ -869,6 +879,7 @@ export async function regenerateFamilyInviteCode(
 export interface AddMemberInput {
   name: string;
   emoji: string;
+  avatarUrl?: string | null;
   color: string;
   light: string;
   isChild: boolean;
@@ -884,12 +895,14 @@ export async function addFamilyMember(
   if (!name) return { ok: false, error: "Name is required." };
 
   const email = input.email?.trim() ? normalizeEmail(input.email) : null;
+  const avatarUrl = input.avatarUrl?.trim() ? input.avatarUrl.trim() : null;
   const role: MemberRole = input.isChild ? "child" : "adult";
   const id = uid("mem");
   const newMember: Member = {
     id,
     name,
     emoji: input.emoji || (input.isChild ? "🧒" : "🧑"),
+    avatarUrl,
     color: input.color || MEMBER_COLOR_PALETTES[0].color,
     light: input.light || MEMBER_COLOR_PALETTES[0].light,
     isChild: Boolean(input.isChild),
@@ -904,6 +917,7 @@ export async function addFamilyMember(
       familyId,
       name: newMember.name,
       emoji: newMember.emoji,
+      avatarUrl: newMember.avatarUrl || null,
       color: newMember.color,
       light: newMember.light,
       isChild: Boolean(newMember.isChild),
@@ -949,6 +963,7 @@ export async function addFamilyMember(
 export interface UpdateMemberInput {
   name?: string;
   emoji?: string;
+  avatarUrl?: string | null;
   color?: string;
   light?: string;
   isChild?: boolean;
@@ -1006,6 +1021,10 @@ export async function updateFamilyMember(
         ? updates.name.trim()
         : existing.name;
     const nextEmoji = updates.emoji || existing.emoji;
+    const nextAvatarUrl =
+      updates.avatarUrl !== undefined
+        ? updates.avatarUrl?.trim() || null
+        : existing.avatarUrl || null;
     const nextColor = updates.color || existing.color;
     const nextLight = updates.light || existing.light;
     const nextEmail =
@@ -1020,6 +1039,7 @@ export async function updateFamilyMember(
       .set({
         name: nextName,
         emoji: nextEmoji,
+        avatarUrl: nextAvatarUrl,
         color: nextColor,
         light: nextLight,
         isChild: nextIsChild,
@@ -1053,6 +1073,7 @@ export async function updateFamilyMember(
         id: memberId,
         name: nextName,
         emoji: nextEmoji,
+        avatarUrl: nextAvatarUrl,
         color: nextColor,
         light: nextLight,
         isChild: nextIsChild,
@@ -1087,6 +1108,9 @@ export async function updateFamilyMember(
     existing.name = updates.name.trim();
   }
   if (updates.emoji) existing.emoji = updates.emoji;
+  if (updates.avatarUrl !== undefined) {
+    existing.avatarUrl = updates.avatarUrl?.trim() || null;
+  }
   if (updates.color) existing.color = updates.color;
   if (updates.light) existing.light = updates.light;
   if (updates.isChild !== undefined) {

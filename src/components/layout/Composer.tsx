@@ -9,9 +9,11 @@ import {
   TASK_CATEGORIES,
 } from "@/lib/constants";
 import { todayISO } from "@/lib/dates";
+import { compressWallPhoto } from "@/lib/images";
 import { useMembers } from "@/components/MembersContext";
 import type { FamilyEvent, FamilyTask, MemberId } from "@/types/family";
 import {
+  AvatarDot,
   CategoryPicker,
   FieldLabel,
   MemberPicker,
@@ -34,7 +36,11 @@ export function Composer({
   onClose: () => void;
   onAddEvent: (ev: Partial<FamilyEvent>) => void;
   onAddTask: (tk: Partial<FamilyTask>) => void;
-  onAddPost: (post: { type: string; content: string; images: string[] }) => void;
+  onAddPost: (post: {
+    type: string;
+    content: string;
+    images: string[];
+  }) => Promise<string | null>;
   initialDate?: string | null;
   existingEvents?: FamilyEvent[];
   initialParticipants?: MemberId[];
@@ -62,31 +68,50 @@ export function Composer({
   const [dueTime, setDueTime] = useState("");
   const [linkedEventId, setLinkedEventId] = useState("");
   const [postImages, setPostImages] = useState<string[]>([]);
+  const [processingPhotos, setProcessingPhotos] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function toggleParticipant(id: MemberId) {
     setParticipants((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   }
 
-  function handleFiles(fileList: FileList | null) {
-    const files = Array.from(fileList || []).slice(0, 6 - postImages.length);
-    files.forEach((file) => {
-      if (!file.type.startsWith("image/")) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          setPostImages((imgs) => [...imgs, reader.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+  async function handleFiles(fileList: FileList | null) {
+    const remainingSlots = Math.max(0, 6 - postImages.length);
+    const files = Array.from(fileList || []).slice(0, remainingSlots);
+    if (files.length === 0) return;
+
+    setPostError(null);
+    setProcessingPhotos((count) => count + files.length);
+
+    const failures: string[] = [];
+    for (const file of files) {
+      try {
+        const compressed = await compressWallPhoto(file);
+        setPostImages((imgs) => (imgs.length < 6 ? [...imgs, compressed] : imgs));
+      } catch (err) {
+        failures.push(
+          err instanceof Error ? err.message : `Could not process "${file.name}".`
+        );
+      } finally {
+        setProcessingPhotos((count) => Math.max(0, count - 1));
+      }
+    }
+
+    if (failures.length > 0) {
+      setPostError(failures[0]);
+    }
   }
 
   function removeImage(i: number) {
+    setPostError(null);
     setPostImages((imgs) => imgs.filter((_, idx) => idx !== i));
   }
 
-  function submit() {
+  async function submit() {
+    if (saving || processingPhotos > 0) return;
+
     if (type === "event" || isAppointment) {
       if (!title.trim()) return;
       onAddEvent({
@@ -102,6 +127,7 @@ export function Composer({
         recurrence: recurrence === "None" ? null : recurrence,
         reminder: reminder === "None" ? null : reminder,
       });
+      onClose();
     } else if (type === "task") {
       if (!title.trim()) return;
       const linked = existingEvents?.find((e) => e.id === linkedEventId);
@@ -117,11 +143,26 @@ export function Composer({
         linkedEventId: linked ? linked.id : undefined,
         linkedEventTitle: linked ? linked.title : undefined,
       });
+      onClose();
     } else if (type === "post") {
-      if (!content.trim() && postImages.length === 0) return;
-      onAddPost({ type: postType, content, images: postImages });
+      if (!content.trim() && postImages.length === 0) {
+        setPostError("Please write a message or add a photo.");
+        return;
+      }
+      setPostError(null);
+      setSaving(true);
+      const err = await onAddPost({
+        type: postType,
+        content,
+        images: postImages,
+      });
+      setSaving(false);
+      if (err) {
+        setPostError(err);
+        return;
+      }
+      onClose();
     }
-    onClose();
   }
 
   const titles: Record<ComposerKind, string> = {
@@ -323,10 +364,17 @@ export function Composer({
             {members.map((m) => (
               <button
                 key={m.id}
+                type="button"
                 onClick={() => setAssignedTo(m.id)}
-                style={pillStyle(assignedTo === m.id)}
+                style={{
+                  ...pillStyle(assignedTo === m.id),
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
               >
-                {m.emoji} {m.name}
+                <AvatarDot id={m.id} size={18} />
+                {m.name}
               </button>
             ))}
           </div>
@@ -471,9 +519,11 @@ export function Composer({
                 </button>
               </div>
             ))}
-            {postImages.length < 6 && (
+            {postImages.length + processingPhotos < 6 && (
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={saving}
                 style={{
                   width: 64,
                   height: 64,
@@ -485,7 +535,7 @@ export function Composer({
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 3,
-                  cursor: "pointer",
+                  cursor: saving ? "default" : "pointer",
                   color: "#A69C8E",
                 }}
               >
@@ -494,19 +544,50 @@ export function Composer({
               </button>
             )}
           </div>
+          {processingPhotos > 0 && (
+            <div style={{ fontSize: 12, color: "#8A7F70", marginTop: 8 }}>
+              Optimizing {processingPhotos} photo
+              {processingPhotos === 1 ? "" : "s"}…
+            </div>
+          )}
+          {postError && (
+            <div
+              role="alert"
+              style={{
+                marginTop: 10,
+                background: "#FCE9DF",
+                border: "1px solid #F2C4AF",
+                color: "#B23A1D",
+                borderRadius: 10,
+                padding: "8px 10px",
+                fontSize: 12.5,
+                fontWeight: 600,
+              }}
+            >
+              {postError}
+            </div>
+          )}
         </>
       )}
       <button
+        type="button"
         onClick={submit}
+        disabled={saving || processingPhotos > 0}
         style={{
           ...btnStyle,
           width: "100%",
           background: "#E8622C",
           color: "#fff",
           marginTop: 18,
+          opacity: saving || processingPhotos > 0 ? 0.65 : 1,
+          cursor: saving || processingPhotos > 0 ? "default" : "pointer",
         }}
       >
-        Save
+        {saving
+          ? "Posting..."
+          : processingPhotos > 0
+            ? "Processing photos..."
+            : "Save"}
       </button>
     </ModalShell>
   );

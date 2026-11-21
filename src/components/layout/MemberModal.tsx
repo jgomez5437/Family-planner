@@ -5,14 +5,15 @@ import {
   btnStyle,
   inputStyle,
   MEMBER_COLOR_PALETTES,
-  MEMBER_EMOJIS,
 } from "@/lib/constants";
 import type { Member } from "@/types/family";
+import { AvatarPicker, AvatarPreview } from "@/components/ui/AvatarPicker";
 import { FieldLabel, ModalShell } from "@/components/ui/Primitives";
 
 export interface MemberFormData {
   name: string;
   emoji: string;
+  avatarUrl?: string | null;
   color: string;
   light: string;
   isChild: boolean;
@@ -49,6 +50,10 @@ export function MemberModal({
   const [emoji, setEmoji] = useState(
     member?.emoji || (defaultIsChild ? "🧒" : "🧑")
   );
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(
+    member?.avatarUrl || null
+  );
+  const [avatarProcessing, setAvatarProcessing] = useState(false);
   const [paletteIdx, setPaletteIdx] = useState(initialPaletteIdx);
   const [email, setEmail] = useState(member?.email || "");
   const [saving, setSaving] = useState(false);
@@ -59,6 +64,7 @@ export function MemberModal({
     MEMBER_COLOR_PALETTES[paletteIdx] || MEMBER_COLOR_PALETTES[0];
 
   async function handleSave() {
+    if (avatarProcessing) return;
     if (!name.trim()) {
       setError("Please enter a name.");
       return;
@@ -68,6 +74,7 @@ export function MemberModal({
     const err = await onSave({
       name: name.trim(),
       emoji,
+      avatarUrl,
       color: palette.color,
       light: palette.light,
       isChild,
@@ -115,22 +122,14 @@ export function MemberModal({
           marginBottom: 14,
         }}
       >
-        <div
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: "50%",
-            background: `linear-gradient(145deg, ${palette.light}, #fff)`,
-            border: `2px solid ${palette.color}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 22,
-            flexShrink: 0,
-          }}
-        >
-          {emoji}
-        </div>
+        <AvatarPreview
+          emoji={emoji}
+          avatarUrl={avatarUrl}
+          color={palette.color}
+          light={palette.light}
+          size={44}
+          name={name.trim() || "Member"}
+        />
         <div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>
             {name.trim() || (isChild ? "Child Profile" : "Family Member")}
@@ -211,32 +210,15 @@ export function MemberModal({
       )}
 
       <FieldLabel style={{ marginTop: 12 }}>Avatar</FieldLabel>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {MEMBER_EMOJIS.map((em) => (
-          <button
-            key={em}
-            type="button"
-            onClick={() => setEmoji(em)}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              border:
-                emoji === em
-                  ? `2px solid ${palette.color}`
-                  : "1.5px solid #EFE4D2",
-              background: emoji === em ? palette.light : "#fff",
-              fontSize: 18,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {em}
-          </button>
-        ))}
-      </div>
+      <AvatarPicker
+        emoji={emoji}
+        avatarUrl={avatarUrl}
+        color={palette.color}
+        light={palette.light}
+        onEmojiChange={setEmoji}
+        onAvatarUrlChange={setAvatarUrl}
+        onProcessingChange={setAvatarProcessing}
+      />
 
       <FieldLabel style={{ marginTop: 12 }}>Color</FieldLabel>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -292,17 +274,23 @@ export function MemberModal({
         )}
         <button
           type="button"
-          disabled={saving}
+          disabled={saving || avatarProcessing}
           onClick={handleSave}
           style={{
             ...btnStyle,
             flex: 1,
             background: "#E8622C",
             color: "#fff",
-            opacity: saving ? 0.65 : 1,
+            opacity: saving || avatarProcessing ? 0.65 : 1,
           }}
         >
-          {saving ? "Saving..." : isEdit ? "Save Changes" : "Add Member"}
+          {saving
+            ? "Saving..."
+            : avatarProcessing
+              ? "Processing photo..."
+              : isEdit
+                ? "Save Changes"
+                : "Add Member"}
         </button>
       </div>
     </ModalShell>

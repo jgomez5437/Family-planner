@@ -1386,10 +1386,16 @@ export function CaregiverSheet({
                 key={c.id}
                 onClick={() => toggleKid(c.id)}
                 aria-pressed={kidIds.includes(c.id)}
-                style={pillStyle(kidIds.includes(c.id))}
+                style={{
+                  ...pillStyle(kidIds.includes(c.id)),
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
               >
-                {kidIds.includes(c.id) ? "✓ " : ""}
-                {c.emoji} {c.name}
+                {kidIds.includes(c.id) ? "✓" : ""}
+                <AvatarDot id={c.id} size={18} />
+                {c.name}
               </button>
             ))}
           </div>
