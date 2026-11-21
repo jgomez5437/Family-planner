@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Camera, Smile, Trash2, Upload } from "lucide-react";
+import { Camera, Crop, Smile, Trash2, Upload } from "lucide-react";
 import { MEMBER_EMOJIS } from "@/lib/constants";
-import { compressAvatarImage } from "@/lib/images";
+import { isLikelyImageFile, type ImageTransformState } from "@/lib/images";
+import { ImageCropModal, type ImageCropResult } from "./ImageCropModal";
 
 export function AvatarPreview({
   emoji,
@@ -75,7 +76,15 @@ export function AvatarPicker({
     avatarUrl ? "photo" : "emoji"
   );
   const [draftPhoto, setDraftPhoto] = useState<string | null>(avatarUrl);
-  const [processing, setProcessing] = useState(false);
+  const [rawSource, setRawSource] = useState<File | string | null>(null);
+  const [lastTransform, setLastTransform] = useState<
+    ImageTransformState | undefined
+  >(undefined);
+  const [cropSession, setCropSession] = useState<{
+    source: File | string;
+    initialTransform?: ImageTransformState;
+    isNewUpload: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -85,6 +94,10 @@ export function AvatarPicker({
       setMode("photo");
     }
   }, [avatarUrl]);
+
+  useEffect(() => {
+    onProcessingChange?.(Boolean(cropSession));
+  }, [cropSession, onProcessingChange]);
 
   function selectMode(nextMode: "emoji" | "photo") {
     setError(null);
@@ -96,34 +109,53 @@ export function AvatarPicker({
     }
   }
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
 
     setError(null);
-    setProcessing(true);
-    onProcessingChange?.(true);
-    try {
-      const compressed = await compressAvatarImage(file);
-      setDraftPhoto(compressed);
-      setMode("photo");
-      onAvatarUrlChange(compressed);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Could not load that photo. Please try another image."
-      );
-    } finally {
-      setProcessing(false);
-      onProcessingChange?.(false);
+    if (!isLikelyImageFile(file)) {
+      setError("Please select an image file (JPEG, PNG, or WebP).");
+      return;
     }
+
+    setCropSession({
+      source: file,
+      initialTransform: undefined,
+      isNewUpload: true,
+    });
+  }
+
+  function handleOpenAdjust() {
+    const sourceToEdit = rawSource || draftPhoto;
+    if (!sourceToEdit) return;
+    setError(null);
+    setCropSession({
+      source: sourceToEdit,
+      initialTransform: rawSource ? lastTransform : undefined,
+      isNewUpload: false,
+    });
+  }
+
+  function handleCropApply(result: ImageCropResult) {
+    if (cropSession?.isNewUpload) {
+      setRawSource(cropSession.source);
+    } else if (!rawSource && draftPhoto) {
+      setRawSource(draftPhoto);
+    }
+    setLastTransform(result.transform);
+    setDraftPhoto(result.dataUrl);
+    setMode("photo");
+    onAvatarUrlChange(result.dataUrl);
+    setCropSession(null);
   }
 
   function handleRemovePhoto() {
     setError(null);
     setDraftPhoto(null);
+    setRawSource(null);
+    setLastTransform(undefined);
     onAvatarUrlChange(null);
   }
 
@@ -231,14 +263,18 @@ export function AvatarPicker({
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={processing}
-              aria-label="Choose profile photo"
+              onClick={() =>
+                draftPhoto ? handleOpenAdjust() : fileInputRef.current?.click()
+              }
+              aria-label={
+                draftPhoto ? "Adjust profile photo framing" : "Choose profile photo"
+              }
+              title={draftPhoto ? "Click to zoom or reposition" : "Choose profile photo"}
               style={{
                 background: "none",
                 border: "none",
                 padding: 0,
-                cursor: processing ? "wait" : "pointer",
+                cursor: "pointer",
                 flexShrink: 0,
               }}
             >
@@ -256,7 +292,6 @@ export function AvatarPicker({
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <button
                   type="button"
-                  disabled={processing}
                   onClick={() => fileInputRef.current?.click()}
                   style={{
                     border: "1.5px solid #EFE4D2",
@@ -266,25 +301,41 @@ export function AvatarPicker({
                     padding: "7px 12px",
                     fontSize: 12.5,
                     fontWeight: 700,
-                    cursor: processing ? "wait" : "pointer",
+                    cursor: "pointer",
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 6,
-                    opacity: processing ? 0.65 : 1,
                   }}
                 >
                   <Upload size={13} />
-                  {processing
-                    ? "Processing..."
-                    : draftPhoto
-                      ? "Change Photo"
-                      : "Choose Photo"}
+                  {draftPhoto ? "Change Photo" : "Choose Photo"}
                 </button>
 
                 {draftPhoto && (
                   <button
                     type="button"
-                    disabled={processing}
+                    onClick={handleOpenAdjust}
+                    style={{
+                      border: "1.5px solid #F2C4AF",
+                      background: "#FCE9DF",
+                      color: "#B24A1D",
+                      borderRadius: 10,
+                      padding: "7px 10px",
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <Crop size={13} /> Adjust
+                  </button>
+                )}
+
+                {draftPhoto && (
+                  <button
+                    type="button"
                     onClick={handleRemovePhoto}
                     style={{
                       border: "1.5px solid #F3D9D2",
@@ -306,8 +357,8 @@ export function AvatarPicker({
               </div>
               <div style={{ fontSize: 11.5, color: "#8A7F70", marginTop: 6 }}>
                 {draftPhoto
-                  ? "Square cropped and ready to save."
-                  : "Upload a JPG, PNG, or WebP photo from your device."}
+                  ? "Framed for your circular profile picture. Tap Adjust to zoom or reposition."
+                  : "Upload a JPG, PNG, or WebP photo — you can zoom and position it inside the frame."}
               </div>
             </div>
           </div>
@@ -326,6 +377,17 @@ export function AvatarPicker({
             </div>
           )}
         </div>
+      )}
+
+      {cropSession && (
+        <ImageCropModal
+          mode="avatar"
+          source={cropSession.source}
+          initialTransform={cropSession.initialTransform}
+          accentColor={color}
+          onCancel={() => setCropSession(null)}
+          onApply={handleCropApply}
+        />
       )}
     </div>
   );
