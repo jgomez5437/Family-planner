@@ -524,7 +524,7 @@ export default function FamilyApp({
     type: string;
     content: string;
     images: string[];
-  }) {
+  }): Promise<string | null> {
     const full: WallPost = {
       id: uid("pt"),
       author: currentUser,
@@ -533,22 +533,38 @@ export default function FamilyApp({
       comments: [],
       ...post,
     };
-    setPosts((p) => [full, ...p]);
-    pushActivity(
-      `${memberById(currentUser).name} posted a Family Update`,
-      null,
-      currentUser
-    );
-    fireToast("Posted to Family Wall");
 
     try {
-      await fetch("/api/posts", {
+      const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ post: full }),
       });
+
+      if (!res.ok) {
+        if (res.status === 413) {
+          return "Photos are too large to upload together. Try fewer or smaller photos.";
+        }
+        try {
+          const json = await res.json();
+          return json.error || "Could not save your post. Please try again.";
+        } catch {
+          return "Could not save your post. Please try again.";
+        }
+      }
+
+      const json = await res.json();
+      const savedPost: WallPost = json.post || full;
+      setPosts((p) => [savedPost, ...p]);
+      pushActivity(
+        `${memberById(currentUser).name} posted a Family Update`,
+        null,
+        currentUser
+      );
+      fireToast("Posted to Family Wall");
+      return null;
     } catch {
-      /* background sync */
+      return "Network error while saving your post. Please check your connection and try again.";
     }
   }
 

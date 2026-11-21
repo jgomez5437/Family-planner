@@ -28,6 +28,7 @@ export const members = pgTable("members", {
     .references(() => families.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   emoji: text("emoji").notNull(),
+  avatarUrl: text("avatar_url"),
   color: text("color").notNull(),
   light: text("light").notNull(),
   isChild: boolean("is_child").notNull().default(false),

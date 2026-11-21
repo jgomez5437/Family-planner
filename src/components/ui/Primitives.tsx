@@ -28,10 +28,24 @@ export function AvatarDot({ id, size = 22 }: { id?: MemberId | null; size?: numb
         alignItems: "center",
         justifyContent: "center",
         fontSize: size * 0.55,
+        overflow: "hidden",
         flexShrink: 0,
       }}
     >
-      {m.emoji}
+      {m.avatarUrl ? (
+        <img
+          src={m.avatarUrl}
+          alt={m.name}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+          }}
+        />
+      ) : (
+        m.emoji
+      )}
     </div>
   );
 }
@@ -300,10 +314,17 @@ export function MemberPicker({
       {members.map((m) => (
         <button
           key={m.id}
+          type="button"
           onClick={() => onToggle(m.id)}
-          style={pillStyle(selected.includes(m.id))}
+          style={{
+            ...pillStyle(selected.includes(m.id)),
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+          }}
         >
-          {m.emoji} {m.name}
+          <AvatarDot id={m.id} size={18} />
+          {m.name}
         </button>
       ))}
     </div>

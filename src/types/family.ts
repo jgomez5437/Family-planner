@@ -6,6 +6,7 @@ export interface Member {
   id: MemberId;
   name: string;
   emoji: string;
+  avatarUrl?: string | null;
   color: string;
   light: string;
   isChild?: boolean;
