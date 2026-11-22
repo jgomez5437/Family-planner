@@ -12,6 +12,7 @@ export interface Member {
   isChild?: boolean;
   role?: MemberRole;
   email?: string | null;
+  hasAccount?: boolean;
 }
 
 export type EventCategory =

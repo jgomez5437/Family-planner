@@ -151,7 +151,7 @@ export function MemberModal({
         style={inputStyle}
       />
 
-      {member?.role !== "admin" && (
+      {!member?.hasAccount && member?.role !== "admin" && (
         <>
           <FieldLabel style={{ marginTop: 12 }}>Member Type</FieldLabel>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>

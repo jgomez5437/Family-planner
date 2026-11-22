@@ -85,6 +85,8 @@ export function SettingsScreen({
   const me = memberById(currentUserId);
 
   const [screen, setScreen] = useState<SettingsSubScreen>(initialScreen);
+  const [accountBackScreen, setAccountBackScreen] =
+    useState<SettingsSubScreen>("root");
   const [editingName, setEditingName] = useState(familyName);
   const trimmedName = editingName.trim();
   const canSaveName = trimmedName.length > 0 && trimmedName !== familyName;
@@ -133,6 +135,10 @@ export function SettingsScreen({
       )
     );
   }, [me.name, me.email, me.emoji, me.avatarUrl, me.color]);
+
+  useEffect(() => {
+    setAccountMessage(null);
+  }, [screen]);
 
   const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({
     Events: true,
@@ -224,6 +230,14 @@ export function SettingsScreen({
       setAccountMessage({ tone: "error", text: "Name cannot be empty." });
       return;
     }
+    const trimmedEmail = accountEmail.trim();
+    if (me.hasAccount !== false && (!trimmedEmail || !trimmedEmail.includes("@"))) {
+      setAccountMessage({
+        tone: "error",
+        text: "Please enter a valid email address.",
+      });
+      return;
+    }
     if (newPassword && newPassword.length < 6) {
       setAccountMessage({
         tone: "error",
@@ -236,7 +250,7 @@ export function SettingsScreen({
     setAccountSaving(true);
     const err = await onUpdateMember(currentUserId, {
       name: accountName.trim(),
-      email: accountEmail.trim() || null,
+      email: trimmedEmail || null,
       emoji: accountEmoji,
       avatarUrl: accountAvatarUrl,
       color: palette.color,
@@ -273,7 +287,12 @@ export function SettingsScreen({
         }}
       >
         {screen !== "root" ? (
-          <button onClick={() => setScreen("root")} style={iconBtnStyle}>
+          <button
+            onClick={() =>
+              setScreen(screen === "account" ? accountBackScreen : "root")
+            }
+            style={iconBtnStyle}
+          >
             <ChevronLeft size={18} />
           </button>
         ) : (
@@ -323,7 +342,10 @@ export function SettingsScreen({
               icon={User}
               label="Account"
               sub={me.email || me.name}
-              onClick={() => setScreen("account")}
+              onClick={() => {
+                setAccountBackScreen("root");
+                setScreen("account");
+              }}
             />
             <SettingsRow
               icon={Bell}
@@ -740,6 +762,20 @@ export function SettingsScreen({
                             ? "Admin"
                             : "Adult"}
                       </span>
+                      {!m.isChild && m.hasAccount === false && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: "#9E6B1E",
+                            background: "#FBF1DC",
+                            borderRadius: 999,
+                            padding: "2px 7px",
+                          }}
+                        >
+                          Pending
+                        </span>
+                      )}
                     </div>
                     {m.email && (
                       <div style={{ fontSize: 11.5, color: "#948C80", marginTop: 1 }}>
@@ -747,13 +783,18 @@ export function SettingsScreen({
                       </div>
                     )}
                   </div>
-                  {(m.isChild || m.id === currentUserId) && (
+                  {(m.isChild ||
+                    m.hasAccount === false ||
+                    m.id === currentUserId) && (
                     <button
-                      onClick={() =>
-                        m.id === currentUserId
-                          ? setScreen("account")
-                          : setMemberModalState({ mode: "edit", member: m })
-                      }
+                      onClick={() => {
+                        if (m.id === currentUserId) {
+                          setAccountBackScreen("family");
+                          setScreen("account");
+                        } else {
+                          setMemberModalState({ mode: "edit", member: m });
+                        }
+                      }}
                       aria-label={`Edit ${m.name}`}
                       style={iconBtnStyle}
                     >

@@ -99,6 +99,7 @@ function toPublicMember(m: {
   isChild?: boolean | null;
   role?: string | null;
   email?: string | null;
+  passwordHash?: string | null;
 }): Member {
   return {
     id: m.id,
@@ -110,6 +111,7 @@ function toPublicMember(m: {
     isChild: Boolean(m.isChild),
     role: (m.role as MemberRole) || (m.isChild ? "child" : "adult"),
     email: m.email || null,
+    hasAccount: Boolean(m.passwordHash),
   };
 }
 
@@ -941,6 +943,7 @@ export async function addFamilyMember(
     isChild: Boolean(input.isChild),
     role,
     email,
+    hasAccount: false,
   };
 
   const db = await getReadyDb();
@@ -1038,12 +1041,24 @@ export async function updateFamilyMember(
     if (!existing) {
       return { ok: false, error: "Member not found.", status: 404 };
     }
-    if (!existing.isChild && memberId !== actorId) {
+    const existingHasAccount = Boolean(existing.passwordHash);
+    if (!existing.isChild && existingHasAccount && memberId !== actorId) {
       return {
         ok: false,
         error:
           "Only the account holder can edit their own account information and photo.",
         status: 403,
+      };
+    }
+    if (
+      existingHasAccount &&
+      normalizedEmail !== undefined &&
+      (!normalizedEmail || !normalizedEmail.includes("@"))
+    ) {
+      return {
+        ok: false,
+        error: "Please enter a valid email address.",
+        status: 400,
       };
     }
 
@@ -1058,7 +1073,7 @@ export async function updateFamilyMember(
     }
 
     const nextIsChild =
-      memberId === actorId
+      memberId === actorId || existingHasAccount
         ? existing.isChild
         : updates.isChild !== undefined
           ? Boolean(updates.isChild)
@@ -1133,6 +1148,7 @@ export async function updateFamilyMember(
         isChild: nextIsChild,
         role: nextRole,
         email: nextEmail,
+        passwordHash: nextPasswordHash,
       }),
     };
   }
@@ -1144,12 +1160,24 @@ export async function updateFamilyMember(
   if (!existing) {
     return { ok: false, error: "Member not found.", status: 404 };
   }
-  if (!existing.isChild && memberId !== actorId) {
+  const existingHasAccount = Boolean(existing.passwordHash);
+  if (!existing.isChild && existingHasAccount && memberId !== actorId) {
     return {
       ok: false,
       error:
         "Only the account holder can edit their own account information and photo.",
       status: 403,
+    };
+  }
+  if (
+    existingHasAccount &&
+    normalizedEmail !== undefined &&
+    (!normalizedEmail || !normalizedEmail.includes("@"))
+  ) {
+    return {
+      ok: false,
+      error: "Please enter a valid email address.",
+      status: 400,
     };
   }
 
@@ -1177,7 +1205,11 @@ export async function updateFamilyMember(
   }
   if (updates.color) existing.color = updates.color;
   if (updates.light) existing.light = updates.light;
-  if (updates.isChild !== undefined && memberId !== actorId) {
+  if (
+    updates.isChild !== undefined &&
+    memberId !== actorId &&
+    !existingHasAccount
+  ) {
     existing.isChild = Boolean(updates.isChild);
     if (existing.role !== "admin") {
       existing.role = existing.isChild ? "child" : "adult";
@@ -1201,8 +1233,9 @@ export async function updateFamilyMember(
 
 export async function deleteFamilyMember(
   familyId: string,
-  memberId: MemberId
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  memberId: MemberId,
+  actorId: MemberId
+): Promise<{ ok: true } | { ok: false; error: string; status?: number }> {
   const db = await getReadyDb();
   if (db) {
     const famMembers = await db
@@ -1210,13 +1243,23 @@ export async function deleteFamilyMember(
       .from(members)
       .where(eq(members.familyId, familyId));
     const target = famMembers.find((m) => m.id === memberId);
-    if (!target) return { ok: false, error: "Member not found." };
+    if (!target) {
+      return { ok: false, error: "Member not found.", status: 404 };
+    }
+    if (!target.isChild && Boolean(target.passwordHash) && target.id !== actorId) {
+      return {
+        ok: false,
+        error: "Only the account holder can remove their own account.",
+        status: 403,
+      };
+    }
 
     const loginAccounts = famMembers.filter((m) => Boolean(m.passwordHash));
     if (target.passwordHash && loginAccounts.length <= 1) {
       return {
         ok: false,
         error: "You cannot remove the only login account in the family.",
+        status: 400,
       };
     }
 
@@ -1228,15 +1271,25 @@ export async function deleteFamilyMember(
 
   const store = getMemoryStore();
   const fam = store.families.get(familyId);
-  if (!fam) return { ok: false, error: "Family not found." };
+  if (!fam) return { ok: false, error: "Family not found.", status: 404 };
   const target = fam.members.find((m) => m.id === memberId);
-  if (!target) return { ok: false, error: "Member not found." };
+  if (!target) {
+    return { ok: false, error: "Member not found.", status: 404 };
+  }
+  if (!target.isChild && Boolean(target.passwordHash) && target.id !== actorId) {
+    return {
+      ok: false,
+      error: "Only the account holder can remove their own account.",
+      status: 403,
+    };
+  }
 
   const loginAccounts = fam.members.filter((m) => Boolean(m.passwordHash));
   if (target.passwordHash && loginAccounts.length <= 1) {
     return {
       ok: false,
       error: "You cannot remove the only login account in the family.",
+      status: 400,
     };
   }
 
