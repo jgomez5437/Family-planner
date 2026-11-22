@@ -165,6 +165,33 @@ export interface ActivityItem {
   targetEventId?: string | null;
 }
 
+export type NotificationCategory =
+  | "wall_post"
+  | "wall_comment"
+  | "event"
+  | "task"
+  | "medication";
+
+export type AppTabId = "home" | "manager" | "tasks" | "events" | "wall";
+
+export interface NotificationTarget {
+  tab: AppTabId;
+  entityId?: string | null;
+}
+
+export interface FamilyNotification {
+  id: string;
+  familyId: string;
+  recipientId: MemberId;
+  actorId: MemberId;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+  target: NotificationTarget;
+  read: boolean;
+  createdAt: string; // ISO 8601 timestamp
+}
+
 export interface FamilyStatePayload {
   familyId: string;
   familyName: string;
@@ -178,5 +205,6 @@ export interface FamilyStatePayload {
   meds: Medication[];
   doseLog: DoseLogMap;
   profiles: ProfilesMap;
+  notifications: FamilyNotification[];
   dbConnected?: boolean;
 }

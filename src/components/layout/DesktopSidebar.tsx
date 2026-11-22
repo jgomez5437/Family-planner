@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
-import { ChevronDown, LogOut, Plus, Settings, Users } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  ChevronDown,
+  LogOut,
+  Plus,
+  Settings,
+  User,
+  Users,
+} from "lucide-react";
 import { TABS } from "@/lib/constants";
 import { useMembers } from "@/components/MembersContext";
 import type { MemberId } from "@/types/family";
@@ -26,7 +33,29 @@ export function DesktopSidebar({
 }) {
   const { memberById } = useMembers();
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
   const me = memberById(currentUser);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleOutside(event: MouseEvent) {
+      if (
+        menuContainerRef.current &&
+        !menuContainerRef.current.contains(event.target as Node)
+      ) {
+        setMenuOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
 
   return (
     <div
@@ -112,6 +141,7 @@ export function DesktopSidebar({
       </div>
 
       <div
+        ref={menuContainerRef}
         style={{
           padding: 12,
           borderTop: "1px solid #EFE4D2",
@@ -196,7 +226,7 @@ export function DesktopSidebar({
               }}
               style={menuItemStyle}
             >
-              <Settings size={15} color="#6B6259" /> Account Settings
+              <User size={15} color="#6B6259" /> Account
             </button>
             <button
               onClick={() => {
@@ -206,6 +236,15 @@ export function DesktopSidebar({
               style={menuItemStyle}
             >
               <Users size={15} color="#6B6259" /> Family &amp; Members
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenSettings("root");
+              }}
+              style={menuItemStyle}
+            >
+              <Settings size={15} color="#6B6259" /> Settings
             </button>
             <div
               style={{

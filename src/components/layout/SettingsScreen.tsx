@@ -36,9 +36,17 @@ import {
   inputStyle,
   MEMBER_COLOR_PALETTES,
 } from "@/lib/constants";
+import {
+  ACTIVE_NOTIFICATION_CATEGORIES,
+  getBrowserNotificationPermission,
+  isBrowserNotificationSupported,
+  NOTIFICATION_CATEGORIES,
+  requestBrowserNotificationPermission,
+  type NotificationPreferences,
+} from "@/lib/notifications";
 import { useMembers } from "@/components/MembersContext";
 import { usePwa } from "@/components/pwa/PwaContext";
-import type { Member, MemberId } from "@/types/family";
+import type { Member, MemberId, NotificationCategory } from "@/types/family";
 import { AvatarPicker, AvatarPreview } from "@/components/ui/AvatarPicker";
 import { AvatarDot, FieldLabel } from "@/components/ui/Primitives";
 import { MemberModal, type MemberFormData } from "./MemberModal";
@@ -57,6 +65,8 @@ export function SettingsScreen({
   familyName,
   inviteCode,
   currentUserId,
+  notificationPreferences,
+  onUpdateNotificationPreferences,
   onRenameFamily,
   onRegenerateInviteCode,
   onAddMember,
@@ -69,6 +79,8 @@ export function SettingsScreen({
   familyName: string;
   inviteCode: string;
   currentUserId: MemberId;
+  notificationPreferences: NotificationPreferences;
+  onUpdateNotificationPreferences: (next: NotificationPreferences) => void;
   onRenameFamily: (name: string) => void;
   onRegenerateInviteCode: () => Promise<void>;
   onAddMember: (data: MemberFormData) => Promise<string | null>;
@@ -140,14 +152,52 @@ export function SettingsScreen({
     setAccountMessage(null);
   }, [screen]);
 
-  const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({
-    Events: true,
-    Tasks: true,
-    Announcements: true,
-    Changes: true,
-    Reminders: true,
-  });
+  const [browserPermission, setBrowserPermission] = useState<
+    NotificationPermission | "unsupported"
+  >(() => getBrowserNotificationPermission());
   const [appearance, setAppearance] = useState("system");
+
+  useEffect(() => {
+    function syncPermission() {
+      setBrowserPermission(getBrowserNotificationPermission());
+    }
+    syncPermission();
+    window.addEventListener("focus", syncPermission);
+    return () => window.removeEventListener("focus", syncPermission);
+  }, [screen]);
+
+  async function handleToggleBrowserNotifications(next: boolean) {
+    if (!next) {
+      onUpdateNotificationPreferences({
+        ...notificationPreferences,
+        browserEnabled: false,
+      });
+      return;
+    }
+    const perm = await requestBrowserNotificationPermission();
+    setBrowserPermission(perm);
+    if (perm === "granted") {
+      onUpdateNotificationPreferences({
+        ...notificationPreferences,
+        browserEnabled: true,
+      });
+    } else {
+      onUpdateNotificationPreferences({
+        ...notificationPreferences,
+        browserEnabled: false,
+      });
+    }
+  }
+
+  function handleToggleCategory(category: NotificationCategory, next: boolean) {
+    onUpdateNotificationPreferences({
+      ...notificationPreferences,
+      categories: {
+        ...notificationPreferences.categories,
+        [category]: next,
+      },
+    });
+  }
 
   function getInviteLink(): string {
     const origin =
@@ -350,6 +400,12 @@ export function SettingsScreen({
             <SettingsRow
               icon={Bell}
               label="Notifications"
+              sub={
+                notificationPreferences.browserEnabled &&
+                browserPermission === "granted"
+                  ? "In-app & device alerts enabled"
+                  : "In-app alerts active"
+              }
               onClick={() => setScreen("notifications")}
             />
             <SettingsRow
@@ -836,14 +892,102 @@ export function SettingsScreen({
 
         {screen === "notifications" && (
           <div style={{ maxWidth: 480, margin: "0 auto" }}>
-            {Object.keys(notifPrefs).map((key) => (
+            <FieldLabel>Device &amp; Browser Alerts</FieldLabel>
+            <ToggleRow
+              label="Browser & PWA Notifications"
+              description={
+                !isBrowserNotificationSupported()
+                  ? "This browser does not support device notifications. In-app alerts still work."
+                  : browserPermission === "denied"
+                    ? "Blocked in browser settings. Enable notifications for this site to turn this on."
+                    : "Show a notification banner on this device when family members post updates."
+              }
+              checked={
+                notificationPreferences.browserEnabled &&
+                browserPermission === "granted"
+              }
+              disabled={
+                !isBrowserNotificationSupported() ||
+                browserPermission === "denied"
+              }
+              onChange={(v) => void handleToggleBrowserNotifications(v)}
+            />
+
+            <FieldLabel style={{ marginTop: 18 }}>Notify Me About</FieldLabel>
+            {ACTIVE_NOTIFICATION_CATEGORIES.map((cat) => (
               <ToggleRow
-                key={key}
-                label={key}
-                checked={notifPrefs[key]}
-                onChange={(v) => setNotifPrefs((p) => ({ ...p, [key]: v }))}
+                key={cat.id}
+                label={`${cat.emoji} ${cat.label}`}
+                description={cat.description}
+                checked={notificationPreferences.categories[cat.id] !== false}
+                onChange={(v) => handleToggleCategory(cat.id, v)}
               />
             ))}
+
+            {NOTIFICATION_CATEGORIES.some((c) => !c.active) && (
+              <>
+                <FieldLabel style={{ marginTop: 18 }}>
+                  Coming Soon
+                </FieldLabel>
+                <div
+                  style={{
+                    background: "#fff",
+                    border: "1px solid #F1E8D9",
+                    boxShadow: CARD_SHADOW,
+                    borderRadius: 14,
+                    padding: "4px 14px",
+                  }}
+                >
+                  {NOTIFICATION_CATEGORIES.filter((c) => !c.active).map(
+                    (cat, idx, arr) => (
+                      <div
+                        key={cat.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          padding: "11px 0",
+                          borderBottom:
+                            idx === arr.length - 1
+                              ? "none"
+                              : "1px solid #F3ECE0",
+                          opacity: 0.72,
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                            {cat.emoji} {cat.label}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11.5,
+                              color: "#948C80",
+                              marginTop: 2,
+                            }}
+                          >
+                            {cat.description}
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: "#8A7F70",
+                            background: "#F5EFE3",
+                            borderRadius: 999,
+                            padding: "3px 8px",
+                            flexShrink: 0,
+                          }}
+                        >
+                          Soon
+                        </span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1371,11 +1515,15 @@ function SettingsRow({
 
 function ToggleRow({
   label,
+  description,
   checked,
+  disabled,
   onChange,
 }: {
   label: string;
+  description?: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (next: boolean) => void;
 }) {
   return (
@@ -1384,26 +1532,48 @@ function ToggleRow({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        gap: 12,
         background: "#fff",
         border: "1px solid #F1E8D9",
         boxShadow: CARD_SHADOW,
         borderRadius: 14,
         padding: "13px 14px",
         marginBottom: 8,
+        opacity: disabled ? 0.65 : 1,
       }}
     >
-      <span style={{ fontSize: 14, fontWeight: 600 }}>{label}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
+        {description && (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "#8A7F70",
+              marginTop: 2,
+              lineHeight: 1.35,
+            }}
+          >
+            {description}
+          </div>
+        )}
+      </div>
       <button
-        onClick={() => onChange(!checked)}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => !disabled && onChange(!checked)}
         style={{
           width: 42,
           height: 24,
           borderRadius: 999,
           border: "none",
-          cursor: "pointer",
+          cursor: disabled ? "default" : "pointer",
           background: checked ? "#E8622C" : "#E4D9C6",
           position: "relative",
           transition: "background 0.15s",
+          flexShrink: 0,
         }}
       >
         <div

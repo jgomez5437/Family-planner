@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LogOut,
   Plus,
   Search,
   Settings as SettingsIcon,
+  User,
   Users,
 } from "lucide-react";
 import {
@@ -15,12 +16,21 @@ import {
 } from "@/lib/constants";
 import { fmtTime, nowClock, relativeDay, todayISO, uid } from "@/lib/dates";
 import { dosesFor } from "@/lib/meds";
+import {
+  getDefaultNotificationPreferences,
+  isCategoryEnabled,
+  loadNotificationPreferences,
+  saveNotificationPreferences,
+  showBrowserNotification,
+  type NotificationPreferences,
+} from "@/lib/notifications";
 import { expandAllEvents, expandAllTasks } from "@/lib/recurrence";
 import type {
   ActivityItem,
   ChildProfile,
   DoseLogMap,
   FamilyEvent,
+  FamilyNotification,
   FamilyStatePayload,
   FamilyTask,
   Medication,
@@ -39,6 +49,7 @@ import {
 } from "@/components/layout/QuickAddSheet";
 import { Composer } from "@/components/layout/Composer";
 import { SearchOverlay } from "@/components/layout/SearchOverlay";
+import { NotificationBell } from "@/components/layout/NotificationCenter";
 import {
   SettingsScreen,
   type SettingsSubScreen,
@@ -80,17 +91,54 @@ export default function FamilyApp({
   const [inviteCode, setInviteCode] = useState(initialState.inviteCode);
   const [tab, setTab] = useState("home");
 
-  // Support PWA home-screen shortcut URLs (e.g. /?tab=tasks) without touching invite params
+  const [notifications, setNotifications] = useState<FamilyNotification[]>(
+    initialState.notifications || []
+  );
+  const [notificationPrefs, setNotificationPrefs] =
+    useState<NotificationPreferences>(() =>
+      getDefaultNotificationPreferences()
+    );
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(
+    null
+  );
+  const seenNotificationIdsRef = useRef<Set<string>>(
+    new Set((initialState.notifications || []).map((n) => n.id))
+  );
+  const notificationPrefsRef = useRef<NotificationPreferences>(notificationPrefs);
+  notificationPrefsRef.current = notificationPrefs;
+
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load saved notification preferences for the current user
+  useEffect(() => {
+    setNotificationPrefs(loadNotificationPreferences(currentUser));
+  }, [currentUser]);
+
+  // Support PWA home-screen shortcut & notification URLs (e.g. /?tab=wall&entity=pt_123)
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     const requestedTab = url.searchParams.get("tab");
+    const requestedEntity = url.searchParams.get("entity");
+    let mutated = false;
     if (requestedTab && TABS.some((t) => t.id === requestedTab)) {
       setTab(requestedTab);
       url.searchParams.delete("tab");
+      mutated = true;
+    }
+    if (requestedEntity) {
+      if (requestedTab === "wall") {
+        setHighlightedPostId(requestedEntity);
+      }
+      url.searchParams.delete("entity");
+      mutated = true;
+    }
+    if (mutated) {
       window.history.replaceState({}, "", url.pathname + url.search + url.hash);
     }
   }, []);
+
   const [events, setEvents] = useState<FamilyEvent[]>(initialState.events);
   const [tasks, setTasks] = useState<FamilyTask[]>(initialState.tasks);
   const [posts, setPosts] = useState<WallPost[]>(initialState.posts);
@@ -117,14 +165,281 @@ export default function FamilyApp({
   const [addChildModalOpen, setAddChildModalOpen] = useState(false);
   const [familyName, setFamilyName] = useState(initialState.familyName);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const postMutationSeqRef = useRef(0);
+  const pendingPostMutationsRef = useRef(0);
+  const notifMutationSeqRef = useRef(0);
+  const pendingNotifMutationsRef = useRef(0);
+  const memberMutationSeqRef = useRef(0);
 
   const memberById = (id?: MemberId | null) => findMemberById(id, members);
   const me = memberById(currentUser);
+
+  // Clean up timers on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
+
+  // Close mobile profile dropdown on outside click or Escape
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    function handleOutside(event: MouseEvent) {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target as Node)
+      ) {
+        setUserMenuOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setUserMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [userMenuOpen]);
+
+  // Smoothly scroll to and temporarily highlight a Wall post opened from a notification
+  useEffect(() => {
+    if (!highlightedPostId || tab !== "wall") return;
+    const frame = window.requestAnimationFrame(() => {
+      const el = document.getElementById(`post-${highlightedPostId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedPostId(null);
+    }, 3500);
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [highlightedPostId, tab, posts.length]);
+
+  const pollNotifications = useCallback(async () => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    const postSeqAtStart = postMutationSeqRef.current;
+    const notifSeqAtStart = notifMutationSeqRef.current;
+    const memberSeqAtStart = memberMutationSeqRef.current;
+    try {
+      const res = await fetch("/api/notifications", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        notifications?: FamilyNotification[];
+        posts?: WallPost[];
+        members?: Member[];
+      };
+      if (
+        Array.isArray(json.members) &&
+        json.members.length > 0 &&
+        memberMutationSeqRef.current === memberSeqAtStart
+      ) {
+        setMembers(json.members);
+      }
+      if (
+        Array.isArray(json.posts) &&
+        pendingPostMutationsRef.current === 0 &&
+        postMutationSeqRef.current === postSeqAtStart
+      ) {
+        setPosts(json.posts);
+      }
+      if (
+        Array.isArray(json.notifications) &&
+        pendingNotifMutationsRef.current === 0 &&
+        notifMutationSeqRef.current === notifSeqAtStart
+      ) {
+        const incoming = json.notifications;
+        const prefs = notificationPrefsRef.current;
+        const newlyArrived = incoming.filter(
+          (n) =>
+            !n.read &&
+            !seenNotificationIdsRef.current.has(n.id) &&
+            isCategoryEnabled(prefs, n.category)
+        );
+        for (const n of incoming) {
+          seenNotificationIdsRef.current.add(n.id);
+        }
+        setNotifications(incoming);
+        if (prefs.browserEnabled && newlyArrived.length > 0) {
+          for (const n of newlyArrived.slice(0, 3)) {
+            void showBrowserNotification(n);
+          }
+        }
+      }
+    } catch {
+      /* background polling failure is non-fatal */
+    }
+  }, []);
+
+  // Poll for new notifications periodically, on window focus, and when reconnecting
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void pollNotifications();
+      }
+    }, 15000);
+
+    function handleFocus() {
+      void pollNotifications();
+    }
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        void pollNotifications();
+      }
+    }
+    function handleOnline() {
+      void pollNotifications();
+    }
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleOnline);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleOnline);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [pollNotifications]);
 
   function fireToast(msg: string) {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3200);
+  }
+
+  function handleUpdateNotificationPreferences(next: NotificationPreferences) {
+    setNotificationPrefs(next);
+    saveNotificationPreferences(currentUser, next);
+  }
+
+  const navigateFromNotificationPayload = useCallback(
+    async (payload: {
+      notificationId?: string | null;
+      tab?: string | null;
+      entityId?: string | null;
+    }) => {
+      if (payload.notificationId) {
+        const id = payload.notificationId;
+        notifMutationSeqRef.current += 1;
+        pendingNotifMutationsRef.current += 1;
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+        );
+        try {
+          await fetch("/api/notifications", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+          });
+        } catch {
+          /* background sync */
+        } finally {
+          pendingNotifMutationsRef.current = Math.max(
+            0,
+            pendingNotifMutationsRef.current - 1
+          );
+        }
+      }
+
+      if (payload.tab && TABS.some((t) => t.id === payload.tab)) {
+        setSettingsScreen(null);
+        setTab(payload.tab);
+        if (payload.tab === "wall" && payload.entityId) {
+          setHighlightedPostId(payload.entityId);
+        }
+      }
+    },
+    []
+  );
+
+  // Handle OS/browser notification clicks from the Service Worker or fallback Notification API
+  useEffect(() => {
+    function handleSwMessage(event: MessageEvent) {
+      if (event.data?.type === "NOTIFICATION_CLICK") {
+        void navigateFromNotificationPayload({
+          notificationId: event.data.notificationId,
+          tab: event.data.tab,
+          entityId: event.data.entityId,
+        });
+      }
+    }
+    function handleWindowNotifClick(event: Event) {
+      const detail = (
+        event as CustomEvent<{
+          notificationId?: string | null;
+          tab?: string | null;
+          entityId?: string | null;
+        }>
+      ).detail;
+      if (detail) {
+        void navigateFromNotificationPayload(detail);
+      }
+    }
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", handleSwMessage);
+    }
+    window.addEventListener("fp:notification-click", handleWindowNotifClick);
+    return () => {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("message", handleSwMessage);
+      }
+      window.removeEventListener(
+        "fp:notification-click",
+        handleWindowNotifClick
+      );
+    };
+  }, [navigateFromNotificationPayload]);
+
+  async function handleSelectNotification(notification: FamilyNotification) {
+    await navigateFromNotificationPayload({
+      notificationId: notification.read ? null : notification.id,
+      tab: notification.target?.tab,
+      entityId: notification.target?.entityId,
+    });
+  }
+
+  async function handleMarkAllNotificationsRead() {
+    notifMutationSeqRef.current += 1;
+    pendingNotifMutationsRef.current += 1;
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markAllRead: true }),
+      });
+    } catch {
+      /* background sync */
+    } finally {
+      pendingNotifMutationsRef.current = Math.max(
+        0,
+        pendingNotifMutationsRef.current - 1
+      );
+    }
+  }
+
+  async function handleClearNotifications() {
+    notifMutationSeqRef.current += 1;
+    pendingNotifMutationsRef.current += 1;
+    setNotifications([]);
+    try {
+      await fetch("/api/notifications", { method: "DELETE" });
+    } catch {
+      /* background sync */
+    } finally {
+      pendingNotifMutationsRef.current = Math.max(
+        0,
+        pendingNotifMutationsRef.current - 1
+      );
+    }
   }
 
   function pushActivity(
@@ -169,7 +484,8 @@ export default function FamilyApp({
       const json = await res.json();
       if (!res.ok) return json.error || "Could not add member.";
       const added: Member = json.member;
-      setMembers((ms) => [...ms, added]);
+      memberMutationSeqRef.current += 1;
+      setMembers((ms) => [...ms.filter((m) => m.id !== added.id), added]);
       if (added.isChild) {
         setProfiles((p) => ({
           ...p,
@@ -206,6 +522,7 @@ export default function FamilyApp({
       const json = await res.json();
       if (!res.ok) return json.error || "Could not update member.";
       const updated: Member = json.member;
+      memberMutationSeqRef.current += 1;
       setMembers((ms) => ms.map((m) => (m.id === memberId ? updated : m)));
       if (updated.isChild) {
         setProfiles((p) => ({
@@ -238,6 +555,7 @@ export default function FamilyApp({
         await handleSignOut();
         return null;
       }
+      memberMutationSeqRef.current += 1;
       setMembers((ms) => ms.filter((m) => m.id !== memberId));
       setMeds((ms) => ms.filter((m) => m.kidId !== memberId));
       setProfiles((p) => {
@@ -547,6 +865,8 @@ export default function FamilyApp({
       ...post,
     };
 
+    postMutationSeqRef.current += 1;
+    pendingPostMutationsRef.current += 1;
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
@@ -568,7 +888,7 @@ export default function FamilyApp({
 
       const json = await res.json();
       const savedPost: WallPost = json.post || full;
-      setPosts((p) => [savedPost, ...p]);
+      setPosts((p) => [savedPost, ...p.filter((x) => x.id !== savedPost.id)]);
       pushActivity(
         `${memberById(currentUser).name} posted a Family Update`,
         null,
@@ -578,10 +898,17 @@ export default function FamilyApp({
       return null;
     } catch {
       return "Network error while saving your post. Please check your connection and try again.";
+    } finally {
+      pendingPostMutationsRef.current = Math.max(
+        0,
+        pendingPostMutationsRef.current - 1
+      );
     }
   }
 
   async function toggleReaction(postId: string, emoji: string) {
+    postMutationSeqRef.current += 1;
+    pendingPostMutationsRef.current += 1;
     setPosts((ps) =>
       ps.map((p) => {
         if (p.id !== postId) return p;
@@ -602,12 +929,19 @@ export default function FamilyApp({
       });
     } catch {
       /* background sync */
+    } finally {
+      pendingPostMutationsRef.current = Math.max(
+        0,
+        pendingPostMutationsRef.current - 1
+      );
     }
   }
 
   async function addComment(postId: string, text: string) {
     const comment = { id: uid("cm"), by: currentUser, text, at: "just now" };
     const post = posts.find((p) => p.id === postId);
+    postMutationSeqRef.current += 1;
+    pendingPostMutationsRef.current += 1;
     setPosts((ps) =>
       ps.map((p) =>
         p.id === postId
@@ -632,6 +966,11 @@ export default function FamilyApp({
       });
     } catch {
       /* background sync */
+    } finally {
+      pendingPostMutationsRef.current = Math.max(
+        0,
+        pendingPostMutationsRef.current - 1
+      );
     }
   }
 
@@ -937,26 +1276,17 @@ export default function FamilyApp({
                 >
                   <Search size={18} />
                 </button>
-                <button
-                  onClick={() => setSettingsScreen("root")}
-                  title="Settings"
-                  aria-label="Settings"
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    width: 34,
-                    height: 34,
-                    borderRadius: 10,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#6B6259",
-                    flexShrink: 0,
-                  }}
-                >
-                  <SettingsIcon size={18} />
-                </button>
+                <NotificationBell
+                  notifications={notifications}
+                  preferences={notificationPrefs}
+                  isDesktop={isDesktop}
+                  onSelectNotification={(n) => void handleSelectNotification(n)}
+                  onMarkAllRead={() => void handleMarkAllNotificationsRead()}
+                  onClearAll={() => void handleClearNotifications()}
+                  onOpenNotificationSettings={() =>
+                    setSettingsScreen("notifications")
+                  }
+                />
                 {!isDesktop && (
                   <button
                     onClick={() => setQuickAddOpen(true)}
@@ -982,7 +1312,7 @@ export default function FamilyApp({
                   </button>
                 )}
                 {!isDesktop && (
-                  <div style={{ position: "relative" }}>
+                  <div ref={userMenuRef} style={{ position: "relative" }}>
                     <button
                       onClick={() => setUserMenuOpen((s) => !s)}
                       aria-label={`Signed in as ${me.name}`}
@@ -1040,8 +1370,7 @@ export default function FamilyApp({
                           }}
                           style={mobileMenuItemStyle}
                         >
-                          <SettingsIcon size={14} color="#6B6259" /> Account
-                          Settings
+                          <User size={14} color="#6B6259" /> Account
                         </button>
                         <button
                           onClick={() => {
@@ -1052,6 +1381,15 @@ export default function FamilyApp({
                         >
                           <Users size={14} color="#6B6259" /> Family &amp;
                           Members
+                        </button>
+                        <button
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            setSettingsScreen("root");
+                          }}
+                          style={mobileMenuItemStyle}
+                        >
+                          <SettingsIcon size={14} color="#6B6259" /> Settings
                         </button>
                         <div
                           style={{
@@ -1157,6 +1495,7 @@ export default function FamilyApp({
                 toggleReaction={toggleReaction}
                 addComment={addComment}
                 openComposer={openComposerFor}
+                highlightedPostId={highlightedPostId}
               />
             )}
           </div>
@@ -1278,6 +1617,8 @@ export default function FamilyApp({
             familyName={familyName}
             inviteCode={inviteCode}
             currentUserId={currentUser}
+            notificationPreferences={notificationPrefs}
+            onUpdateNotificationPreferences={handleUpdateNotificationPreferences}
             onRenameFamily={renameFamily}
             onRegenerateInviteCode={handleRegenerateInviteCode}
             onAddMember={handleAddMember}

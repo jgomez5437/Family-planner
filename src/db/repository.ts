@@ -8,6 +8,7 @@ import {
   families,
   medications,
   members,
+  notifications,
   postComments,
   postReactions,
   posts,
@@ -27,15 +28,19 @@ import { MEMBER_COLOR_PALETTES } from "@/lib/constants";
 import { fmtTime, nowClock, relativeDay, uid } from "@/lib/dates";
 import type {
   ActivityItem,
+  AppTabId,
   ChildProfile,
   DoseLogMap,
   FamilyEvent,
+  FamilyNotification,
   FamilyStatePayload,
   FamilyTask,
   Medication,
   Member,
   MemberId,
   MemberRole,
+  NotificationCategory,
+  NotificationTarget,
   PostComment,
   ProfilesMap,
   WallPost,
@@ -60,6 +65,7 @@ interface MemoryFamily {
   meds: Medication[];
   doseLog: DoseLogMap;
   profiles: ProfilesMap;
+  notifications: FamilyNotification[];
 }
 
 interface MemorySession {
@@ -461,6 +467,7 @@ export async function registerAccount(
       meds: [],
       doseLog: {},
       profiles: {},
+      notifications: [],
     };
     store.families.set(familyId, targetFamily);
   } else {
@@ -635,6 +642,7 @@ export async function getFamilyState(
         doseRows,
         postRows,
         activityRows,
+        notificationRows,
       ] = await Promise.all([
         db.select().from(families).where(eq(families.id, familyId)).limit(1),
         db.select().from(members).where(eq(members.familyId, familyId)),
@@ -654,6 +662,17 @@ export async function getFamilyState(
           .where(eq(activities.familyId, familyId))
           .orderBy(desc(activities.createdAt))
           .limit(20),
+        db
+          .select()
+          .from(notifications)
+          .where(
+            and(
+              eq(notifications.familyId, familyId),
+              eq(notifications.recipientId, currentUserId)
+            )
+          )
+          .orderBy(desc(notifications.createdAt))
+          .limit(30),
       ]);
 
       const familyRow = familyRows[0];
@@ -787,6 +806,24 @@ export async function getFamilyState(
           : null,
       }));
 
+      const formattedNotifications: FamilyNotification[] = notificationRows.map(
+        (n) => ({
+          id: n.id,
+          familyId: n.familyId,
+          recipientId: n.recipientId,
+          actorId: n.actorId,
+          category: n.category as NotificationCategory,
+          title: n.title,
+          body: n.body,
+          target: {
+            tab: (n.targetTab || "wall") as AppTabId,
+            entityId: n.targetEntityId || null,
+          },
+          read: n.read,
+          createdAt: n.createdAt.toISOString(),
+        })
+      );
+
       return {
         familyId: familyRow.id,
         familyName: familyRow.name,
@@ -800,6 +837,7 @@ export async function getFamilyState(
         meds: formattedMeds,
         doseLog,
         profiles,
+        notifications: formattedNotifications,
         dbConnected: true,
       };
     } catch (err) {
@@ -815,6 +853,10 @@ export async function getFamilyState(
     publicMembers.find((m) => m.id === currentUserId) || publicMembers[0];
   if (!currentUser) return null;
 
+  const userNotifications = (fam.notifications || [])
+    .filter((n) => n.recipientId === currentUser.id)
+    .slice(0, 30);
+
   return {
     familyId: fam.id,
     familyName: fam.name,
@@ -828,6 +870,7 @@ export async function getFamilyState(
     meds: fam.meds,
     doseLog: fam.doseLog,
     profiles: fam.profiles,
+    notifications: userNotifications,
     dbConnected: false,
   };
 }
@@ -1296,6 +1339,9 @@ export async function deleteFamilyMember(
   fam.members = fam.members.filter((m) => m.id !== memberId);
   delete fam.profiles[memberId];
   fam.meds = fam.meds.filter((m) => m.kidId !== memberId);
+  fam.notifications = (fam.notifications || []).filter(
+    (n) => n.recipientId !== memberId
+  );
   for (const [token, sess] of store.sessions.entries()) {
     if (sess.memberId === memberId) store.sessions.delete(token);
   }
@@ -1931,6 +1977,36 @@ export async function createPostRecord(
     null,
     currentUser
   );
+
+  // Notify other family members about the new Family Wall post
+  const titleByType: Record<string, string> = {
+    Announcement: `${actorName} shared an Announcement`,
+    Reminder: `${actorName} posted a Reminder`,
+    Change: `${actorName} shared a Schedule Change`,
+    Photo: `${actorName} shared ${
+      full.images.length > 1 ? "photos" : "a photo"
+    } on the Family Wall`,
+  };
+  const notifTitle =
+    titleByType[full.type] || `${actorName} posted on the Family Wall`;
+  const trimmedContent = full.content.trim();
+  const notifBody = trimmedContent
+    ? trimmedContent.length > 120
+      ? `${trimmedContent.slice(0, 117)}…`
+      : trimmedContent
+    : full.images.length > 0
+      ? `Shared ${full.images.length} photo${full.images.length === 1 ? "" : "s"}`
+      : "Tap to view on the Family Wall";
+
+  await dispatchFamilyNotification({
+    familyId,
+    actorId: currentUser,
+    category: "wall_post",
+    title: notifTitle,
+    body: notifBody,
+    target: { tab: "wall", entityId: full.id },
+  });
+
   return full;
 }
 
@@ -2045,4 +2121,309 @@ export async function addPostCommentRecord(
     );
   }
   return comment;
+}
+
+/* ---------------- Extensible Notifications ---------------- */
+
+export interface DispatchNotificationInput {
+  familyId: string;
+  actorId: MemberId;
+  category: NotificationCategory;
+  title: string;
+  body?: string;
+  target: NotificationTarget;
+  /** Optional explicit recipients. Defaults to all family members except actorId. */
+  recipientIds?: MemberId[];
+}
+
+export async function dispatchFamilyNotification(
+  input: DispatchNotificationInput
+): Promise<FamilyNotification[]> {
+  const { familyId, actorId, category, title, target } = input;
+  const body = input.body || "";
+  const now = new Date();
+  const createdIso = now.toISOString();
+  const db = await getReadyDb();
+
+  let targetRecipients: MemberId[];
+
+  if (input.recipientIds) {
+    targetRecipients = [...new Set(input.recipientIds)].filter(
+      (id) => id && id !== actorId
+    );
+  } else if (db) {
+    const memberRows = await db
+      .select({ id: members.id, isChild: members.isChild })
+      .from(members)
+      .where(eq(members.familyId, familyId));
+    targetRecipients = memberRows
+      .filter((m) => !m.isChild && m.id !== actorId)
+      .map((m) => m.id);
+  } else {
+    const fam = getMemoryStore().families.get(familyId);
+    targetRecipients = (fam?.members || [])
+      .filter((m) => !m.isChild && m.id !== actorId)
+      .map((m) => m.id);
+  }
+
+  if (targetRecipients.length === 0) return [];
+
+  const created: FamilyNotification[] = targetRecipients.map((recipientId) => ({
+    id: uid("nt"),
+    familyId,
+    recipientId,
+    actorId,
+    category,
+    title,
+    body,
+    target: {
+      tab: target.tab,
+      entityId: target.entityId ?? null,
+    },
+    read: false,
+    createdAt: createdIso,
+  }));
+
+  if (db) {
+    try {
+      await db.insert(notifications).values(
+        created.map((n) => ({
+          id: n.id,
+          familyId: n.familyId,
+          recipientId: n.recipientId,
+          actorId: n.actorId,
+          category: n.category,
+          title: n.title,
+          body: n.body,
+          targetTab: n.target.tab,
+          targetEntityId: n.target.entityId ?? null,
+          read: false,
+          createdAt: now,
+        }))
+      );
+    } catch (err) {
+      console.warn("Failed saving notifications to Neon DB:", err);
+    }
+    return created;
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  if (fam) {
+    fam.notifications = [...created, ...(fam.notifications || [])].slice(
+      0,
+      200
+    );
+  }
+  return created;
+}
+
+export async function getNotificationsForMember(
+  familyId: string,
+  recipientId: MemberId,
+  limit = 30
+): Promise<FamilyNotification[]> {
+  const db = await getReadyDb();
+  if (db) {
+    try {
+      const rows = await db
+        .select()
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.familyId, familyId),
+            eq(notifications.recipientId, recipientId)
+          )
+        )
+        .orderBy(desc(notifications.createdAt))
+        .limit(limit);
+
+      return rows.map((n) => ({
+        id: n.id,
+        familyId: n.familyId,
+        recipientId: n.recipientId,
+        actorId: n.actorId,
+        category: n.category as NotificationCategory,
+        title: n.title,
+        body: n.body,
+        target: {
+          tab: (n.targetTab || "wall") as AppTabId,
+          entityId: n.targetEntityId || null,
+        },
+        read: n.read,
+        createdAt: n.createdAt.toISOString(),
+      }));
+    } catch (err) {
+      console.warn("Error fetching notifications from Neon DB:", err);
+      return [];
+    }
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  if (!fam) return [];
+  return (fam.notifications || [])
+    .filter((n) => n.recipientId === recipientId)
+    .slice(0, limit);
+}
+
+export async function getPostsForFamily(familyId: string): Promise<WallPost[]> {
+  const db = await getReadyDb();
+  if (db) {
+    try {
+      const postRows = await db
+        .select()
+        .from(posts)
+        .where(eq(posts.familyId, familyId))
+        .orderBy(desc(posts.createdAt));
+
+      const postIds = postRows.map((p) => p.id);
+      const [commentRows, reactionRows] =
+        postIds.length > 0
+          ? await Promise.all([
+              db
+                .select()
+                .from(postComments)
+                .where(inArray(postComments.postId, postIds)),
+              db
+                .select()
+                .from(postReactions)
+                .where(inArray(postReactions.postId, postIds)),
+            ])
+          : [[], []];
+
+      return postRows.map((p) => {
+        const pComments = commentRows
+          .filter((c) => c.postId === p.id)
+          .map((c) => ({ id: c.id, by: c.by, text: c.text, at: c.at }));
+
+        const reactions: Record<string, MemberId[]> = {
+          "❤️": [],
+          "👍": [],
+          "😂": [],
+        };
+        for (const r of reactionRows.filter((row) => row.postId === p.id)) {
+          if (!reactions[r.emoji]) reactions[r.emoji] = [];
+          if (!reactions[r.emoji].includes(r.memberId)) {
+            reactions[r.emoji].push(r.memberId);
+          }
+        }
+
+        return {
+          id: p.id,
+          author: p.author,
+          type: p.type,
+          content: p.content,
+          images: p.images || [],
+          createdAt: p.createdAtLabel,
+          reactions,
+          comments: pComments,
+        };
+      });
+    } catch (err) {
+      console.warn("Error fetching posts from Neon DB:", err);
+      return [];
+    }
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  return fam?.posts || [];
+}
+
+export async function getMembersForFamily(familyId: string): Promise<Member[]> {
+  const db = await getReadyDb();
+  if (db) {
+    try {
+      const rows = await db
+        .select()
+        .from(members)
+        .where(eq(members.familyId, familyId));
+      return rows.map(toPublicMember);
+    } catch (err) {
+      console.warn("Error fetching members from Neon DB:", err);
+      return [];
+    }
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  return (fam?.members || []).map(toPublicMember);
+}
+
+export async function markNotificationReadRecord(
+  familyId: string,
+  recipientId: MemberId,
+  notificationId: string
+): Promise<void> {
+  const db = await getReadyDb();
+  if (db) {
+    await db
+      .update(notifications)
+      .set({ read: true })
+      .where(
+        and(
+          eq(notifications.id, notificationId),
+          eq(notifications.familyId, familyId),
+          eq(notifications.recipientId, recipientId)
+        )
+      );
+    return;
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  if (fam && fam.notifications) {
+    fam.notifications = fam.notifications.map((n) =>
+      n.id === notificationId && n.recipientId === recipientId
+        ? { ...n, read: true }
+        : n
+    );
+  }
+}
+
+export async function markAllNotificationsReadRecord(
+  familyId: string,
+  recipientId: MemberId
+): Promise<void> {
+  const db = await getReadyDb();
+  if (db) {
+    await db
+      .update(notifications)
+      .set({ read: true })
+      .where(
+        and(
+          eq(notifications.familyId, familyId),
+          eq(notifications.recipientId, recipientId)
+        )
+      );
+    return;
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  if (fam && fam.notifications) {
+    fam.notifications = fam.notifications.map((n) =>
+      n.recipientId === recipientId ? { ...n, read: true } : n
+    );
+  }
+}
+
+export async function clearNotificationsRecord(
+  familyId: string,
+  recipientId: MemberId
+): Promise<void> {
+  const db = await getReadyDb();
+  if (db) {
+    await db
+      .delete(notifications)
+      .where(
+        and(
+          eq(notifications.familyId, familyId),
+          eq(notifications.recipientId, recipientId)
+        )
+      );
+    return;
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  if (fam && fam.notifications) {
+    fam.notifications = fam.notifications.filter(
+      (n) => n.recipientId !== recipientId
+    );
+  }
 }
