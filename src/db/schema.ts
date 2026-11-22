@@ -197,3 +197,21 @@ export const activities = pgTable("activities", {
   targetEventId: text("target_event_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const notifications = pgTable("notifications", {
+  id: text("id").primaryKey(),
+  familyId: text("family_id")
+    .notNull()
+    .references(() => families.id, { onDelete: "cascade" }),
+  recipientId: text("recipient_id")
+    .notNull()
+    .references(() => members.id, { onDelete: "cascade" }),
+  actorId: text("actor_id").notNull(),
+  category: text("category").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull().default(""),
+  targetTab: text("target_tab").notNull().default("wall"),
+  targetEntityId: text("target_entity_id"),
+  read: boolean("read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

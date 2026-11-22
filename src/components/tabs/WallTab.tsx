@@ -20,6 +20,7 @@ export function WallTab({
   toggleReaction,
   addComment,
   openComposer,
+  highlightedPostId,
 }: {
   posts: WallPost[];
   currentUser: MemberId;
@@ -31,6 +32,7 @@ export function WallTab({
     participants?: MemberId[],
     postType?: string
   ) => void;
+  highlightedPostId?: string | null;
 }) {
   const { memberById } = useMembers();
   const me = memberById(currentUser);
@@ -134,6 +136,7 @@ export function WallTab({
             currentUser={currentUser}
             onReact={(e) => toggleReaction(p.id, e)}
             onComment={(text) => addComment(p.id, text)}
+            highlighted={highlightedPostId === p.id}
           />
         ))
       )}
@@ -179,12 +182,14 @@ export function PostCard({
   onComment,
   currentUser,
   compact,
+  highlighted,
 }: {
   post: WallPost;
   onReact: (emoji: string) => void;
   onComment?: (text: string) => void;
   currentUser?: MemberId;
   compact?: boolean;
+  highlighted?: boolean;
 }) {
   const { memberById } = useMembers();
   const author = memberById(post.author);
@@ -209,13 +214,17 @@ export function PostCard({
 
   return (
     <article
+      id={compact ? undefined : `post-${post.id}`}
       style={{
         background: "#fff",
-        border: "1px solid #F1E8D9",
-        boxShadow: CARD_SHADOW,
+        border: highlighted ? "2px solid #E8622C" : "1px solid #F1E8D9",
+        boxShadow: highlighted
+          ? "0 6px 24px rgba(232,98,44,0.22)"
+          : CARD_SHADOW,
         borderRadius: 20,
         marginBottom: compact ? 10 : 14,
         overflow: "hidden",
+        transition: "border-color 0.25s ease, box-shadow 0.25s ease",
       }}
     >
       <div

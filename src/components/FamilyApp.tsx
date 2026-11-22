@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LogOut,
   Plus,
   Search,
   Settings as SettingsIcon,
+  User,
   Users,
 } from "lucide-react";
 import {
@@ -15,12 +16,21 @@ import {
 } from "@/lib/constants";
 import { fmtTime, nowClock, relativeDay, todayISO, uid } from "@/lib/dates";
 import { dosesFor } from "@/lib/meds";
+import {
+  getDefaultNotificationPreferences,
+  isCategoryEnabled,
+  loadNotificationPreferences,
+  saveNotificationPreferences,
+  showBrowserNotification,
+  type NotificationPreferences,
+} from "@/lib/notifications";
 import { expandAllEvents, expandAllTasks } from "@/lib/recurrence";
 import type {
   ActivityItem,
   ChildProfile,
   DoseLogMap,
   FamilyEvent,
+  FamilyNotification,
   FamilyStatePayload,
   FamilyTask,
   Medication,
@@ -39,6 +49,7 @@ import {
 } from "@/components/layout/QuickAddSheet";
 import { Composer } from "@/components/layout/Composer";
 import { SearchOverlay } from "@/components/layout/SearchOverlay";
+import { NotificationBell } from "@/components/layout/NotificationCenter";
 import {
   SettingsScreen,
   type SettingsSubScreen,
@@ -80,17 +91,54 @@ export default function FamilyApp({
   const [inviteCode, setInviteCode] = useState(initialState.inviteCode);
   const [tab, setTab] = useState("home");
 
-  // Support PWA home-screen shortcut URLs (e.g. /?tab=tasks) without touching invite params
+  const [notifications, setNotifications] = useState<FamilyNotification[]>(
+    initialState.notifications || []
+  );
+  const [notificationPrefs, setNotificationPrefs] =
+    useState<NotificationPreferences>(() =>
+      getDefaultNotificationPreferences()
+    );
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(
+    null
+  );
+  const seenNotificationIdsRef = useRef<Set<string>>(
+    new Set((initialState.notifications || []).map((n) => n.id))
+  );
+  const notificationPrefsRef = useRef<NotificationPreferences>(notificationPrefs);
+  notificationPrefsRef.current = notificationPrefs;
+
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load saved notification preferences for the current user
+  useEffect(() => {
+    setNotificationPrefs(loadNotificationPreferences(currentUser));
+  }, [currentUser]);
+
+  // Support PWA home-screen shortcut & notification URLs (e.g. /?tab=wall&entity=pt_123)
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     const requestedTab = url.searchParams.get("tab");
+    const requestedEntity = url.searchParams.get("entity");
+    let mutated = false;
     if (requestedTab && TABS.some((t) => t.id === requestedTab)) {
       setTab(requestedTab);
       url.searchParams.delete("tab");
+      mutated = true;
+    }
+    if (requestedEntity) {
+      if (requestedTab === "wall") {
+        setHighlightedPostId(requestedEntity);
+      }
+      url.searchParams.delete("entity");
+      mutated = true;
+    }
+    if (mutated) {
       window.history.replaceState({}, "", url.pathname + url.search + url.hash);
     }
   }, []);
+
   const [events, setEvents] = useState<FamilyEvent[]>(initialState.events);
   const [tasks, setTasks] = useState<FamilyTask[]>(initialState.tasks);
   const [posts, setPosts] = useState<WallPost[]>(initialState.posts);
@@ -121,10 +169,158 @@ export default function FamilyApp({
   const memberById = (id?: MemberId | null) => findMemberById(id, members);
   const me = memberById(currentUser);
 
+  // Close mobile profile dropdown on outside click
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    function handleOutside(event: MouseEvent) {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target as Node)
+      ) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [userMenuOpen]);
+
+  // Smoothly scroll to and temporarily highlight a Wall post opened from a notification
+  useEffect(() => {
+    if (!highlightedPostId || tab !== "wall") return;
+    const frame = window.requestAnimationFrame(() => {
+      const el = document.getElementById(`post-${highlightedPostId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedPostId(null);
+    }, 3500);
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [highlightedPostId, tab, posts.length]);
+
+  const pollNotifications = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notifications", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        notifications?: FamilyNotification[];
+        posts?: WallPost[];
+      };
+      if (Array.isArray(json.posts)) {
+        setPosts(json.posts);
+      }
+      if (Array.isArray(json.notifications)) {
+        const incoming = json.notifications;
+        const prefs = notificationPrefsRef.current;
+        const newlyArrived = incoming.filter(
+          (n) =>
+            !n.read &&
+            !seenNotificationIdsRef.current.has(n.id) &&
+            isCategoryEnabled(prefs, n.category)
+        );
+        for (const n of incoming) {
+          seenNotificationIdsRef.current.add(n.id);
+        }
+        setNotifications(incoming);
+        if (prefs.browserEnabled && newlyArrived.length > 0) {
+          for (const n of newlyArrived.slice(0, 3)) {
+            void showBrowserNotification(n);
+          }
+        }
+      }
+    } catch {
+      /* background polling failure is non-fatal */
+    }
+  }, []);
+
+  // Poll for new notifications periodically and whenever the app regains focus
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void pollNotifications();
+      }
+    }, 15000);
+
+    function handleFocus() {
+      void pollNotifications();
+    }
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        void pollNotifications();
+      }
+    }
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [pollNotifications]);
+
   function fireToast(msg: string) {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3200);
+  }
+
+  function handleUpdateNotificationPreferences(next: NotificationPreferences) {
+    setNotificationPrefs(next);
+    saveNotificationPreferences(currentUser, next);
+  }
+
+  async function handleSelectNotification(notification: FamilyNotification) {
+    if (!notification.read) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
+      );
+      try {
+        await fetch("/api/notifications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: notification.id }),
+        });
+      } catch {
+        /* background sync */
+      }
+    }
+
+    if (notification.target?.tab) {
+      setTab(notification.target.tab);
+      if (
+        notification.target.tab === "wall" &&
+        notification.target.entityId
+      ) {
+        setHighlightedPostId(notification.target.entityId);
+      }
+    }
+  }
+
+  async function handleMarkAllNotificationsRead() {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markAllRead: true }),
+      });
+    } catch {
+      /* background sync */
+    }
+  }
+
+  async function handleClearNotifications() {
+    setNotifications([]);
+    try {
+      await fetch("/api/notifications", { method: "DELETE" });
+    } catch {
+      /* background sync */
+    }
   }
 
   function pushActivity(
@@ -937,26 +1133,17 @@ export default function FamilyApp({
                 >
                   <Search size={18} />
                 </button>
-                <button
-                  onClick={() => setSettingsScreen("root")}
-                  title="Settings"
-                  aria-label="Settings"
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    width: 34,
-                    height: 34,
-                    borderRadius: 10,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#6B6259",
-                    flexShrink: 0,
-                  }}
-                >
-                  <SettingsIcon size={18} />
-                </button>
+                <NotificationBell
+                  notifications={notifications}
+                  preferences={notificationPrefs}
+                  isDesktop={isDesktop}
+                  onSelectNotification={(n) => void handleSelectNotification(n)}
+                  onMarkAllRead={() => void handleMarkAllNotificationsRead()}
+                  onClearAll={() => void handleClearNotifications()}
+                  onOpenNotificationSettings={() =>
+                    setSettingsScreen("notifications")
+                  }
+                />
                 {!isDesktop && (
                   <button
                     onClick={() => setQuickAddOpen(true)}
@@ -982,7 +1169,7 @@ export default function FamilyApp({
                   </button>
                 )}
                 {!isDesktop && (
-                  <div style={{ position: "relative" }}>
+                  <div ref={userMenuRef} style={{ position: "relative" }}>
                     <button
                       onClick={() => setUserMenuOpen((s) => !s)}
                       aria-label={`Signed in as ${me.name}`}
@@ -1040,8 +1227,7 @@ export default function FamilyApp({
                           }}
                           style={mobileMenuItemStyle}
                         >
-                          <SettingsIcon size={14} color="#6B6259" /> Account
-                          Settings
+                          <User size={14} color="#6B6259" /> Account
                         </button>
                         <button
                           onClick={() => {
@@ -1052,6 +1238,15 @@ export default function FamilyApp({
                         >
                           <Users size={14} color="#6B6259" /> Family &amp;
                           Members
+                        </button>
+                        <button
+                          onClick={() => {
+                            setUserMenuOpen(false);
+                            setSettingsScreen("root");
+                          }}
+                          style={mobileMenuItemStyle}
+                        >
+                          <SettingsIcon size={14} color="#6B6259" /> Settings
                         </button>
                         <div
                           style={{
@@ -1157,6 +1352,7 @@ export default function FamilyApp({
                 toggleReaction={toggleReaction}
                 addComment={addComment}
                 openComposer={openComposerFor}
+                highlightedPostId={highlightedPostId}
               />
             )}
           </div>
@@ -1278,6 +1474,8 @@ export default function FamilyApp({
             familyName={familyName}
             inviteCode={inviteCode}
             currentUserId={currentUser}
+            notificationPreferences={notificationPrefs}
+            onUpdateNotificationPreferences={handleUpdateNotificationPreferences}
             onRenameFamily={renameFamily}
             onRegenerateInviteCode={handleRegenerateInviteCode}
             onAddMember={handleAddMember}

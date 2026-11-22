@@ -42,6 +42,21 @@ await sql`
 `;
 
 await sql`ALTER TABLE IF EXISTS "members" ADD COLUMN IF NOT EXISTS "avatar_url" text`;
+await sql`
+  CREATE TABLE IF NOT EXISTS "notifications" (
+    "id" text PRIMARY KEY NOT NULL,
+    "family_id" text NOT NULL REFERENCES "families"("id") ON DELETE cascade,
+    "recipient_id" text NOT NULL REFERENCES "members"("id") ON DELETE cascade,
+    "actor_id" text NOT NULL,
+    "category" text NOT NULL,
+    "title" text NOT NULL,
+    "body" text DEFAULT '' NOT NULL,
+    "target_tab" text DEFAULT 'wall' NOT NULL,
+    "target_entity_id" text,
+    "read" boolean DEFAULT false NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  )
+`;
 
 console.log("[db:sync] Pushing Drizzle schema to Neon Postgres...");
 const result = spawnSync("npx", ["drizzle-kit", "push", "--force"], {
