@@ -747,13 +747,19 @@ export function SettingsScreen({
                       </div>
                     )}
                   </div>
-                  <button
-                    onClick={() => setMemberModalState({ mode: "edit", member: m })}
-                    aria-label={`Edit ${m.name}`}
-                    style={iconBtnStyle}
-                  >
-                    <Pencil size={14} color="#6B6259" />
-                  </button>
+                  {(m.isChild || m.id === currentUserId) && (
+                    <button
+                      onClick={() =>
+                        m.id === currentUserId
+                          ? setScreen("account")
+                          : setMemberModalState({ mode: "edit", member: m })
+                      }
+                      aria-label={`Edit ${m.name}`}
+                      style={iconBtnStyle}
+                    >
+                      <Pencil size={14} color="#6B6259" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

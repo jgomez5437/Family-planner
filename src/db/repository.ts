@@ -1007,8 +1007,11 @@ export interface UpdateMemberInput {
 export async function updateFamilyMember(
   familyId: string,
   memberId: MemberId,
-  updates: UpdateMemberInput
-): Promise<{ ok: true; member: Member } | { ok: false; error: string }> {
+  updates: UpdateMemberInput,
+  actorId: MemberId
+): Promise<
+  { ok: true; member: Member } | { ok: false; error: string; status?: number }
+> {
   const db = await getReadyDb();
   const normalizedEmail =
     updates.email !== undefined
@@ -1017,7 +1020,11 @@ export async function updateFamilyMember(
         : null
       : undefined;
 
-  if (updates.password !== undefined && updates.password.length > 0 && updates.password.length < 6) {
+  if (
+    updates.password !== undefined &&
+    updates.password.length > 0 &&
+    updates.password.length < 6
+  ) {
     return { ok: false, error: "Password must be at least 6 characters." };
   }
 
@@ -1028,7 +1035,17 @@ export async function updateFamilyMember(
       .where(and(eq(members.id, memberId), eq(members.familyId, familyId)))
       .limit(1);
     const existing = rows[0];
-    if (!existing) return { ok: false, error: "Member not found." };
+    if (!existing) {
+      return { ok: false, error: "Member not found.", status: 404 };
+    }
+    if (!existing.isChild && memberId !== actorId) {
+      return {
+        ok: false,
+        error:
+          "Only the account holder can edit their own account information and photo.",
+        status: 403,
+      };
+    }
 
     if (normalizedEmail && normalizedEmail !== existing.email) {
       const conflicts = await db
@@ -1041,7 +1058,11 @@ export async function updateFamilyMember(
     }
 
     const nextIsChild =
-      updates.isChild !== undefined ? Boolean(updates.isChild) : existing.isChild;
+      memberId === actorId
+        ? existing.isChild
+        : updates.isChild !== undefined
+          ? Boolean(updates.isChild)
+          : existing.isChild;
     const nextRole =
       existing.role === "admin"
         ? "admin"
@@ -1118,9 +1139,19 @@ export async function updateFamilyMember(
 
   const store = getMemoryStore();
   const fam = store.families.get(familyId);
-  if (!fam) return { ok: false, error: "Family not found." };
+  if (!fam) return { ok: false, error: "Family not found.", status: 404 };
   const existing = fam.members.find((m) => m.id === memberId);
-  if (!existing) return { ok: false, error: "Member not found." };
+  if (!existing) {
+    return { ok: false, error: "Member not found.", status: 404 };
+  }
+  if (!existing.isChild && memberId !== actorId) {
+    return {
+      ok: false,
+      error:
+        "Only the account holder can edit their own account information and photo.",
+      status: 403,
+    };
+  }
 
   if (normalizedEmail && normalizedEmail !== existing.email) {
     for (const f of store.families.values()) {
@@ -1146,7 +1177,7 @@ export async function updateFamilyMember(
   }
   if (updates.color) existing.color = updates.color;
   if (updates.light) existing.light = updates.light;
-  if (updates.isChild !== undefined) {
+  if (updates.isChild !== undefined && memberId !== actorId) {
     existing.isChild = Boolean(updates.isChild);
     if (existing.role !== "admin") {
       existing.role = existing.isChild ? "child" : "adult";
