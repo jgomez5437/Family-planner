@@ -1,11 +1,11 @@
-/* Family Planner Service Worker — Invite-Safe Network-First PWA */
+/* Family Planner Service Worker — Privacy-Safe Network-First PWA */
 
-const CACHE_VERSION = "family-planner-v1";
+const CACHE_VERSION = "family-planner-v2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
-const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 
 const PRECACHE_URLS = [
   "/offline",
+  "/manifest.webmanifest",
   "/icons/icon.svg",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -28,9 +28,7 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) =>
         Promise.all(
-          keys
-            .filter((k) => k !== STATIC_CACHE && k !== SHELL_CACHE)
-            .map((k) => caches.delete(k))
+          keys.filter((k) => k !== STATIC_CACHE).map((k) => caches.delete(k))
         )
       )
       .then(() => self.clients.claim())
@@ -62,44 +60,25 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Document navigations: always Network-First so server-side session & ?invite=CODE previews stay fresh
+  // Document navigations: always go straight to the network (never cache private
+  // per-user SSR HTML, invite previews, or medication state) and fall back to /offline
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          // Only cache the clean root shell (never cache ?invite= / ?code= pages as the default shell)
-          const isCleanRoot =
-            url.origin === self.location.origin &&
-            url.pathname === "/" &&
-            !url.searchParams.has("invite") &&
-            !url.searchParams.has("code");
+      fetch(request).catch(async () => {
+        const staticCache = await caches.open(STATIC_CACHE);
+        const offlinePage = await staticCache.match("/offline");
+        if (offlinePage) return offlinePage;
 
-          if (response.ok && isCleanRoot) {
-            const copy = response.clone();
-            caches.open(SHELL_CACHE).then((cache) => cache.put("/", copy));
-          }
-          return response;
-        })
-        .catch(async () => {
-          // Offline fallback: try cached clean root shell first, then /offline page
-          const shellCache = await caches.open(SHELL_CACHE);
-          const cachedRoot = await shellCache.match("/");
-          if (cachedRoot) return cachedRoot;
-
-          const staticCache = await caches.open(STATIC_CACHE);
-          const offlinePage = await staticCache.match("/offline");
-          if (offlinePage) return offlinePage;
-
-          return new Response(
-            "You appear to be offline. Please reconnect to use Family Planner.",
-            { status: 503, headers: { "Content-Type": "text/plain" } }
-          );
-        })
+        return new Response(
+          "You appear to be offline. Please reconnect to use Family Planner.",
+          { status: 503, headers: { "Content-Type": "text/plain" } }
+        );
+      })
     );
     return;
   }
 
-  // Static Next.js assets, icons, and fonts: Cache-First with network fill
+  // Static Next.js assets, icons, manifest, and fonts: Cache-First with network fill
   if (isStaticAsset(url)) {
     event.respondWith(
       caches.open(STATIC_CACHE).then(async (cache) => {

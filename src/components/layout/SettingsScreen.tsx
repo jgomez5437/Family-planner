@@ -80,7 +80,8 @@ export function SettingsScreen({
   onSignOut: () => void;
 }) {
   const { members, memberById } = useMembers();
-  const { isStandalone, isIos, canInstallNative, triggerInstall } = usePwa();
+  const { isStandalone, isInstalled, isIos, canInstallNative, triggerInstall } =
+    usePwa();
   const me = memberById(currentUserId);
 
   const [screen, setScreen] = useState<SettingsSubScreen>(initialScreen);
@@ -303,7 +304,13 @@ export function SettingsScreen({
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "16px 16px calc(24px + env(safe-area-inset-bottom))",
+        }}
+      >
         {screen === "root" && (
           <div style={{ maxWidth: 480, margin: "0 auto" }}>
             <SettingsRow
@@ -339,7 +346,7 @@ export function SettingsScreen({
               icon={Smartphone}
               label="Install App"
               sub={
-                isStandalone
+                isInstalled
                   ? "Installed on this device"
                   : "Add Family Planner to your phone's Home Screen"
               }
@@ -1062,7 +1069,7 @@ export function SettingsScreen({
               </div>
             </div>
 
-            {isStandalone ? (
+            {isInstalled ? (
               <div
                 style={{
                   background: "#E4F1EC",
@@ -1080,8 +1087,9 @@ export function SettingsScreen({
               >
                 <CheckCircle2 size={20} />
                 <span>
-                  Family Planner is installed and running in app mode on this
-                  device.
+                  {isStandalone
+                    ? "Family Planner is installed and running in app mode on this device."
+                    : "Family Planner has been installed! You can now open it from your Home Screen."}
                 </span>
               </div>
             ) : canInstallNative ? (
@@ -1125,7 +1133,7 @@ export function SettingsScreen({
                   marginBottom: 10,
                 }}
               >
-                iPhone &amp; iPad (Safari){isIos ? " · This device" : ""}
+                iPhone &amp; iPad (Safari / Chrome){isIos ? " · This device" : ""}
               </div>
               <ol
                 style={{
@@ -1140,11 +1148,11 @@ export function SettingsScreen({
                 }}
               >
                 <li>
-                  Open Family Planner in <strong>Safari</strong> and tap the{" "}
+                  Tap the{" "}
                   <span style={installBadgeStyle}>
                     <Share size={12} /> Share
                   </span>{" "}
-                  button at the bottom of your screen.
+                  button (at the bottom in Safari, or top-right in Chrome).
                 </li>
                 <li>
                   Scroll down and tap{" "}
@@ -1158,6 +1166,18 @@ export function SettingsScreen({
                   Family Planner on your Home Screen.
                 </li>
               </ol>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: "#8A7F70",
+                  marginTop: 10,
+                  lineHeight: 1.4,
+                }}
+              >
+                Opened from Messages or WhatsApp? Tap{" "}
+                <strong>Open in Safari</strong> first if you don&apos;t see Add
+                to Home Screen.
+              </div>
             </div>
 
             <div

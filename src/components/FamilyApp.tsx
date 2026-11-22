@@ -1084,7 +1084,9 @@ export default function FamilyApp({
             style={{
               maxWidth: isDesktop ? 900 : 560,
               margin: "0 auto",
-              padding: isDesktop ? "24px 32px 60px" : "18px 16px 90px",
+              padding: isDesktop
+                ? "24px 32px 60px"
+                : "18px 16px calc(96px + env(safe-area-inset-bottom))",
             }}
           >
             <PwaInstallBanner />

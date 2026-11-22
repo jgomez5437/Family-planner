@@ -1,5 +1,3 @@
-"use client";
-
 import React from "react";
 import { RefreshCw, WifiOff } from "lucide-react";
 
@@ -69,15 +67,11 @@ export default function OfflinePage() {
           Family Planner needs an internet connection to sync your latest family
           schedules, medications, tasks, and wall updates.
         </p>
-        <button
-          type="button"
-          onClick={() => {
-            if (typeof window !== "undefined") {
-              window.location.href = "/";
-            }
-          }}
+        <a
+          href="/"
           style={{
             width: "100%",
+            textDecoration: "none",
             border: "none",
             borderRadius: 12,
             padding: "12px 18px",
@@ -94,7 +88,7 @@ export default function OfflinePage() {
           }}
         >
           <RefreshCw size={16} /> Try Again
-        </button>
+        </a>
       </div>
     </div>
   );

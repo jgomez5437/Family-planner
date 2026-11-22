@@ -145,7 +145,13 @@ export function SearchOverlay({
           <X size={16} />
         </button>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 40px" }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "14px 16px calc(40px + env(safe-area-inset-bottom))",
+        }}
+      >
         {!q && (
           <div
             style={{

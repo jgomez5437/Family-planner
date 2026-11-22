@@ -36,6 +36,7 @@ interface BeforeInstallPromptEvent extends Event {
 
 interface PwaContextValue {
   isStandalone: boolean;
+  isInstalled: boolean;
   isIos: boolean;
   isMobile: boolean;
   isOnline: boolean;
@@ -50,6 +51,7 @@ const DISMISS_STORAGE_KEY = "fp_pwa_banner_dismissed_v1";
 
 const PwaContext = createContext<PwaContextValue>({
   isStandalone: false,
+  isInstalled: false,
   isIos: false,
   isMobile: false,
   isOnline: true,
@@ -95,6 +97,7 @@ function detectMobile(): boolean {
 
 export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [isStandalone, setIsStandalone] = useState(false);
+  const [installedInSession, setInstalledInSession] = useState(false);
   const [isIos, setIsIos] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
@@ -102,6 +105,8 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     useState<BeforeInstallPromptEvent | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(true);
   const [guideOpen, setGuideOpen] = useState(false);
+
+  const isInstalled = isStandalone || installedInSession;
 
   useEffect(() => {
     setIsStandalone(detectStandalone());
@@ -139,15 +144,17 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
 
     const onAppInstalled = () => {
       setDeferredPrompt(null);
-      setIsStandalone(true);
+      setInstalledInSession(true);
       setGuideOpen(false);
     };
 
+    const onResize = () => setIsMobile(detectMobile());
     const onOnline = () => setIsOnline(true);
     const onOffline = () => setIsOnline(false);
 
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
     window.addEventListener("appinstalled", onAppInstalled);
+    window.addEventListener("resize", onResize);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
 
@@ -157,6 +164,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       }
       window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
       window.removeEventListener("appinstalled", onAppInstalled);
+      window.removeEventListener("resize", onResize);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
@@ -197,6 +205,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     <PwaContext.Provider
       value={{
         isStandalone,
+        isInstalled,
         isIos,
         isMobile,
         isOnline,
@@ -244,6 +253,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
           isIos={isIos}
           canInstallNative={Boolean(deferredPrompt)}
           isStandalone={isStandalone}
+          isInstalled={isInstalled}
           onNativeInstall={async () => {
             await triggerInstall();
           }}
@@ -256,7 +266,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
 
 export function PwaInstallBanner() {
   const {
-    isStandalone,
+    isInstalled,
     isIos,
     isMobile,
     canInstallNative,
@@ -265,7 +275,7 @@ export function PwaInstallBanner() {
     triggerInstall,
   } = usePwa();
 
-  if (isStandalone || bannerDismissed) return null;
+  if (isInstalled || bannerDismissed) return null;
   // Show on phones/mobile browsers or whenever the browser offers a native install prompt
   if (!isMobile && !canInstallNative) return null;
 
@@ -362,12 +372,14 @@ function InstallGuideModal({
   isIos,
   canInstallNative,
   isStandalone,
+  isInstalled,
   onNativeInstall,
   onClose,
 }: {
   isIos: boolean;
   canInstallNative: boolean;
   isStandalone: boolean;
+  isInstalled: boolean;
   onNativeInstall: () => Promise<void>;
   onClose: () => void;
 }) {
@@ -425,7 +437,7 @@ function InstallGuideModal({
           </button>
         </div>
 
-        {isStandalone ? (
+        {isInstalled ? (
           <div
             style={{
               background: "#E4F1EC",
@@ -442,7 +454,11 @@ function InstallGuideModal({
             }}
           >
             <CheckCircle2 size={20} />
-            <span>Family Planner is already installed on this device.</span>
+            <span>
+              {isStandalone
+                ? "Family Planner is installed and running in app mode on this device."
+                : "Family Planner has been installed! You can now open it from your Home Screen."}
+            </span>
           </div>
         ) : (
           <>
@@ -487,42 +503,56 @@ function InstallGuideModal({
                 }}
               >
                 {isIos
-                  ? "iPhone & iPad (Safari)"
+                  ? "iPhone & iPad (Safari / Chrome)"
                   : "Android (Chrome / Edge)"}
               </div>
 
               {isIos ? (
-                <ol
-                  style={{
-                    margin: 0,
-                    paddingLeft: 18,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10,
-                    fontSize: 13.5,
-                    lineHeight: 1.45,
-                    color: "#2B2622",
-                  }}
-                >
-                  <li>
-                    Open this page in <strong>Safari</strong> and tap the{" "}
-                    <span style={inlineBadgeStyle}>
-                      <Share size={12} /> Share
-                    </span>{" "}
-                    button at the bottom of your screen.
-                  </li>
-                  <li>
-                    Scroll down and tap{" "}
-                    <span style={inlineBadgeStyle}>
-                      <PlusSquare size={12} /> Add to Home Screen
-                    </span>
-                    .
-                  </li>
-                  <li>
-                    Tap <strong>Add</strong> in the top-right corner to place
-                    Family Planner on your Home Screen.
-                  </li>
-                </ol>
+                <>
+                  <ol
+                    style={{
+                      margin: 0,
+                      paddingLeft: 18,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                      fontSize: 13.5,
+                      lineHeight: 1.45,
+                      color: "#2B2622",
+                    }}
+                  >
+                    <li>
+                      Tap the{" "}
+                      <span style={inlineBadgeStyle}>
+                        <Share size={12} /> Share
+                      </span>{" "}
+                      button (at the bottom in Safari, or top-right in Chrome).
+                    </li>
+                    <li>
+                      Scroll down and tap{" "}
+                      <span style={inlineBadgeStyle}>
+                        <PlusSquare size={12} /> Add to Home Screen
+                      </span>
+                      .
+                    </li>
+                    <li>
+                      Tap <strong>Add</strong> in the top-right corner to place
+                      Family Planner on your Home Screen.
+                    </li>
+                  </ol>
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: "#8A7F70",
+                      marginTop: 10,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    Opened this from Messages or WhatsApp? Tap{" "}
+                    <strong>Open in Safari</strong> first if you don&apos;t see
+                    Add to Home Screen.
+                  </div>
+                </>
               ) : (
                 <ol
                   style={{
