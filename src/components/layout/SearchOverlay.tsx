@@ -93,7 +93,7 @@ export function SearchOverlay({
     >
       <div
         style={{
-          padding: "14px 16px 10px",
+          padding: "calc(14px + env(safe-area-inset-top)) 16px 10px",
           borderBottom: "1px solid #EFE4D2",
           display: "flex",
           alignItems: "center",

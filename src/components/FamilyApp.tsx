@@ -52,6 +52,7 @@ import { CaregiverSheet, ManagerTab } from "@/components/tabs/ManagerTab";
 import { TasksTab } from "@/components/tabs/TasksTab";
 import { EventDetailModal, EventsTab } from "@/components/tabs/EventsTab";
 import { WallTab } from "@/components/tabs/WallTab";
+import { PwaInstallBanner } from "@/components/pwa/PwaContext";
 
 function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState(false);
@@ -78,6 +79,18 @@ export default function FamilyApp({
   const [members, setMembers] = useState<Member[]>(initialState.members);
   const [inviteCode, setInviteCode] = useState(initialState.inviteCode);
   const [tab, setTab] = useState("home");
+
+  // Support PWA home-screen shortcut URLs (e.g. /?tab=tasks) without touching invite params
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const requestedTab = url.searchParams.get("tab");
+    if (requestedTab && TABS.some((t) => t.id === requestedTab)) {
+      setTab(requestedTab);
+      url.searchParams.delete("tab");
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    }
+  }, []);
   const [events, setEvents] = useState<FamilyEvent[]>(initialState.events);
   const [tasks, setTasks] = useState<FamilyTask[]>(initialState.tasks);
   const [posts, setPosts] = useState<WallPost[]>(initialState.posts);
@@ -844,7 +857,9 @@ export default function FamilyApp({
               backdropFilter: "blur(14px)",
               WebkitBackdropFilter: "blur(14px)",
               borderBottom: "1px solid #F1E8D9",
-              padding: isDesktop ? "16px 32px" : "14px 18px 12px",
+              padding: isDesktop
+                ? "16px 32px"
+                : "calc(12px + env(safe-area-inset-top)) 18px 12px",
             }}
           >
             <div
@@ -1072,6 +1087,7 @@ export default function FamilyApp({
               padding: isDesktop ? "24px 32px 60px" : "18px 16px 90px",
             }}
           >
+            <PwaInstallBanner />
             {tab === "home" && (
               <HomeTab
                 currentUser={currentUser}

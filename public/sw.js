@@ -1,0 +1,130 @@
+/* Family Planner Service Worker — Invite-Safe Network-First PWA */
+
+const CACHE_VERSION = "family-planner-v1";
+const STATIC_CACHE = `${CACHE_VERSION}-static`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell`;
+
+const PRECACHE_URLS = [
+  "/offline",
+  "/icons/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-512.png",
+  "/icons/apple-touch-icon.png",
+];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(STATIC_CACHE)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((k) => k !== STATIC_CACHE && k !== SHELL_CACHE)
+            .map((k) => caches.delete(k))
+        )
+      )
+      .then(() => self.clients.claim())
+  );
+});
+
+function isStaticAsset(url) {
+  return (
+    url.pathname.startsWith("/_next/static/") ||
+    url.pathname.startsWith("/icons/") ||
+    url.pathname === "/manifest.webmanifest" ||
+    url.hostname === "fonts.googleapis.com" ||
+    url.hostname === "fonts.gstatic.com"
+  );
+}
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+
+  // Never intercept non-GET requests (POST/PATCH/PUT/DELETE mutations)
+  if (request.method !== "GET") {
+    return;
+  }
+
+  const url = new URL(request.url);
+
+  // Never cache API endpoints so auth, invites, meds, tasks, and wall stay live
+  if (url.origin === self.location.origin && url.pathname.startsWith("/api/")) {
+    return;
+  }
+
+  // Document navigations: always Network-First so server-side session & ?invite=CODE previews stay fresh
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          // Only cache the clean root shell (never cache ?invite= / ?code= pages as the default shell)
+          const isCleanRoot =
+            url.origin === self.location.origin &&
+            url.pathname === "/" &&
+            !url.searchParams.has("invite") &&
+            !url.searchParams.has("code");
+
+          if (response.ok && isCleanRoot) {
+            const copy = response.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put("/", copy));
+          }
+          return response;
+        })
+        .catch(async () => {
+          // Offline fallback: try cached clean root shell first, then /offline page
+          const shellCache = await caches.open(SHELL_CACHE);
+          const cachedRoot = await shellCache.match("/");
+          if (cachedRoot) return cachedRoot;
+
+          const staticCache = await caches.open(STATIC_CACHE);
+          const offlinePage = await staticCache.match("/offline");
+          if (offlinePage) return offlinePage;
+
+          return new Response(
+            "You appear to be offline. Please reconnect to use Family Planner.",
+            { status: 503, headers: { "Content-Type": "text/plain" } }
+          );
+        })
+    );
+    return;
+  }
+
+  // Static Next.js assets, icons, and fonts: Cache-First with network fill
+  if (isStaticAsset(url)) {
+    event.respondWith(
+      caches.open(STATIC_CACHE).then(async (cache) => {
+        const cached = await cache.match(request);
+        if (cached) {
+          // Background refresh for fonts/manifest; hashed _next/static files are immutable
+          if (!url.pathname.startsWith("/_next/static/")) {
+            fetch(request)
+              .then((res) => {
+                if (res && res.ok) cache.put(request, res.clone());
+              })
+              .catch(() => {});
+          }
+          return cached;
+        }
+        try {
+          const response = await fetch(request);
+          if (response && (response.ok || response.type === "opaque")) {
+            cache.put(request, response.clone());
+          }
+          return response;
+        } catch {
+          return new Response("", { status: 504 });
+        }
+      })
+    );
+  }
+});

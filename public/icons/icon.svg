@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="fp-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F0723A" />
+      <stop offset="50%" stop-color="#E8622C" />
+      <stop offset="100%" stop-color="#C2461A" />
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="492" height="492" rx="112" fill="url(#fp-bg)" />
+  <g fill="#FFF9F0">
+    <!-- Chimney -->
+    <rect x="314" y="142" width="44" height="86" rx="10" />
+    <!-- House body -->
+    <rect x="146" y="228" width="220" height="174" rx="26" />
+    <!-- Gable fill -->
+    <polygon points="256,120 120,252 392,252" />
+    <!-- Roof eaves -->
+    <path d="M110 254 L256 120 L402 254" fill="none" stroke="#FFF9F0" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+  <!-- Heart emblem -->
+  <path d="M256 358 C256 358 198 320 198 282 C198 261 214 246 233 246 C244 246 252 252 256 259 C260 252 268 246 279 246 C298 246 314 261 314 282 C314 320 256 358 256 358 Z" fill="#E8622C" />
+</svg>
