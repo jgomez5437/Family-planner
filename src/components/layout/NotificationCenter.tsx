@@ -29,6 +29,7 @@ export function NotificationBell({
   onOpenNotificationSettings: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [, setTimeTick] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const visibleNotifications = notifications.filter((n) =>
@@ -38,6 +39,7 @@ export function NotificationBell({
 
   useEffect(() => {
     if (!open) return;
+    const ticker = window.setInterval(() => setTimeTick((t) => t + 1), 30000);
     function handleOutsideClick(event: MouseEvent) {
       if (
         containerRef.current &&
@@ -52,6 +54,7 @@ export function NotificationBell({
     document.addEventListener("mousedown", handleOutsideClick);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
+      window.clearInterval(ticker);
       document.removeEventListener("mousedown", handleOutsideClick);
       document.removeEventListener("keydown", handleKeyDown);
     };
@@ -118,7 +121,9 @@ export function NotificationBell({
             position: isDesktop ? "absolute" : "fixed",
             right: isDesktop ? 0 : 12,
             left: isDesktop ? "auto" : 12,
-            top: isDesktop ? "calc(100% + 8px)" : "calc(60px + env(safe-area-inset-top))",
+            top: isDesktop
+              ? "calc(100% + 8px)"
+              : "calc(64px + env(safe-area-inset-top))",
             width: isDesktop ? 360 : "auto",
             maxWidth: isDesktop ? "92vw" : 420,
             marginLeft: isDesktop ? 0 : "auto",

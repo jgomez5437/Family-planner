@@ -224,6 +224,7 @@ export function PostCard({
         borderRadius: 20,
         marginBottom: compact ? 10 : 14,
         overflow: "hidden",
+        scrollMarginTop: 84,
         transition: "border-color 0.25s ease, box-shadow 0.25s ease",
       }}
     >

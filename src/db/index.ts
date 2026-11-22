@@ -63,6 +63,10 @@ async function ensureDbSchema(): Promise<void> {
           "created_at" timestamp DEFAULT now() NOT NULL
         )
       `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS "notifications_family_recipient_created_idx"
+        ON "notifications" ("family_id", "recipient_id", "created_at" DESC)
+      `;
     })().catch((err) => {
       schemaReadyPromise = null;
       throw err;

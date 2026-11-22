@@ -165,11 +165,24 @@ export default function FamilyApp({
   const [addChildModalOpen, setAddChildModalOpen] = useState(false);
   const [familyName, setFamilyName] = useState(initialState.familyName);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const postMutationSeqRef = useRef(0);
+  const pendingPostMutationsRef = useRef(0);
+  const notifMutationSeqRef = useRef(0);
+  const pendingNotifMutationsRef = useRef(0);
+  const memberMutationSeqRef = useRef(0);
 
   const memberById = (id?: MemberId | null) => findMemberById(id, members);
   const me = memberById(currentUser);
 
-  // Close mobile profile dropdown on outside click
+  // Clean up timers on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
+
+  // Close mobile profile dropdown on outside click or Escape
   useEffect(() => {
     if (!userMenuOpen) return;
     function handleOutside(event: MouseEvent) {
@@ -180,8 +193,15 @@ export default function FamilyApp({
         setUserMenuOpen(false);
       }
     }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setUserMenuOpen(false);
+    }
     document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, [userMenuOpen]);
 
   // Smoothly scroll to and temporarily highlight a Wall post opened from a notification
@@ -203,17 +223,37 @@ export default function FamilyApp({
   }, [highlightedPostId, tab, posts.length]);
 
   const pollNotifications = useCallback(async () => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    const postSeqAtStart = postMutationSeqRef.current;
+    const notifSeqAtStart = notifMutationSeqRef.current;
+    const memberSeqAtStart = memberMutationSeqRef.current;
     try {
       const res = await fetch("/api/notifications", { cache: "no-store" });
       if (!res.ok) return;
       const json = (await res.json()) as {
         notifications?: FamilyNotification[];
         posts?: WallPost[];
+        members?: Member[];
       };
-      if (Array.isArray(json.posts)) {
+      if (
+        Array.isArray(json.members) &&
+        json.members.length > 0 &&
+        memberMutationSeqRef.current === memberSeqAtStart
+      ) {
+        setMembers(json.members);
+      }
+      if (
+        Array.isArray(json.posts) &&
+        pendingPostMutationsRef.current === 0 &&
+        postMutationSeqRef.current === postSeqAtStart
+      ) {
         setPosts(json.posts);
       }
-      if (Array.isArray(json.notifications)) {
+      if (
+        Array.isArray(json.notifications) &&
+        pendingNotifMutationsRef.current === 0 &&
+        notifMutationSeqRef.current === notifSeqAtStart
+      ) {
         const incoming = json.notifications;
         const prefs = notificationPrefsRef.current;
         const newlyArrived = incoming.filter(
@@ -237,7 +277,7 @@ export default function FamilyApp({
     }
   }, []);
 
-  // Poll for new notifications periodically and whenever the app regains focus
+  // Poll for new notifications periodically, on window focus, and when reconnecting
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") {
@@ -253,12 +293,17 @@ export default function FamilyApp({
         void pollNotifications();
       }
     }
+    function handleOnline() {
+      void pollNotifications();
+    }
 
     window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleOnline);
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleOnline);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [pollNotifications]);
@@ -274,34 +319,96 @@ export default function FamilyApp({
     saveNotificationPreferences(currentUser, next);
   }
 
-  async function handleSelectNotification(notification: FamilyNotification) {
-    if (!notification.read) {
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
-      );
-      try {
-        await fetch("/api/notifications", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: notification.id }),
+  const navigateFromNotificationPayload = useCallback(
+    async (payload: {
+      notificationId?: string | null;
+      tab?: string | null;
+      entityId?: string | null;
+    }) => {
+      if (payload.notificationId) {
+        const id = payload.notificationId;
+        notifMutationSeqRef.current += 1;
+        pendingNotifMutationsRef.current += 1;
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+        );
+        try {
+          await fetch("/api/notifications", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+          });
+        } catch {
+          /* background sync */
+        } finally {
+          pendingNotifMutationsRef.current = Math.max(
+            0,
+            pendingNotifMutationsRef.current - 1
+          );
+        }
+      }
+
+      if (payload.tab && TABS.some((t) => t.id === payload.tab)) {
+        setSettingsScreen(null);
+        setTab(payload.tab);
+        if (payload.tab === "wall" && payload.entityId) {
+          setHighlightedPostId(payload.entityId);
+        }
+      }
+    },
+    []
+  );
+
+  // Handle OS/browser notification clicks from the Service Worker or fallback Notification API
+  useEffect(() => {
+    function handleSwMessage(event: MessageEvent) {
+      if (event.data?.type === "NOTIFICATION_CLICK") {
+        void navigateFromNotificationPayload({
+          notificationId: event.data.notificationId,
+          tab: event.data.tab,
+          entityId: event.data.entityId,
         });
-      } catch {
-        /* background sync */
+      }
+    }
+    function handleWindowNotifClick(event: Event) {
+      const detail = (
+        event as CustomEvent<{
+          notificationId?: string | null;
+          tab?: string | null;
+          entityId?: string | null;
+        }>
+      ).detail;
+      if (detail) {
+        void navigateFromNotificationPayload(detail);
       }
     }
 
-    if (notification.target?.tab) {
-      setTab(notification.target.tab);
-      if (
-        notification.target.tab === "wall" &&
-        notification.target.entityId
-      ) {
-        setHighlightedPostId(notification.target.entityId);
-      }
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", handleSwMessage);
     }
+    window.addEventListener("fp:notification-click", handleWindowNotifClick);
+    return () => {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("message", handleSwMessage);
+      }
+      window.removeEventListener(
+        "fp:notification-click",
+        handleWindowNotifClick
+      );
+    };
+  }, [navigateFromNotificationPayload]);
+
+  async function handleSelectNotification(notification: FamilyNotification) {
+    await navigateFromNotificationPayload({
+      notificationId: notification.read ? null : notification.id,
+      tab: notification.target?.tab,
+      entityId: notification.target?.entityId,
+    });
   }
 
   async function handleMarkAllNotificationsRead() {
+    notifMutationSeqRef.current += 1;
+    pendingNotifMutationsRef.current += 1;
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     try {
       await fetch("/api/notifications", {
@@ -311,15 +418,27 @@ export default function FamilyApp({
       });
     } catch {
       /* background sync */
+    } finally {
+      pendingNotifMutationsRef.current = Math.max(
+        0,
+        pendingNotifMutationsRef.current - 1
+      );
     }
   }
 
   async function handleClearNotifications() {
+    notifMutationSeqRef.current += 1;
+    pendingNotifMutationsRef.current += 1;
     setNotifications([]);
     try {
       await fetch("/api/notifications", { method: "DELETE" });
     } catch {
       /* background sync */
+    } finally {
+      pendingNotifMutationsRef.current = Math.max(
+        0,
+        pendingNotifMutationsRef.current - 1
+      );
     }
   }
 
@@ -365,7 +484,8 @@ export default function FamilyApp({
       const json = await res.json();
       if (!res.ok) return json.error || "Could not add member.";
       const added: Member = json.member;
-      setMembers((ms) => [...ms, added]);
+      memberMutationSeqRef.current += 1;
+      setMembers((ms) => [...ms.filter((m) => m.id !== added.id), added]);
       if (added.isChild) {
         setProfiles((p) => ({
           ...p,
@@ -402,6 +522,7 @@ export default function FamilyApp({
       const json = await res.json();
       if (!res.ok) return json.error || "Could not update member.";
       const updated: Member = json.member;
+      memberMutationSeqRef.current += 1;
       setMembers((ms) => ms.map((m) => (m.id === memberId ? updated : m)));
       if (updated.isChild) {
         setProfiles((p) => ({
@@ -434,6 +555,7 @@ export default function FamilyApp({
         await handleSignOut();
         return null;
       }
+      memberMutationSeqRef.current += 1;
       setMembers((ms) => ms.filter((m) => m.id !== memberId));
       setMeds((ms) => ms.filter((m) => m.kidId !== memberId));
       setProfiles((p) => {
@@ -743,6 +865,8 @@ export default function FamilyApp({
       ...post,
     };
 
+    postMutationSeqRef.current += 1;
+    pendingPostMutationsRef.current += 1;
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
@@ -764,7 +888,7 @@ export default function FamilyApp({
 
       const json = await res.json();
       const savedPost: WallPost = json.post || full;
-      setPosts((p) => [savedPost, ...p]);
+      setPosts((p) => [savedPost, ...p.filter((x) => x.id !== savedPost.id)]);
       pushActivity(
         `${memberById(currentUser).name} posted a Family Update`,
         null,
@@ -774,10 +898,17 @@ export default function FamilyApp({
       return null;
     } catch {
       return "Network error while saving your post. Please check your connection and try again.";
+    } finally {
+      pendingPostMutationsRef.current = Math.max(
+        0,
+        pendingPostMutationsRef.current - 1
+      );
     }
   }
 
   async function toggleReaction(postId: string, emoji: string) {
+    postMutationSeqRef.current += 1;
+    pendingPostMutationsRef.current += 1;
     setPosts((ps) =>
       ps.map((p) => {
         if (p.id !== postId) return p;
@@ -798,12 +929,19 @@ export default function FamilyApp({
       });
     } catch {
       /* background sync */
+    } finally {
+      pendingPostMutationsRef.current = Math.max(
+        0,
+        pendingPostMutationsRef.current - 1
+      );
     }
   }
 
   async function addComment(postId: string, text: string) {
     const comment = { id: uid("cm"), by: currentUser, text, at: "just now" };
     const post = posts.find((p) => p.id === postId);
+    postMutationSeqRef.current += 1;
+    pendingPostMutationsRef.current += 1;
     setPosts((ps) =>
       ps.map((p) =>
         p.id === postId
@@ -828,6 +966,11 @@ export default function FamilyApp({
       });
     } catch {
       /* background sync */
+    } finally {
+      pendingPostMutationsRef.current = Math.max(
+        0,
+        pendingPostMutationsRef.current - 1
+      );
     }
   }
 

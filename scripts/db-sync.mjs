@@ -57,6 +57,10 @@ await sql`
     "created_at" timestamp DEFAULT now() NOT NULL
   )
 `;
+await sql`
+  CREATE INDEX IF NOT EXISTS "notifications_family_recipient_created_idx"
+  ON "notifications" ("family_id", "recipient_id", "created_at" DESC)
+`;
 
 console.log("[db:sync] Pushing Drizzle schema to Neon Postgres...");
 const result = spawnSync("npx", ["drizzle-kit", "push", "--force"], {

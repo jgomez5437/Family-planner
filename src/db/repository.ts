@@ -1339,6 +1339,9 @@ export async function deleteFamilyMember(
   fam.members = fam.members.filter((m) => m.id !== memberId);
   delete fam.profiles[memberId];
   fam.meds = fam.meds.filter((m) => m.kidId !== memberId);
+  fam.notifications = (fam.notifications || []).filter(
+    (n) => n.recipientId !== memberId
+  );
   for (const [token, sess] of store.sessions.entries()) {
     if (sess.memberId === memberId) store.sessions.delete(token);
   }
@@ -2150,17 +2153,17 @@ export async function dispatchFamilyNotification(
     );
   } else if (db) {
     const memberRows = await db
-      .select({ id: members.id })
+      .select({ id: members.id, isChild: members.isChild })
       .from(members)
       .where(eq(members.familyId, familyId));
     targetRecipients = memberRows
-      .map((m) => m.id)
-      .filter((id) => id !== actorId);
+      .filter((m) => !m.isChild && m.id !== actorId)
+      .map((m) => m.id);
   } else {
     const fam = getMemoryStore().families.get(familyId);
     targetRecipients = (fam?.members || [])
-      .map((m) => m.id)
-      .filter((id) => id !== actorId);
+      .filter((m) => !m.isChild && m.id !== actorId)
+      .map((m) => m.id);
   }
 
   if (targetRecipients.length === 0) return [];
@@ -2323,6 +2326,25 @@ export async function getPostsForFamily(familyId: string): Promise<WallPost[]> {
 
   const fam = getMemoryStore().families.get(familyId);
   return fam?.posts || [];
+}
+
+export async function getMembersForFamily(familyId: string): Promise<Member[]> {
+  const db = await getReadyDb();
+  if (db) {
+    try {
+      const rows = await db
+        .select()
+        .from(members)
+        .where(eq(members.familyId, familyId));
+      return rows.map(toPublicMember);
+    } catch (err) {
+      console.warn("Error fetching members from Neon DB:", err);
+      return [];
+    }
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  return (fam?.members || []).map(toPublicMember);
 }
 
 export async function markNotificationReadRecord(

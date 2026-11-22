@@ -1,6 +1,6 @@
 /* Family Planner Service Worker — Privacy-Safe Network-First PWA */
 
-const CACHE_VERSION = "family-planner-v2";
+const CACHE_VERSION = "family-planner-v3";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 const PRECACHE_URLS = [
@@ -110,19 +110,24 @@ self.addEventListener("fetch", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl =
-    (event.notification.data && event.notification.data.url) || "/?tab=wall";
+  const data = event.notification.data || {};
+  const targetUrl = data.url || "/?tab=wall";
 
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clientList) => {
+      .then(async (clientList) => {
         for (const client of clientList) {
           if ("focus" in client) {
-            if ("navigate" in client && typeof client.navigate === "function") {
-              client.navigate(targetUrl).catch(() => {});
-            }
-            return client.focus();
+            await client.focus();
+            client.postMessage({
+              type: "NOTIFICATION_CLICK",
+              notificationId: data.notificationId || null,
+              tab: data.tab || "wall",
+              entityId: data.entityId || null,
+              url: targetUrl,
+            });
+            return;
           }
         }
         if (self.clients.openWindow) {

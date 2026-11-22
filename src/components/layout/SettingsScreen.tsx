@@ -157,6 +157,15 @@ export function SettingsScreen({
   >(() => getBrowserNotificationPermission());
   const [appearance, setAppearance] = useState("system");
 
+  useEffect(() => {
+    function syncPermission() {
+      setBrowserPermission(getBrowserNotificationPermission());
+    }
+    syncPermission();
+    window.addEventListener("focus", syncPermission);
+    return () => window.removeEventListener("focus", syncPermission);
+  }, [screen]);
+
   async function handleToggleBrowserNotifications(next: boolean) {
     if (!next) {
       onUpdateNotificationPreferences({

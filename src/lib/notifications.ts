@@ -202,7 +202,12 @@ export async function showBrowserNotification(
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
     tag: notification.id,
-    data: { url, notificationId: notification.id },
+    data: {
+      url,
+      notificationId: notification.id,
+      tab: notification.target.tab,
+      entityId: notification.target.entityId ?? null,
+    },
   };
 
   try {
@@ -216,6 +221,15 @@ export async function showBrowserNotification(
     const n = new Notification(notification.title, options);
     n.onclick = () => {
       window.focus();
+      window.dispatchEvent(
+        new CustomEvent("fp:notification-click", {
+          detail: {
+            notificationId: notification.id,
+            tab: notification.target.tab,
+            entityId: notification.target.entityId ?? null,
+          },
+        })
+      );
       n.close();
     };
   } catch {
