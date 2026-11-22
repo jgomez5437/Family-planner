@@ -1295,7 +1295,7 @@ export function CaregiverSheet({
       style={{
         minHeight: "100vh",
         background: "#F5EFE3",
-        paddingBottom: 40,
+        paddingBottom: "calc(40px + env(safe-area-inset-bottom))",
       }}
     >
       <div
@@ -1303,7 +1303,7 @@ export function CaregiverSheet({
         style={{
           background: "#FFF9F0",
           borderBottom: "1px solid #EFE4D2",
-          padding: "12px 16px",
+          padding: "calc(12px + env(safe-area-inset-top)) 16px 12px",
           position: "sticky",
           top: 0,
           zIndex: 20,

@@ -413,7 +413,8 @@ export function ImageCropModal({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 16,
+        padding:
+          "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom))",
       }}
       onClick={onCancel}
     >

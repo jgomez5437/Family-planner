@@ -101,7 +101,7 @@ export function LiveToast({ toast }: { toast: string | null }) {
     <div
       style={{
         position: "fixed",
-        top: 72,
+        top: "calc(72px + env(safe-area-inset-top))",
         left: "50%",
         transform: "translateX(-50%)",
         background: "#2B2622",

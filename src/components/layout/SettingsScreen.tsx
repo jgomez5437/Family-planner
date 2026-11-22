@@ -4,18 +4,24 @@ import React, { useEffect, useState } from "react";
 import {
   Bell,
   Check,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
   Copy,
+  Download,
   Link2,
   LogOut,
   Mail,
   MessageSquare,
   Monitor,
   Moon,
+  MoreVertical,
   Pencil,
+  PlusSquare,
   RefreshCw,
+  Share,
   Share2,
+  Smartphone,
   Sun,
   User,
   UserPlus,
@@ -31,6 +37,7 @@ import {
   MEMBER_COLOR_PALETTES,
 } from "@/lib/constants";
 import { useMembers } from "@/components/MembersContext";
+import { usePwa } from "@/components/pwa/PwaContext";
 import type { Member, MemberId } from "@/types/family";
 import { AvatarPicker, AvatarPreview } from "@/components/ui/AvatarPicker";
 import { AvatarDot, FieldLabel } from "@/components/ui/Primitives";
@@ -41,7 +48,8 @@ export type SettingsSubScreen =
   | "family"
   | "notifications"
   | "account"
-  | "appearance";
+  | "appearance"
+  | "install";
 
 export function SettingsScreen({
   initialScreen = "root",
@@ -72,6 +80,8 @@ export function SettingsScreen({
   onSignOut: () => void;
 }) {
   const { members, memberById } = useMembers();
+  const { isStandalone, isInstalled, isIos, canInstallNative, triggerInstall } =
+    usePwa();
   const me = memberById(currentUserId);
 
   const [screen, setScreen] = useState<SettingsSubScreen>(initialScreen);
@@ -255,7 +265,7 @@ export function SettingsScreen({
     >
       <div
         style={{
-          padding: "14px 16px",
+          padding: "calc(14px + env(safe-area-inset-top)) 16px 14px",
           borderBottom: "1px solid #EFE4D2",
           display: "flex",
           alignItems: "center",
@@ -285,6 +295,7 @@ export function SettingsScreen({
               notifications: "Notifications",
               account: "Account",
               appearance: "Appearance",
+              install: "Install App",
             }[screen]
           }
         </div>
@@ -293,7 +304,13 @@ export function SettingsScreen({
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "16px 16px calc(24px + env(safe-area-inset-bottom))",
+        }}
+      >
         {screen === "root" && (
           <div style={{ maxWidth: 480, margin: "0 auto" }}>
             <SettingsRow
@@ -324,6 +341,16 @@ export function SettingsScreen({
                     : "Dark"
               }
               onClick={() => setScreen("appearance")}
+            />
+            <SettingsRow
+              icon={Smartphone}
+              label="Install App"
+              sub={
+                isInstalled
+                  ? "Installed on this device"
+                  : "Add Family Planner to your phone's Home Screen"
+              }
+              onClick={() => setScreen("install")}
             />
 
             <button
@@ -990,6 +1017,224 @@ export function SettingsScreen({
             ))}
           </div>
         )}
+
+        {screen === "install" && (
+          <div style={{ maxWidth: 480, margin: "0 auto" }}>
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #F1E8D9",
+                boxShadow: CARD_SHADOW,
+                borderRadius: 16,
+                padding: 18,
+                marginBottom: 14,
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+              }}
+            >
+              <img
+                src="/icons/icon-192.png"
+                alt="Family Planner icon"
+                width={52}
+                height={52}
+                style={{
+                  borderRadius: 14,
+                  flexShrink: 0,
+                  boxShadow: "0 4px 12px rgba(232,98,44,0.24)",
+                }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: "'Baloo 2', sans-serif",
+                    fontSize: 18,
+                    fontWeight: 700,
+                    lineHeight: 1.15,
+                  }}
+                >
+                  Family Planner
+                </div>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: "#6B6259",
+                    marginTop: 3,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Install on your phone for full-screen access, faster launches,
+                  and quick home-screen shortcuts.
+                </div>
+              </div>
+            </div>
+
+            {isInstalled ? (
+              <div
+                style={{
+                  background: "#E4F1EC",
+                  border: "1px solid #C6E3D7",
+                  borderRadius: 14,
+                  padding: "14px 16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  color: "#155C4A",
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  marginBottom: 16,
+                }}
+              >
+                <CheckCircle2 size={20} />
+                <span>
+                  {isStandalone
+                    ? "Family Planner is installed and running in app mode on this device."
+                    : "Family Planner has been installed! You can now open it from your Home Screen."}
+                </span>
+              </div>
+            ) : canInstallNative ? (
+              <button
+                type="button"
+                onClick={() => void triggerInstall()}
+                style={{
+                  ...btnStyle,
+                  width: "100%",
+                  background: "#E8622C",
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  marginBottom: 16,
+                  boxShadow: "0 4px 14px rgba(232,98,44,0.28)",
+                }}
+              >
+                <Download size={16} /> Install App Now
+              </button>
+            ) : null}
+
+            <div
+              style={{
+                background: "#fff",
+                border: `1.5px solid ${isIos ? "#E8622C" : "#F1E8D9"}`,
+                boxShadow: CARD_SHADOW,
+                borderRadius: 14,
+                padding: 15,
+                marginBottom: 12,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: isIos ? "#B24A1D" : "#8A7F70",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 10,
+                }}
+              >
+                iPhone &amp; iPad (Safari / Chrome){isIos ? " · This device" : ""}
+              </div>
+              <ol
+                style={{
+                  margin: 0,
+                  paddingLeft: 18,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 9,
+                  fontSize: 13.5,
+                  lineHeight: 1.45,
+                  color: "#2B2622",
+                }}
+              >
+                <li>
+                  Tap the{" "}
+                  <span style={installBadgeStyle}>
+                    <Share size={12} /> Share
+                  </span>{" "}
+                  button (at the bottom in Safari, or top-right in Chrome).
+                </li>
+                <li>
+                  Scroll down and tap{" "}
+                  <span style={installBadgeStyle}>
+                    <PlusSquare size={12} /> Add to Home Screen
+                  </span>
+                  .
+                </li>
+                <li>
+                  Tap <strong>Add</strong> in the top-right corner to place
+                  Family Planner on your Home Screen.
+                </li>
+              </ol>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: "#8A7F70",
+                  marginTop: 10,
+                  lineHeight: 1.4,
+                }}
+              >
+                Opened from Messages or WhatsApp? Tap{" "}
+                <strong>Open in Safari</strong> first if you don&apos;t see Add
+                to Home Screen.
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: "#fff",
+                border: `1.5px solid ${!isIos ? "#E8622C" : "#F1E8D9"}`,
+                boxShadow: CARD_SHADOW,
+                borderRadius: 14,
+                padding: 15,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: !isIos ? "#B24A1D" : "#8A7F70",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 10,
+                }}
+              >
+                Android (Chrome / Edge){!isIos ? " · This device" : ""}
+              </div>
+              <ol
+                style={{
+                  margin: 0,
+                  paddingLeft: 18,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 9,
+                  fontSize: 13.5,
+                  lineHeight: 1.45,
+                  color: "#2B2622",
+                }}
+              >
+                <li>
+                  Tap the browser menu{" "}
+                  <span style={installBadgeStyle}>
+                    <MoreVertical size={12} /> Menu
+                  </span>{" "}
+                  in the top-right corner.
+                </li>
+                <li>
+                  Tap{" "}
+                  <span style={installBadgeStyle}>
+                    <Smartphone size={12} /> Install app
+                  </span>{" "}
+                  or <strong>Add to Home screen</strong>.
+                </li>
+                <li>
+                  Tap <strong>Install</strong> to add the Family Planner icon
+                  to your Home Screen and app drawer.
+                </li>
+              </ol>
+            </div>
+          </div>
+        )}
       </div>
 
       {memberModalState && (
@@ -1131,3 +1376,17 @@ function ToggleRow({
     </div>
   );
 }
+
+const installBadgeStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  background: "#FCE9DF",
+  color: "#B24A1D",
+  borderRadius: 6,
+  padding: "1px 7px",
+  fontSize: 12.5,
+  fontWeight: 700,
+  verticalAlign: "middle",
+};
+

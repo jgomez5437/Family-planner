@@ -153,7 +153,8 @@ export function AuthScreen({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "28px 16px",
+        padding:
+          "calc(28px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom))",
         fontFamily: "'Inter', system-ui, sans-serif",
         color: "#2B2622",
       }}
