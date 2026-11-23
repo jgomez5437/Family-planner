@@ -1,3 +1,4 @@
+import { formatRelativeTime } from "@/lib/dates";
 import type {
   FamilyNotification,
   MemberId,
@@ -142,25 +143,7 @@ export function isCategoryEnabled(
 }
 
 export function formatNotificationTime(isoString: string): string {
-  const timestamp = Date.parse(isoString);
-  if (Number.isNaN(timestamp)) return "Just now";
-  const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (diffSec < 45) return "Just now";
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDays = Math.floor(diffHr / 24);
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-  try {
-    return new Date(timestamp).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return `${diffDays}d ago`;
-  }
+  return formatRelativeTime(isoString) || "Just Now";
 }
 
 export function isBrowserNotificationSupported(): boolean {

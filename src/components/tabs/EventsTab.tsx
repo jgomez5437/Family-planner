@@ -12,6 +12,7 @@ import { useMembers } from "@/components/MembersContext";
 import {
   countdownLabel,
   fmtTime,
+  formatRelativeTime,
   parseLocalDate,
   relativeDay,
   todayISO,
@@ -21,6 +22,7 @@ import type {
   EventHistoryEntry,
   FamilyEvent,
   FamilyTask,
+  MemberId,
 } from "@/types/family";
 import {
   AvatarDot,
@@ -35,12 +37,14 @@ import type { ComposerKind } from "@/components/layout/QuickAddSheet";
 
 export function EventsTab({
   events,
+  currentUser,
   openHistory,
   openComposer,
   onUpdateTime,
   onDelete,
 }: {
   events: FamilyEvent[];
+  currentUser: MemberId;
   openHistory: (e: FamilyEvent) => void;
   openComposer?: (type: ComposerKind) => void;
   onUpdateTime: (
@@ -117,6 +121,7 @@ export function EventsTab({
       {editing && (
         <EventEditModal
           event={editing}
+          canDelete={editing.createdBy === currentUser}
           onClose={() => setEditing(null)}
           onSave={(field, value, reason, scope) => {
             onUpdateTime(editing.id, field, value, reason, scope);
@@ -245,11 +250,13 @@ export function AppointmentCard({
 
 export function EventEditModal({
   event,
+  canDelete = false,
   onClose,
   onSave,
   onDelete,
 }: {
   event: FamilyEvent;
+  canDelete?: boolean;
   onClose: () => void;
   onSave: (
     field: string,
@@ -265,6 +272,7 @@ export function EventEditModal({
   const [pendingAction, setPendingAction] = useState<"save" | "delete" | null>(
     null
   );
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const timeChanged = time !== (event.startTime || "");
   const locationChanged = location !== (event.location || "");
@@ -286,7 +294,9 @@ export function EventEditModal({
   }
 
   function requestDelete() {
+    if (!canDelete) return;
     if (isRecurring) setPendingAction("delete");
+    else if (!confirmDelete) setConfirmDelete(true);
     else onDelete("series");
   }
 
@@ -426,17 +436,19 @@ export function EventEditModal({
         </>
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
-        <button
-          onClick={requestDelete}
-          style={{
-            ...btnStyle,
-            background: "#fff",
-            color: "#C4402A",
-            border: "1.5px solid #F3D9D2",
-          }}
-        >
-          Delete
-        </button>
+        {canDelete && (
+          <button
+            onClick={requestDelete}
+            style={{
+              ...btnStyle,
+              background: confirmDelete ? "#C4402A" : "#fff",
+              color: confirmDelete ? "#fff" : "#C4402A",
+              border: "1.5px solid #F3D9D2",
+            }}
+          >
+            {confirmDelete ? "Confirm delete" : "Delete"}
+          </button>
+        )}
         <button
           onClick={requestSave}
           style={{ ...btnStyle, flex: 1, background: "#E8622C", color: "#fff" }}
@@ -451,18 +463,115 @@ export function EventEditModal({
 export function EventDetailModal({
   event,
   tasks,
+  currentUser,
   onClose,
   onToggleTask,
+  onDelete,
 }: {
   event: FamilyEvent;
   tasks: FamilyTask[];
+  currentUser?: MemberId;
   onClose: () => void;
   onToggleTask?: (id: string) => void;
+  onDelete?: (id: string, scope: "instance" | "series") => void;
 }) {
   const { memberById } = useMembers();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [choosingScope, setChoosingScope] = useState(false);
   const relatedTasks = (tasks || []).filter(
     (t) => t.linkedEventId === event.masterId || t.linkedEventId === event.id
   );
+  const canDelete = Boolean(
+    onDelete && currentUser && event.createdBy === currentUser
+  );
+  const isRecurring = Boolean(event.recurrence && event.id.includes("::"));
+
+  function handleDeleteClick() {
+    if (!canDelete || !onDelete) return;
+    if (isRecurring) {
+      setChoosingScope(true);
+    } else if (!confirmDelete) {
+      setConfirmDelete(true);
+    } else {
+      onDelete(event.id, "series");
+      onClose();
+    }
+  }
+
+  if (choosingScope && onDelete) {
+    return (
+      <ModalShell
+        onClose={() => setChoosingScope(false)}
+        title="Delete Event"
+      >
+        <div
+          style={{
+            fontSize: 13,
+            color: "#6B6259",
+            marginBottom: 16,
+            lineHeight: 1.5,
+          }}
+        >
+          &quot;{event.title}&quot; repeats{" "}
+          {recurrenceLabel(event.recurrence, event.date)?.toLowerCase()}.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button
+            onClick={() => {
+              onDelete(event.id, "instance");
+              onClose();
+            }}
+            style={{
+              ...btnStyle,
+              background: "#fff",
+              border: "1.5px solid #EFE4D2",
+              color: "#2B2622",
+              textAlign: "left",
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 13.5 }}>
+              This occurrence only
+            </div>
+            <div
+              style={{
+                fontSize: 11.5,
+                color: "#948C80",
+                fontWeight: 400,
+                marginTop: 1,
+              }}
+            >
+              Removes just this date; the series continues.
+            </div>
+          </button>
+          <button
+            onClick={() => {
+              onDelete(event.id, "series");
+              onClose();
+            }}
+            style={{
+              ...btnStyle,
+              background: "#fff",
+              border: "1.5px solid #F3D9D2",
+              color: "#C4402A",
+              textAlign: "left",
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 13.5 }}>Entire series</div>
+            <div
+              style={{
+                fontSize: 11.5,
+                color: "#948C80",
+                fontWeight: 400,
+                marginTop: 1,
+              }}
+            >
+              Removes every occurrence, past and future.
+            </div>
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
 
   return (
     <ModalShell onClose={onClose} title={event.title}>
@@ -606,6 +715,43 @@ export function EventDetailModal({
         <FieldLabel>History</FieldLabel>
         <HistoryTimeline history={event.history || []} />
       </div>
+
+      {canDelete && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginTop: 12,
+            paddingTop: 12,
+            borderTop: "1px solid #F3ECE0",
+          }}
+        >
+          {confirmDelete && (
+            <button
+              onClick={() => setConfirmDelete(false)}
+              style={{
+                ...btnStyle,
+                background: "#F5EFE3",
+                color: "#6B6259",
+              }}
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            onClick={handleDeleteClick}
+            style={{
+              ...btnStyle,
+              flex: 1,
+              background: confirmDelete ? "#C4402A" : "#fff",
+              color: confirmDelete ? "#fff" : "#C4402A",
+              border: "1.5px solid #F3D9D2",
+            }}
+          >
+            {confirmDelete ? "Confirm delete event" : "Delete event"}
+          </button>
+        </div>
+      )}
     </ModalShell>
   );
 }
@@ -651,7 +797,7 @@ export function HistoryTimeline({
             <div style={{ fontSize: 13, fontWeight: 600 }}>
               {humanizeHistoryNote(h.note)}{" "}
               <span style={{ fontWeight: 400, color: "#A69C8E" }}>
-                · {memberById(h.by).name} · {h.at}
+                · {memberById(h.by).name} · {formatRelativeTime(h.at)}
               </span>
             </div>
             {h.reason && (

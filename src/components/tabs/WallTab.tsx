@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronLeft, ChevronRight, Send, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Send, Trash2, X } from "lucide-react";
 import {
   CARD_SHADOW,
   POST_TYPE_COLORS,
@@ -9,6 +9,7 @@ import {
   REACTION_LABELS,
   REACTIONS,
 } from "@/lib/constants";
+import { formatRelativeTime } from "@/lib/dates";
 import { useMembers } from "@/components/MembersContext";
 import type { Member, MemberId, WallPost } from "@/types/family";
 import { AvatarDot, EmptyState } from "@/components/ui/Primitives";
@@ -19,6 +20,8 @@ export function WallTab({
   currentUser,
   toggleReaction,
   addComment,
+  onDeletePost,
+  onDeleteComment,
   openComposer,
   highlightedPostId,
 }: {
@@ -26,6 +29,8 @@ export function WallTab({
   currentUser: MemberId;
   toggleReaction: (postId: string, emoji: string) => void;
   addComment: (postId: string, text: string) => void;
+  onDeletePost?: (postId: string) => void;
+  onDeleteComment?: (postId: string, commentId: string) => void;
   openComposer?: (
     type: ComposerKind,
     date?: string,
@@ -136,6 +141,12 @@ export function WallTab({
             currentUser={currentUser}
             onReact={(e) => toggleReaction(p.id, e)}
             onComment={(text) => addComment(p.id, text)}
+            onDelete={onDeletePost ? () => onDeletePost(p.id) : undefined}
+            onDeleteComment={
+              onDeleteComment
+                ? (commentId) => onDeleteComment(p.id, commentId)
+                : undefined
+            }
             highlighted={highlightedPostId === p.id}
           />
         ))
@@ -180,6 +191,8 @@ export function PostCard({
   post,
   onReact,
   onComment,
+  onDelete,
+  onDeleteComment,
   currentUser,
   compact,
   highlighted,
@@ -187,6 +200,8 @@ export function PostCard({
   post: WallPost;
   onReact: (emoji: string) => void;
   onComment?: (text: string) => void;
+  onDelete?: () => void;
+  onDeleteComment?: (commentId: string) => void;
   currentUser?: MemberId;
   compact?: boolean;
   highlighted?: boolean;
@@ -202,7 +217,14 @@ export function PostCard({
     !compact && comments.length > 0
   );
   const [draft, setDraft] = useState("");
+  const [confirmDeletePost, setConfirmDeletePost] = useState(false);
+  const [confirmDeleteCommentId, setConfirmDeleteCommentId] = useState<
+    string | null
+  >(null);
   const summary = reactionSummary(post, memberById, currentUser);
+  const canDeletePost = Boolean(
+    onDelete && currentUser && post.author === currentUser
+  );
 
   function sendComment() {
     const text = draft.trim();
@@ -239,9 +261,11 @@ export function PostCard({
         <AvatarDot id={post.author} size={compact ? 36 : 44} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14.5, fontWeight: 700 }}>{author.name}</div>
-          <div style={{ fontSize: 11.5, color: "#A69C8E" }}>{post.createdAt}</div>
+          <div style={{ fontSize: 11.5, color: "#A69C8E" }}>
+            {formatRelativeTime(post.createdAt)}
+          </div>
         </div>
-        {post.type !== "Update" && (
+        {post.type !== "Update" && !confirmDeletePost && (
           <span
             style={{
               fontSize: 11.5,
@@ -255,6 +279,67 @@ export function PostCard({
           >
             {emoji} {post.type === "Change" ? "Schedule change" : post.type}
           </span>
+        )}
+        {canDeletePost && (
+          confirmDeletePost ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDeletePost(false);
+                  onDelete?.();
+                }}
+                style={{
+                  background: "#C4402A",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "5px 9px",
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeletePost(false)}
+                style={{
+                  background: "#F5EFE3",
+                  color: "#6B6259",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "5px 8px",
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmDeletePost(true)}
+              aria-label="Delete post"
+              title="Delete post"
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 5,
+                color: "#B7AE9F",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <Trash2 size={15} />
+            </button>
+          )
         )}
       </div>
 
@@ -434,42 +519,106 @@ export function PostCard({
 
       {!compact && showComments && (
         <div style={{ padding: "2px 14px 14px" }}>
-          {comments.map((c) => (
-            <div key={c.id} style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <AvatarDot id={c.by} size={32} />
-              <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    background: "#F7F0E4",
-                    borderRadius: 16,
-                    padding: "8px 12px",
-                  }}
-                >
-                  <div style={{ fontSize: 12.5, fontWeight: 700 }}>
-                    {memberById(c.by).name}
+          {comments.map((c) => {
+            const canDeleteComment = Boolean(
+              onDeleteComment && currentUser && c.by === currentUser
+            );
+            const isConfirming = confirmDeleteCommentId === c.id;
+            return (
+              <div key={c.id} style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <AvatarDot id={c.by} size={32} />
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      background: "#F7F0E4",
+                      borderRadius: 16,
+                      padding: "8px 12px",
+                    }}
+                  >
+                    <div style={{ fontSize: 12.5, fontWeight: 700 }}>
+                      {memberById(c.by).name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 13.5,
+                        lineHeight: 1.4,
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {c.text}
+                    </div>
                   </div>
                   <div
                     style={{
-                      fontSize: 13.5,
-                      lineHeight: 1.4,
-                      wordBreak: "break-word",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 11,
+                      color: "#A69C8E",
+                      margin: "3px 0 0 10px",
                     }}
                   >
-                    {c.text}
+                    <span>{formatRelativeTime(c.at)}</span>
+                    {canDeleteComment && (
+                      isConfirming ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfirmDeleteCommentId(null);
+                              onDeleteComment?.(c.id);
+                            }}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              color: "#C4402A",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Confirm delete
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteCommentId(null)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              color: "#8A7F70",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteCommentId(c.id)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            color: "#A69C8E",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Delete
+                        </button>
+                      )
+                    )}
                   </div>
                 </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#A69C8E",
-                    margin: "3px 0 0 10px",
-                  }}
-                >
-                  {c.at}
-                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div
             style={{
               display: "flex",

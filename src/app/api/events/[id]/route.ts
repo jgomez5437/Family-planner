@@ -43,6 +43,14 @@ export async function DELETE(
   const decodedId = decodeURIComponent(id);
   const { searchParams } = new URL(request.url);
   const scope = searchParams.get("scope") === "instance" ? "instance" : "series";
-  await deleteEventRecord(session.familyId, decodedId, scope);
+  const result = await deleteEventRecord(
+    session.familyId,
+    decodedId,
+    scope,
+    session.member.id
+  );
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
   return NextResponse.json({ ok: true });
 }

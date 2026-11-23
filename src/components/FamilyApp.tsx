@@ -15,6 +15,7 @@ import {
   TABS,
 } from "@/lib/constants";
 import { fmtTime, nowClock, relativeDay, todayISO, uid } from "@/lib/dates";
+import { useRelativeTimeTicker } from "@/lib/useRelativeTime";
 import { dosesFor } from "@/lib/meds";
 import {
   getDefaultNotificationPreferences,
@@ -86,6 +87,7 @@ export default function FamilyApp({
   onSignedOut: () => void;
 }) {
   const isDesktop = useIsDesktop();
+  useRelativeTimeTicker(30000);
   const currentUser: MemberId = initialState.currentUser.id;
   const [members, setMembers] = useState<Member[]>(initialState.members);
   const [inviteCode, setInviteCode] = useState(initialState.inviteCode);
@@ -455,7 +457,7 @@ export default function FamilyApp({
           text,
           sub,
           by,
-          at: "just now",
+          at: new Date().toISOString(),
           target: targetEvent || null,
         },
         ...a,
@@ -590,6 +592,7 @@ export default function FamilyApp({
   /* ---- ACTIONS (Optimistic UI + Backend API calls) ---- */
 
   async function addEvent(ev: Partial<FamilyEvent>) {
+    const nowIso = new Date().toISOString();
     const full: FamilyEvent = {
       id: uid("ev"),
       title: ev.title || "Untitled Event",
@@ -602,7 +605,7 @@ export default function FamilyApp({
       location: ev.location || "",
       category: ev.category || "Family",
       participants: ev.participants || [],
-      history: [{ by: currentUser, at: "just now", note: "Created event" }],
+      history: [{ by: currentUser, at: nowIso, note: "Created event" }],
       createdBy: currentUser,
       recurrence: ev.recurrence || null,
       reminder: ev.reminder || null,
@@ -638,6 +641,7 @@ export default function FamilyApp({
       ? id.split("::")
       : [id, null];
     let updatedEvent: FamilyEvent | null = null;
+    const nowIso = new Date().toISOString();
 
     setEvents((evts) =>
       evts.map((e) => {
@@ -660,7 +664,7 @@ export default function FamilyApp({
             ? `Location changed from "${before}" to "${value}"`
             : `Location set to "${value}"`;
         else note = `${field} updated`;
-        const historyEntry = { by: currentUser, at: "just now", note, reason };
+        const historyEntry = { by: currentUser, at: nowIso, note, reason };
 
         if (editingJustThisOne && occDate) {
           const existingOverride = (e.overrides && e.overrides[occDate]) || {};
@@ -728,11 +732,24 @@ export default function FamilyApp({
     const [masterId, occDate] = id.includes("::")
       ? id.split("::")
       : [id, null];
+    const target = events.find((e) => e.id === masterId);
+    if (!target) return;
+    if (target.createdBy !== currentUser) {
+      fireToast("Only the person who created this event can delete it.");
+      return;
+    }
+
+    const previousEvents = events;
     if (occDate && scope === "instance") {
       setEvents((evts) =>
         evts.map((e) =>
           e.id === masterId
-            ? { ...e, exceptions: [...(e.exceptions || []), occDate] }
+            ? {
+                ...e,
+                exceptions: (e.exceptions || []).includes(occDate)
+                  ? e.exceptions
+                  : [...(e.exceptions || []), occDate],
+              }
             : e
         )
       );
@@ -741,14 +758,25 @@ export default function FamilyApp({
       setEvents((e) => e.filter((x) => x.id !== masterId));
       fireToast("Event deleted");
     }
+    setHistoryModal((cur) =>
+      cur && (cur.id === id || cur.id === masterId || cur.masterId === masterId)
+        ? null
+        : cur
+    );
 
     try {
-      await fetch(
+      const res = await fetch(
         `/api/events/${encodeURIComponent(id)}?scope=${encodeURIComponent(scope)}`,
         { method: "DELETE" }
       );
+      if (!res.ok) {
+        setEvents(previousEvents);
+        const json = await res.json().catch(() => ({}));
+        fireToast(json.error || "Could not delete event");
+      }
     } catch {
-      /* background sync */
+      setEvents(previousEvents);
+      fireToast("Could not delete event");
     }
   }
 
@@ -791,6 +819,7 @@ export default function FamilyApp({
     const [masterId, occDate] = id.includes("::")
       ? id.split("::")
       : [id, null];
+    const completedIso = new Date().toISOString();
     setTasks((ts) =>
       ts.map((t) => {
         if (t.id !== masterId) return t;
@@ -815,7 +844,7 @@ export default function FamilyApp({
                 ...existing,
                 completed: nowDone,
                 completedBy: nowDone ? currentUser : null,
-                completedAt: nowDone ? nowClock() : null,
+                completedAt: nowDone ? completedIso : null,
               },
             },
           };
@@ -835,7 +864,7 @@ export default function FamilyApp({
           ...t,
           completed: nowDone,
           completedBy: nowDone ? currentUser : null,
-          completedAt: nowDone ? nowClock() : null,
+          completedAt: nowDone ? completedIso : null,
         };
       })
     );
@@ -851,6 +880,53 @@ export default function FamilyApp({
     }
   }
 
+  async function deleteTask(id: string, scope: "instance" | "series") {
+    const [masterId, occDate] = id.includes("::")
+      ? id.split("::")
+      : [id, null];
+    const target = tasks.find((t) => t.id === masterId);
+    if (!target) return;
+    if (target.createdBy !== currentUser) {
+      fireToast("Only the person who created this task can delete it.");
+      return;
+    }
+
+    const previousTasks = tasks;
+    if (occDate && scope === "instance") {
+      setTasks((ts) =>
+        ts.map((t) =>
+          t.id === masterId
+            ? {
+                ...t,
+                exceptions: (t.exceptions || []).includes(occDate)
+                  ? t.exceptions
+                  : [...(t.exceptions || []), occDate],
+              }
+            : t
+        )
+      );
+      fireToast("Task occurrence deleted");
+    } else {
+      setTasks((ts) => ts.filter((t) => t.id !== masterId));
+      fireToast("Task deleted");
+    }
+
+    try {
+      const res = await fetch(
+        `/api/tasks/${encodeURIComponent(id)}?scope=${encodeURIComponent(scope)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        setTasks(previousTasks);
+        const json = await res.json().catch(() => ({}));
+        fireToast(json.error || "Could not delete task");
+      }
+    } catch {
+      setTasks(previousTasks);
+      fireToast("Could not delete task");
+    }
+  }
+
   async function addPost(post: {
     type: string;
     content: string;
@@ -859,7 +935,7 @@ export default function FamilyApp({
     const full: WallPost = {
       id: uid("pt"),
       author: currentUser,
-      createdAt: "just now",
+      createdAt: new Date().toISOString(),
       reactions: {},
       comments: [],
       ...post,
@@ -906,6 +982,41 @@ export default function FamilyApp({
     }
   }
 
+  async function deletePost(postId: string) {
+    const target = posts.find((p) => p.id === postId);
+    if (!target) return;
+    if (target.author !== currentUser) {
+      fireToast("Only the person who posted this can delete it.");
+      return;
+    }
+
+    const previousPosts = posts;
+    postMutationSeqRef.current += 1;
+    pendingPostMutationsRef.current += 1;
+    setPosts((ps) => ps.filter((p) => p.id !== postId));
+    setNotifications((ns) => ns.filter((n) => n.target?.entityId !== postId));
+    fireToast("Post deleted");
+
+    try {
+      const res = await fetch(`/api/posts/${encodeURIComponent(postId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        setPosts(previousPosts);
+        const json = await res.json().catch(() => ({}));
+        fireToast(json.error || "Could not delete post");
+      }
+    } catch {
+      setPosts(previousPosts);
+      fireToast("Could not delete post");
+    } finally {
+      pendingPostMutationsRef.current = Math.max(
+        0,
+        pendingPostMutationsRef.current - 1
+      );
+    }
+  }
+
   async function toggleReaction(postId: string, emoji: string) {
     postMutationSeqRef.current += 1;
     pendingPostMutationsRef.current += 1;
@@ -938,7 +1049,12 @@ export default function FamilyApp({
   }
 
   async function addComment(postId: string, text: string) {
-    const comment = { id: uid("cm"), by: currentUser, text, at: "just now" };
+    const comment = {
+      id: uid("cm"),
+      by: currentUser,
+      text,
+      at: new Date().toISOString(),
+    };
     const post = posts.find((p) => p.id === postId);
     postMutationSeqRef.current += 1;
     pendingPostMutationsRef.current += 1;
@@ -966,6 +1082,48 @@ export default function FamilyApp({
       });
     } catch {
       /* background sync */
+    } finally {
+      pendingPostMutationsRef.current = Math.max(
+        0,
+        pendingPostMutationsRef.current - 1
+      );
+    }
+  }
+
+  async function deleteComment(postId: string, commentId: string) {
+    const post = posts.find((p) => p.id === postId);
+    const comment = post?.comments?.find((c) => c.id === commentId);
+    if (!post || !comment) return;
+    if (comment.by !== currentUser) {
+      fireToast("Only the person who wrote this comment can delete it.");
+      return;
+    }
+
+    const previousPosts = posts;
+    postMutationSeqRef.current += 1;
+    pendingPostMutationsRef.current += 1;
+    setPosts((ps) =>
+      ps.map((p) =>
+        p.id === postId
+          ? { ...p, comments: (p.comments || []).filter((c) => c.id !== commentId) }
+          : p
+      )
+    );
+    fireToast("Comment deleted");
+
+    try {
+      const res = await fetch(
+        `/api/posts/${encodeURIComponent(postId)}/comments?commentId=${encodeURIComponent(commentId)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        setPosts(previousPosts);
+        const json = await res.json().catch(() => ({}));
+        fireToast(json.error || "Could not delete comment");
+      }
+    } catch {
+      setPosts(previousPosts);
+      fireToast("Could not delete comment");
     } finally {
       pendingPostMutationsRef.current = Math.max(
         0,
@@ -1440,6 +1598,7 @@ export default function FamilyApp({
                 activity={activity.slice(0, 4)}
                 toggleTask={toggleTask}
                 toggleReaction={toggleReaction}
+                onDeletePost={deletePost}
                 openHistory={setHistoryModal}
                 goTab={setTab}
                 openComposer={openComposerFor}
@@ -1471,6 +1630,7 @@ export default function FamilyApp({
                 toggleTask={toggleTask}
                 currentUser={currentUser}
                 openComposer={openComposerFor}
+                onDeleteTask={deleteTask}
                 onOpenLinkedEvent={(task) => {
                   const master = events.find(
                     (e) => e.id === task.linkedEventId
@@ -1482,6 +1642,7 @@ export default function FamilyApp({
             {tab === "events" && (
               <EventsTab
                 events={sortedUpcomingEvents}
+                currentUser={currentUser}
                 openHistory={setHistoryModal}
                 openComposer={openComposerFor}
                 onUpdateTime={updateEventTime}
@@ -1494,6 +1655,8 @@ export default function FamilyApp({
                 currentUser={currentUser}
                 toggleReaction={toggleReaction}
                 addComment={addComment}
+                onDeletePost={deletePost}
+                onDeleteComment={deleteComment}
                 openComposer={openComposerFor}
                 highlightedPostId={highlightedPostId}
               />
@@ -1592,7 +1755,9 @@ export default function FamilyApp({
           <EventDetailModal
             event={historyModal}
             tasks={expandedTasks}
+            currentUser={currentUser}
             onToggleTask={toggleTask}
+            onDelete={deleteEvent}
             onClose={() => setHistoryModal(null)}
           />
         )}

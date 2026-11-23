@@ -15,7 +15,13 @@ import {
 } from "lucide-react";
 import { CARD_SHADOW, CATEGORY_META } from "@/lib/constants";
 import { useMembers } from "@/components/MembersContext";
-import { countdownLabel, fmtTime, nowHHMM, relativeDay } from "@/lib/dates";
+import {
+  countdownLabel,
+  fmtTime,
+  formatRelativeTime,
+  nowHHMM,
+  relativeDay,
+} from "@/lib/dates";
 import { recurrenceLabel } from "@/lib/recurrence";
 import type {
   ActivityItem,
@@ -191,6 +197,7 @@ export function HomeTab({
   activity,
   toggleTask,
   toggleReaction,
+  onDeletePost,
   openHistory,
   goTab,
   openComposer,
@@ -205,6 +212,7 @@ export function HomeTab({
   activity: ActivityItem[];
   toggleTask: (id: string) => void;
   toggleReaction: (postId: string, emoji: string) => void;
+  onDeletePost?: (postId: string) => void;
   openHistory: (e: FamilyEvent) => void;
   goTab: (tab: string) => void;
   openComposer: (
@@ -386,6 +394,7 @@ export function HomeTab({
             post={p}
             currentUser={currentUser}
             onReact={(emo) => toggleReaction(p.id, emo)}
+            onDelete={onDeletePost ? () => onDeletePost(p.id) : undefined}
             compact
           />
         ))
@@ -436,7 +445,7 @@ export function HomeTab({
                   flexShrink: 0,
                 }}
               >
-                {a.at}
+                {formatRelativeTime(a.at)}
               </div>
             </button>
           ))}
