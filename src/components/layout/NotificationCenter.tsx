@@ -351,6 +351,7 @@ export function NotificationBell({
                         </div>
                       )}
                       <div
+                        suppressHydrationWarning
                         style={{
                           fontSize: 11,
                           color: "#A69C8E",

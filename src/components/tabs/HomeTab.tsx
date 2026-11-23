@@ -438,6 +438,7 @@ export function HomeTab({
                 {a.sub && <span style={{ color: "#948C80" }}> — {a.sub}</span>}
               </div>
               <div
+                suppressHydrationWarning
                 style={{
                   marginLeft: "auto",
                   fontSize: 11,

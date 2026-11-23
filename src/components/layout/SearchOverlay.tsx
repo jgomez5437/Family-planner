@@ -297,7 +297,10 @@ function SearchResultRow({
         <div style={{ fontSize: 13, color: "#2B2622" }}>
           {highlightMatch(data.content, query)}
         </div>
-        <div style={{ fontSize: 11.5, color: "#A69C8E" }}>
+        <div
+          suppressHydrationWarning
+          style={{ fontSize: 11.5, color: "#A69C8E" }}
+        >
           {memberById(data.author).name} · {formatRelativeTime(data.createdAt)}
         </div>
       </div>

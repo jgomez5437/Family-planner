@@ -740,6 +740,8 @@ export default function FamilyApp({
     }
 
     const previousEvents = events;
+    const previousTasks = tasks;
+    const previousActivity = activity;
     if (occDate && scope === "instance") {
       setEvents((evts) =>
         evts.map((e) =>
@@ -756,6 +758,20 @@ export default function FamilyApp({
       fireToast("Occurrence deleted");
     } else {
       setEvents((e) => e.filter((x) => x.id !== masterId));
+      setTasks((ts) =>
+        ts.map((t) =>
+          t.linkedEventId === masterId
+            ? { ...t, linkedEventId: undefined, linkedEventTitle: undefined }
+            : t
+        )
+      );
+      setActivity((ac) =>
+        ac.map((a) =>
+          a.targetEventId === masterId || a.target?.id === masterId
+            ? { ...a, targetEventId: null, target: null }
+            : a
+        )
+      );
       fireToast("Event deleted");
     }
     setHistoryModal((cur) =>
@@ -771,11 +787,15 @@ export default function FamilyApp({
       );
       if (!res.ok) {
         setEvents(previousEvents);
+        setTasks(previousTasks);
+        setActivity(previousActivity);
         const json = await res.json().catch(() => ({}));
         fireToast(json.error || "Could not delete event");
       }
     } catch {
       setEvents(previousEvents);
+      setTasks(previousTasks);
+      setActivity(previousActivity);
       fireToast("Could not delete event");
     }
   }
@@ -991,10 +1011,14 @@ export default function FamilyApp({
     }
 
     const previousPosts = posts;
+    const previousNotifications = notifications;
     postMutationSeqRef.current += 1;
     pendingPostMutationsRef.current += 1;
+    notifMutationSeqRef.current += 1;
+    pendingNotifMutationsRef.current += 1;
     setPosts((ps) => ps.filter((p) => p.id !== postId));
     setNotifications((ns) => ns.filter((n) => n.target?.entityId !== postId));
+    setHighlightedPostId((cur) => (cur === postId ? null : cur));
     fireToast("Post deleted");
 
     try {
@@ -1003,16 +1027,22 @@ export default function FamilyApp({
       });
       if (!res.ok) {
         setPosts(previousPosts);
+        setNotifications(previousNotifications);
         const json = await res.json().catch(() => ({}));
         fireToast(json.error || "Could not delete post");
       }
     } catch {
       setPosts(previousPosts);
+      setNotifications(previousNotifications);
       fireToast("Could not delete post");
     } finally {
       pendingPostMutationsRef.current = Math.max(
         0,
         pendingPostMutationsRef.current - 1
+      );
+      pendingNotifMutationsRef.current = Math.max(
+        0,
+        pendingNotifMutationsRef.current - 1
       );
     }
   }
@@ -1294,6 +1324,33 @@ export default function FamilyApp({
     .flatMap((m) => dosesFor(m, todayISO(0)))
     .filter((d) => !doseLog[d.key])
     .sort((a, b) => a.time.localeCompare(b.time));
+
+  const resolvedActivity = useMemo(
+    () =>
+      activity.map((a) => {
+        const refId = a.targetEventId || a.target?.masterId || a.target?.id;
+        if (!refId) return a;
+        const [masterId] = refId.includes("::") ? refId.split("::") : [refId];
+        const liveEvent = events.find((e) => e.id === masterId) || null;
+        return { ...a, target: liveEvent };
+      }),
+    [activity, events]
+  );
+
+  const resolvedHistoryModal = useMemo(() => {
+    if (!historyModal) return null;
+    const [masterId, occDate] = historyModal.id.includes("::")
+      ? historyModal.id.split("::")
+      : [historyModal.masterId || historyModal.id, null];
+    if (occDate) {
+      return (
+        expandedEvents.find((e) => e.id === `${masterId}::${occDate}`) ||
+        events.find((e) => e.id === masterId) ||
+        null
+      );
+    }
+    return events.find((e) => e.id === masterId) || null;
+  }, [historyModal, events, expandedEvents]);
 
   if (sheet) {
     return (
@@ -1595,7 +1652,7 @@ export default function FamilyApp({
                   .filter((e) => e.date > todayISO(0))
                   .slice(0, 5)}
                 posts={posts.slice(0, 3)}
-                activity={activity.slice(0, 4)}
+                activity={resolvedActivity.slice(0, 4)}
                 toggleTask={toggleTask}
                 toggleReaction={toggleReaction}
                 onDeletePost={deletePost}
@@ -1751,9 +1808,10 @@ export default function FamilyApp({
           />
         )}
 
-        {historyModal && (
+        {resolvedHistoryModal && (
           <EventDetailModal
-            event={historyModal}
+            key={resolvedHistoryModal.id}
+            event={resolvedHistoryModal}
             tasks={expandedTasks}
             currentUser={currentUser}
             onToggleTask={toggleTask}

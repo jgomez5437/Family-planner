@@ -1628,6 +1628,21 @@ export async function deleteEventRecord(
       await db
         .delete(events)
         .where(and(eq(events.id, masterId), eq(events.familyId, familyId)));
+      await db
+        .update(tasks)
+        .set({ linkedEventId: null, linkedEventTitle: null })
+        .where(
+          and(eq(tasks.familyId, familyId), eq(tasks.linkedEventId, masterId))
+        );
+      await db
+        .update(activities)
+        .set({ targetEventId: null })
+        .where(
+          and(
+            eq(activities.familyId, familyId),
+            eq(activities.targetEventId, masterId)
+          )
+        );
     }
     return { ok: true };
   }
@@ -1657,6 +1672,16 @@ export async function deleteEventRecord(
     });
   } else {
     fam.events = fam.events.filter((e) => e.id !== masterId);
+    fam.tasks = fam.tasks.map((t) =>
+      t.linkedEventId === masterId
+        ? { ...t, linkedEventId: undefined, linkedEventTitle: undefined }
+        : t
+    );
+    fam.activity = fam.activity.map((a) =>
+      a.targetEventId === masterId || a.target?.id === masterId
+        ? { ...a, targetEventId: null, target: null }
+        : a
+    );
   }
   return { ok: true };
 }

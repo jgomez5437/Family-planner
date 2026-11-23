@@ -261,7 +261,10 @@ export function PostCard({
         <AvatarDot id={post.author} size={compact ? 36 : 44} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14.5, fontWeight: 700 }}>{author.name}</div>
-          <div style={{ fontSize: 11.5, color: "#A69C8E" }}>
+          <div
+            suppressHydrationWarning
+            style={{ fontSize: 11.5, color: "#A69C8E" }}
+          >
             {formatRelativeTime(post.createdAt)}
           </div>
         </div>
@@ -558,7 +561,9 @@ export function PostCard({
                       margin: "3px 0 0 10px",
                     }}
                   >
-                    <span>{formatRelativeTime(c.at)}</span>
+                    <span suppressHydrationWarning>
+                      {formatRelativeTime(c.at)}
+                    </span>
                     {canDeleteComment && (
                       isConfirming ? (
                         <>

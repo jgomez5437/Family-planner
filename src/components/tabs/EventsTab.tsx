@@ -277,13 +277,14 @@ export function EventEditModal({
   const timeChanged = time !== (event.startTime || "");
   const locationChanged = location !== (event.location || "");
   const isRecurring = !!event.recurrence;
+  const hasOccurrence = Boolean(isRecurring && event.id.includes("::"));
 
   function requestSave() {
     if (!timeChanged && !locationChanged) {
       onClose();
       return;
     }
-    if (isRecurring) setPendingAction("save");
+    if (hasOccurrence) setPendingAction("save");
     else commitSave("series");
   }
 
@@ -295,7 +296,7 @@ export function EventEditModal({
 
   function requestDelete() {
     if (!canDelete) return;
-    if (isRecurring) setPendingAction("delete");
+    if (hasOccurrence) setPendingAction("delete");
     else if (!confirmDelete) setConfirmDelete(true);
     else onDelete("series");
   }
@@ -411,13 +412,19 @@ export function EventEditModal({
       <input
         type="time"
         value={time}
-        onChange={(e) => setTime(e.target.value)}
+        onChange={(e) => {
+          setTime(e.target.value);
+          if (confirmDelete) setConfirmDelete(false);
+        }}
         style={inputStyle}
       />
       <FieldLabel style={{ marginTop: 12 }}>Location</FieldLabel>
       <input
         value={location}
-        onChange={(e) => setLocation(e.target.value)}
+        onChange={(e) => {
+          setLocation(e.target.value);
+          if (confirmDelete) setConfirmDelete(false);
+        }}
         style={inputStyle}
         placeholder="Add a location"
       />
@@ -437,24 +444,53 @@ export function EventEditModal({
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
         {canDelete && (
+          confirmDelete ? (
+            <>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                style={{
+                  ...btnStyle,
+                  background: "#F5EFE3",
+                  color: "#6B6259",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={requestDelete}
+                style={{
+                  ...btnStyle,
+                  flex: 1,
+                  background: "#C4402A",
+                  color: "#fff",
+                  border: "1.5px solid #C4402A",
+                }}
+              >
+                Confirm delete
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={requestDelete}
+              style={{
+                ...btnStyle,
+                background: "#fff",
+                color: "#C4402A",
+                border: "1.5px solid #F3D9D2",
+              }}
+            >
+              Delete
+            </button>
+          )
+        )}
+        {!confirmDelete && (
           <button
-            onClick={requestDelete}
-            style={{
-              ...btnStyle,
-              background: confirmDelete ? "#C4402A" : "#fff",
-              color: confirmDelete ? "#fff" : "#C4402A",
-              border: "1.5px solid #F3D9D2",
-            }}
+            onClick={requestSave}
+            style={{ ...btnStyle, flex: 1, background: "#E8622C", color: "#fff" }}
           >
-            {confirmDelete ? "Confirm delete" : "Delete"}
+            Save changes
           </button>
         )}
-        <button
-          onClick={requestSave}
-          style={{ ...btnStyle, flex: 1, background: "#E8622C", color: "#fff" }}
-        >
-          Save changes
-        </button>
       </div>
     </ModalShell>
   );
@@ -796,7 +832,10 @@ export function HistoryTimeline({
           <div style={{ flex: 1, paddingBottom: 4 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>
               {humanizeHistoryNote(h.note)}{" "}
-              <span style={{ fontWeight: 400, color: "#A69C8E" }}>
+              <span
+                suppressHydrationWarning
+                style={{ fontWeight: 400, color: "#A69C8E" }}
+              >
                 · {memberById(h.by).name} · {formatRelativeTime(h.at)}
               </span>
             </div>

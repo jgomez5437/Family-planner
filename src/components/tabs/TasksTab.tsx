@@ -317,6 +317,7 @@ export function TaskRow({
           >
             {task.completed && task.completedBy ? (
               <span
+                suppressHydrationWarning
                 style={{ fontSize: 10.5, color: "#1F6F5C", fontWeight: 600 }}
               >
                 ✓ {memberById(task.completedBy).name} completed
