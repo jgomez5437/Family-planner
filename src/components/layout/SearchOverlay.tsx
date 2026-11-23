@@ -4,7 +4,7 @@ import React, { useMemo, useState } from "react";
 import { CheckSquare, Search, X } from "lucide-react";
 import { CARD_SHADOW, CATEGORY_META } from "@/lib/constants";
 import { useMembers } from "@/components/MembersContext";
-import { relativeDay } from "@/lib/dates";
+import { formatRelativeTime, relativeDay } from "@/lib/dates";
 import type { FamilyEvent, FamilyTask, WallPost } from "@/types/family";
 import { AvatarDot, SectionLabel } from "@/components/ui/Primitives";
 
@@ -297,8 +297,11 @@ function SearchResultRow({
         <div style={{ fontSize: 13, color: "#2B2622" }}>
           {highlightMatch(data.content, query)}
         </div>
-        <div style={{ fontSize: 11.5, color: "#A69C8E" }}>
-          {memberById(data.author).name} · {data.createdAt}
+        <div
+          suppressHydrationWarning
+          style={{ fontSize: 11.5, color: "#A69C8E" }}
+        >
+          {memberById(data.author).name} · {formatRelativeTime(data.createdAt)}
         </div>
       </div>
     </div>

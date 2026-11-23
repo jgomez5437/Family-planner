@@ -1,13 +1,18 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle2, Circle } from "lucide-react";
-import { CARD_SHADOW } from "@/lib/constants";
+import { CheckCircle2, Circle, Trash2 } from "lucide-react";
+import { btnStyle, CARD_SHADOW } from "@/lib/constants";
 import { useMembers } from "@/components/MembersContext";
-import { relativeDay, todayISO } from "@/lib/dates";
+import { formatRelativeTime, relativeDay, todayISO } from "@/lib/dates";
 import { recurrenceLabel } from "@/lib/recurrence";
 import type { FamilyTask, MemberId } from "@/types/family";
-import { AvatarDot, EmptyState, SectionLabel } from "@/components/ui/Primitives";
+import {
+  AvatarDot,
+  EmptyState,
+  ModalShell,
+  SectionLabel,
+} from "@/components/ui/Primitives";
 import type { ComposerKind } from "@/components/layout/QuickAddSheet";
 
 export function TasksTab({
@@ -16,14 +21,18 @@ export function TasksTab({
   currentUser,
   openComposer,
   onOpenLinkedEvent,
+  onDeleteTask,
 }: {
   tasks: FamilyTask[];
   toggleTask: (id: string) => void;
   currentUser: MemberId;
   openComposer?: (type: ComposerKind) => void;
   onOpenLinkedEvent?: (task: FamilyTask) => void;
+  onDeleteTask?: (id: string, scope: "instance" | "series") => void;
 }) {
   const [filter, setFilter] = useState("All");
+  const [recurringDeleteTarget, setRecurringDeleteTarget] =
+    useState<FamilyTask | null>(null);
 
   const filtered = tasks.filter((t) => {
     if (filter === "My Tasks") return t.assignedTo === currentUser;
@@ -124,17 +133,115 @@ export function TasksTab({
               padding: "4px 14px",
             }}
           >
-            {list.map((t) => (
-              <TaskRow
-                key={t.id}
-                task={t}
-                onToggle={() => toggleTask(t.id)}
-                onOpenLinkedEvent={onOpenLinkedEvent}
-              />
-            ))}
+            {list.map((t) => {
+              const canDelete = Boolean(
+                onDeleteTask && t.createdBy === currentUser
+              );
+              const isRecurring = Boolean(t.recurrence && t.id.includes("::"));
+              return (
+                <TaskRow
+                  key={t.id}
+                  task={t}
+                  onToggle={() => toggleTask(t.id)}
+                  onOpenLinkedEvent={onOpenLinkedEvent}
+                  canDelete={canDelete}
+                  isRecurring={isRecurring}
+                  onDelete={
+                    canDelete && onDeleteTask
+                      ? () => {
+                          if (isRecurring) {
+                            setRecurringDeleteTarget(t);
+                          } else {
+                            onDeleteTask(t.id, "series");
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              );
+            })}
           </div>
         </div>
       ))}
+
+      {recurringDeleteTarget && onDeleteTask && (
+        <ModalShell
+          onClose={() => setRecurringDeleteTarget(null)}
+          title="Delete Task"
+        >
+          <div
+            style={{
+              fontSize: 13,
+              color: "#6B6259",
+              marginBottom: 16,
+              lineHeight: 1.5,
+            }}
+          >
+            &quot;{recurringDeleteTarget.title}&quot; repeats{" "}
+            {recurrenceLabel(
+              recurringDeleteTarget.recurrence,
+              recurringDeleteTarget.dueDate
+            )?.toLowerCase()}
+            .
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button
+              onClick={() => {
+                onDeleteTask(recurringDeleteTarget.id, "instance");
+                setRecurringDeleteTarget(null);
+              }}
+              style={{
+                ...btnStyle,
+                background: "#fff",
+                border: "1.5px solid #EFE4D2",
+                color: "#2B2622",
+                textAlign: "left",
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 13.5 }}>
+                This occurrence only
+              </div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: "#948C80",
+                  fontWeight: 400,
+                  marginTop: 1,
+                }}
+              >
+                Removes just this date; the series continues.
+              </div>
+            </button>
+            <button
+              onClick={() => {
+                onDeleteTask(recurringDeleteTarget.id, "series");
+                setRecurringDeleteTarget(null);
+              }}
+              style={{
+                ...btnStyle,
+                background: "#fff",
+                border: "1.5px solid #F3D9D2",
+                color: "#C4402A",
+                textAlign: "left",
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 13.5 }}>
+                Entire series
+              </div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: "#948C80",
+                  fontWeight: 400,
+                  marginTop: 1,
+                }}
+              >
+                Removes every occurrence, past and future.
+              </div>
+            </button>
+          </div>
+        </ModalShell>
+      )}
     </div>
   );
 }
@@ -144,13 +251,20 @@ export function TaskRow({
   onToggle,
   compact,
   onOpenLinkedEvent,
+  canDelete,
+  isRecurring,
+  onDelete,
 }: {
   task: FamilyTask;
   onToggle: () => void;
   compact?: boolean;
   onOpenLinkedEvent?: (task: FamilyTask) => void;
+  canDelete?: boolean;
+  isRecurring?: boolean;
+  onDelete?: () => void;
 }) {
   const { memberById } = useMembers();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const overdue = !task.completed && task.dueDate < todayISO(0);
   return (
     <div
@@ -203,10 +317,13 @@ export function TaskRow({
           >
             {task.completed && task.completedBy ? (
               <span
+                suppressHydrationWarning
                 style={{ fontSize: 10.5, color: "#1F6F5C", fontWeight: 600 }}
               >
                 ✓ {memberById(task.completedBy).name} completed
-                {task.completedAt ? ` · ${task.completedAt}` : ""}
+                {task.completedAt
+                  ? ` · ${formatRelativeTime(task.completedAt)}`
+                  : ""}
               </span>
             ) : (
               <>
@@ -255,6 +372,70 @@ export function TaskRow({
         )}
       </div>
       {task.assignedTo && <AvatarDot id={task.assignedTo} size={20} />}
+      {canDelete && onDelete && (
+        confirmingDelete ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmingDelete(false);
+                onDelete();
+              }}
+              style={{
+                background: "#C4402A",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "4px 8px",
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(false)}
+              style={{
+                background: "#F5EFE3",
+                color: "#6B6259",
+                border: "none",
+                borderRadius: 8,
+                padding: "4px 7px",
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              if (isRecurring) onDelete();
+              else setConfirmingDelete(true);
+            }}
+            aria-label={`Delete task ${task.title}`}
+            title="Delete task"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 4,
+              color: "#B7AE9F",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Trash2 size={15} />
+          </button>
+        )
+      )}
     </div>
   );
 }

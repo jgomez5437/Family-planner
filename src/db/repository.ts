@@ -713,25 +713,47 @@ export async function getFamilyState(
         doseLog[d.key] = { by: d.givenBy, at: d.givenAt };
       }
 
-      const formattedEvents: FamilyEvent[] = eventRows.map((e) => ({
-        id: e.id,
-        title: e.title,
-        description: e.description,
-        notes: e.notes,
-        date: e.date,
-        startTime: e.startTime,
-        endTime: e.endTime,
-        allDay: e.allDay,
-        location: e.location,
-        category: e.category,
-        participants: e.participants || [],
-        createdBy: e.createdBy,
-        recurrence: e.recurrence,
-        reminder: e.reminder,
-        overrides: e.overrides || {},
-        exceptions: e.exceptions || [],
-        history: e.history || [],
-      }));
+      const toIsoTimestamp = (
+        value?: Date | string | null,
+        fallback?: string | null
+      ): string => {
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+          return value.toISOString();
+        }
+        if (typeof value === "string" && value.trim()) {
+          const parsed = Date.parse(value);
+          if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+        }
+        if (fallback && fallback.trim()) return fallback;
+        return new Date().toISOString();
+      };
+
+      const formattedEvents: FamilyEvent[] = eventRows.map((e) => {
+        const createdIso = toIsoTimestamp(e.createdAt);
+        return {
+          id: e.id,
+          title: e.title,
+          description: e.description,
+          notes: e.notes,
+          date: e.date,
+          startTime: e.startTime,
+          endTime: e.endTime,
+          allDay: e.allDay,
+          location: e.location,
+          category: e.category,
+          participants: e.participants || [],
+          createdBy: e.createdBy,
+          recurrence: e.recurrence,
+          reminder: e.reminder,
+          overrides: e.overrides || {},
+          exceptions: e.exceptions || [],
+          history: (e.history || []).map((h) => ({
+            ...h,
+            at:
+              !h.at || /^just\s*now$/i.test(h.at.trim()) ? createdIso : h.at,
+          })),
+        };
+      });
 
       const formattedTasks: FamilyTask[] = taskRows.map((t) => ({
         id: t.id,
@@ -768,7 +790,17 @@ export async function getFamilyState(
       const formattedPosts: WallPost[] = postRows.map((p) => {
         const pComments = commentRows
           .filter((c) => c.postId === p.id)
-          .map((c) => ({ id: c.id, by: c.by, text: c.text, at: c.at }));
+          .sort(
+            (a, b) =>
+              (a.createdAt ? a.createdAt.getTime() : 0) -
+              (b.createdAt ? b.createdAt.getTime() : 0)
+          )
+          .map((c) => ({
+            id: c.id,
+            by: c.by,
+            text: c.text,
+            at: toIsoTimestamp(c.createdAt, c.at),
+          }));
 
         const reactions: Record<string, MemberId[]> = {
           "❤️": [],
@@ -788,7 +820,7 @@ export async function getFamilyState(
           type: p.type,
           content: p.content,
           images: p.images || [],
-          createdAt: p.createdAtLabel,
+          createdAt: toIsoTimestamp(p.createdAt, p.createdAtLabel),
           reactions,
           comments: pComments,
         };
@@ -799,7 +831,7 @@ export async function getFamilyState(
         text: a.text,
         sub: a.sub,
         by: a.by,
-        at: a.at,
+        at: toIsoTimestamp(a.createdAt, a.at),
         targetEventId: a.targetEventId,
         target: a.targetEventId
           ? formattedEvents.find((ev) => ev.id === a.targetEventId) || null
@@ -884,12 +916,14 @@ export async function recordActivity(
   by: MemberId,
   targetEvent?: FamilyEvent | null
 ): Promise<ActivityItem> {
+  const now = new Date();
+  const nowIso = now.toISOString();
   const item: ActivityItem = {
     id: uid("ac"),
     text,
     sub,
     by,
-    at: "just now",
+    at: nowIso,
     target: targetEvent || null,
     targetEventId: targetEvent?.id || null,
   };
@@ -903,8 +937,9 @@ export async function recordActivity(
         text: item.text,
         sub: item.sub || null,
         by: item.by,
-        at: item.at,
+        at: nowIso,
         targetEventId: item.targetEventId || null,
+        createdAt: now,
       });
     } catch (e) {
       console.warn("Failed to insert activity into Neon:", e);
@@ -1355,6 +1390,15 @@ export async function createEventRecord(
   ev: Partial<FamilyEvent>,
   currentUser: MemberId
 ): Promise<FamilyEvent> {
+  const nowIso = new Date().toISOString();
+  const normalizedHistory =
+    ev.history && ev.history.length > 0
+      ? ev.history.map((h) => ({
+          ...h,
+          at: !h.at || /^just\s*now$/i.test(h.at.trim()) ? nowIso : h.at,
+        }))
+      : [{ by: currentUser, at: nowIso, note: "Created event" }];
+
   const full: FamilyEvent = {
     id: ev.id || uid("ev"),
     title: ev.title || "Untitled Event",
@@ -1372,9 +1416,7 @@ export async function createEventRecord(
     reminder: ev.reminder || null,
     overrides: ev.overrides || {},
     exceptions: ev.exceptions || [],
-    history: ev.history || [
-      { by: currentUser, at: "just now", note: "Created event" },
-    ],
+    history: normalizedHistory,
   };
 
   const db = await getReadyDb();
@@ -1481,7 +1523,12 @@ export async function updateEventRecord(
       : `Location set to "${value}"`;
   else note = `${field} updated`;
 
-  const historyEntry = { by: currentUser, at: "just now", note, reason };
+  const historyEntry = {
+    by: currentUser,
+    at: new Date().toISOString(),
+    note,
+    reason,
+  };
 
   let patchedMaster: FamilyEvent;
   if (editingJustThisOne && occDate) {
@@ -1543,42 +1590,100 @@ export async function updateEventRecord(
 export async function deleteEventRecord(
   familyId: string,
   id: string,
-  scope: "instance" | "series"
-): Promise<void> {
+  scope: "instance" | "series",
+  actorId: MemberId
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const [masterId, occDate] = id.includes("::") ? id.split("::") : [id, null];
   const db = await getReadyDb();
   const fam = getMemoryStore().families.get(familyId);
 
-  if (occDate && scope === "instance") {
-    if (db) {
-      const rows = await db
-        .select()
-        .from(events)
-        .where(and(eq(events.id, masterId), eq(events.familyId, familyId)))
-        .limit(1);
-      if (rows[0]) {
-        const nextExceptions = [...(rows[0].exceptions || []), occDate];
-        await db
-          .update(events)
-          .set({ exceptions: nextExceptions })
-          .where(and(eq(events.id, masterId), eq(events.familyId, familyId)));
-      }
-    } else if (fam) {
-      fam.events = fam.events.map((e) =>
-        e.id === masterId
-          ? { ...e, exceptions: [...(e.exceptions || []), occDate] }
-          : e
-      );
+  if (db) {
+    const rows = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.id, masterId), eq(events.familyId, familyId)))
+      .limit(1);
+    const existing = rows[0];
+    if (!existing) {
+      return { ok: false, error: "Event not found.", status: 404 };
     }
-  } else {
-    if (db) {
+    if (existing.createdBy !== actorId) {
+      return {
+        ok: false,
+        error: "Only the person who created this event can delete it.",
+        status: 403,
+      };
+    }
+
+    if (occDate && scope === "instance") {
+      const currentExceptions = existing.exceptions || [];
+      const nextExceptions = currentExceptions.includes(occDate)
+        ? currentExceptions
+        : [...currentExceptions, occDate];
+      await db
+        .update(events)
+        .set({ exceptions: nextExceptions })
+        .where(and(eq(events.id, masterId), eq(events.familyId, familyId)));
+    } else {
       await db
         .delete(events)
         .where(and(eq(events.id, masterId), eq(events.familyId, familyId)));
-    } else if (fam) {
-      fam.events = fam.events.filter((e) => e.id !== masterId);
+      await db
+        .update(tasks)
+        .set({ linkedEventId: null, linkedEventTitle: null })
+        .where(
+          and(eq(tasks.familyId, familyId), eq(tasks.linkedEventId, masterId))
+        );
+      await db
+        .update(activities)
+        .set({ targetEventId: null })
+        .where(
+          and(
+            eq(activities.familyId, familyId),
+            eq(activities.targetEventId, masterId)
+          )
+        );
     }
+    return { ok: true };
   }
+
+  if (!fam) {
+    return { ok: false, error: "Family not found.", status: 404 };
+  }
+  const existing = fam.events.find((e) => e.id === masterId);
+  if (!existing) {
+    return { ok: false, error: "Event not found.", status: 404 };
+  }
+  if (existing.createdBy !== actorId) {
+    return {
+      ok: false,
+      error: "Only the person who created this event can delete it.",
+      status: 403,
+    };
+  }
+
+  if (occDate && scope === "instance") {
+    fam.events = fam.events.map((e) => {
+      if (e.id !== masterId) return e;
+      const currentExceptions = e.exceptions || [];
+      return currentExceptions.includes(occDate)
+        ? e
+        : { ...e, exceptions: [...currentExceptions, occDate] };
+    });
+  } else {
+    fam.events = fam.events.filter((e) => e.id !== masterId);
+    fam.tasks = fam.tasks.map((t) =>
+      t.linkedEventId === masterId
+        ? { ...t, linkedEventId: undefined, linkedEventTitle: undefined }
+        : t
+    );
+    fam.activity = fam.activity.map((a) =>
+      a.targetEventId === masterId || a.target?.id === masterId
+        ? { ...a, targetEventId: null, target: null }
+        : a
+    );
+  }
+  return { ok: true };
 }
 
 /* ---------------- Tasks ---------------- */
@@ -1689,6 +1794,7 @@ export async function toggleTaskRecord(
   if (!target) return null;
 
   const clock = nowClock();
+  const completedIso = new Date().toISOString();
   let updated: FamilyTask;
   let nowDone = false;
 
@@ -1703,7 +1809,7 @@ export async function toggleTaskRecord(
           ...existing,
           completed: nowDone,
           completedBy: nowDone ? currentUser : null,
-          completedAt: nowDone ? clock : null,
+          completedAt: nowDone ? completedIso : null,
         },
       },
     };
@@ -1713,7 +1819,7 @@ export async function toggleTaskRecord(
       ...target,
       completed: nowDone,
       completedBy: nowDone ? currentUser : null,
-      completedAt: nowDone ? clock : null,
+      completedAt: nowDone ? completedIso : null,
     };
   }
 
@@ -1741,6 +1847,80 @@ export async function toggleTaskRecord(
     );
   }
   return updated;
+}
+
+export async function deleteTaskRecord(
+  familyId: string,
+  id: string,
+  scope: "instance" | "series",
+  actorId: MemberId
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  const [masterId, occDate] = id.includes("::") ? id.split("::") : [id, null];
+  const db = await getReadyDb();
+  const fam = getMemoryStore().families.get(familyId);
+
+  if (db) {
+    const rows = await db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, masterId), eq(tasks.familyId, familyId)))
+      .limit(1);
+    const existing = rows[0];
+    if (!existing) {
+      return { ok: false, error: "Task not found.", status: 404 };
+    }
+    if (existing.createdBy !== actorId) {
+      return {
+        ok: false,
+        error: "Only the person who created this task can delete it.",
+        status: 403,
+      };
+    }
+
+    if (occDate && scope === "instance") {
+      const currentExceptions = existing.exceptions || [];
+      const nextExceptions = currentExceptions.includes(occDate)
+        ? currentExceptions
+        : [...currentExceptions, occDate];
+      await db
+        .update(tasks)
+        .set({ exceptions: nextExceptions })
+        .where(and(eq(tasks.id, masterId), eq(tasks.familyId, familyId)));
+    } else {
+      await db
+        .delete(tasks)
+        .where(and(eq(tasks.id, masterId), eq(tasks.familyId, familyId)));
+    }
+    return { ok: true };
+  }
+
+  if (!fam) {
+    return { ok: false, error: "Family not found.", status: 404 };
+  }
+  const existing = fam.tasks.find((t) => t.id === masterId);
+  if (!existing) {
+    return { ok: false, error: "Task not found.", status: 404 };
+  }
+  if (existing.createdBy !== actorId) {
+    return {
+      ok: false,
+      error: "Only the person who created this task can delete it.",
+      status: 403,
+    };
+  }
+
+  if (occDate && scope === "instance") {
+    fam.tasks = fam.tasks.map((t) => {
+      if (t.id !== masterId) return t;
+      const currentExceptions = t.exceptions || [];
+      return currentExceptions.includes(occDate)
+        ? t
+        : { ...t, exceptions: [...currentExceptions, occDate] };
+    });
+  } else {
+    fam.tasks = fam.tasks.filter((t) => t.id !== masterId);
+  }
+  return { ok: true };
 }
 
 /* ---------------- Medications & Care Profiles ---------------- */
@@ -1943,13 +2123,15 @@ export async function createPostRecord(
   postInput: { type: string; content: string; images: string[]; id?: string },
   currentUser: MemberId
 ): Promise<WallPost> {
+  const now = new Date();
+  const nowIso = now.toISOString();
   const full: WallPost = {
     id: postInput.id || uid("pt"),
     author: currentUser,
     type: postInput.type || "Update",
     content: postInput.content || "",
     images: postInput.images || [],
-    createdAt: "just now",
+    createdAt: nowIso,
     reactions: {},
     comments: [],
   };
@@ -1963,7 +2145,8 @@ export async function createPostRecord(
       type: full.type,
       content: full.content,
       images: full.images,
-      createdAtLabel: full.createdAt,
+      createdAtLabel: nowIso,
+      createdAt: now,
     });
   } else {
     const fam = getMemoryStore().families.get(familyId);
@@ -2008,6 +2191,66 @@ export async function createPostRecord(
   });
 
   return full;
+}
+
+export async function deletePostRecord(
+  familyId: string,
+  postId: string,
+  actorId: MemberId
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  const db = await getReadyDb();
+  if (db) {
+    const rows = await db
+      .select()
+      .from(posts)
+      .where(and(eq(posts.id, postId), eq(posts.familyId, familyId)))
+      .limit(1);
+    const existing = rows[0];
+    if (!existing) {
+      return { ok: false, error: "Post not found.", status: 404 };
+    }
+    if (existing.author !== actorId) {
+      return {
+        ok: false,
+        error: "Only the person who posted this can delete it.",
+        status: 403,
+      };
+    }
+
+    await db
+      .delete(posts)
+      .where(and(eq(posts.id, postId), eq(posts.familyId, familyId)));
+    await db
+      .delete(notifications)
+      .where(
+        and(
+          eq(notifications.familyId, familyId),
+          eq(notifications.targetEntityId, postId)
+        )
+      );
+    return { ok: true };
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  if (!fam) {
+    return { ok: false, error: "Family not found.", status: 404 };
+  }
+  const existing = fam.posts.find((p) => p.id === postId);
+  if (!existing) {
+    return { ok: false, error: "Post not found.", status: 404 };
+  }
+  if (existing.author !== actorId) {
+    return {
+      ok: false,
+      error: "Only the person who posted this can delete it.",
+      status: 403,
+    };
+  }
+  fam.posts = fam.posts.filter((p) => p.id !== postId);
+  fam.notifications = (fam.notifications || []).filter(
+    (n) => n.target?.entityId !== postId
+  );
+  return { ok: true };
 }
 
 export async function togglePostReactionRecord(
@@ -2072,11 +2315,13 @@ export async function addPostCommentRecord(
   currentUser: MemberId,
   commentId?: string
 ): Promise<PostComment | null> {
+  const now = new Date();
+  const nowIso = now.toISOString();
   const comment: PostComment = {
     id: commentId || uid("cm"),
     by: currentUser,
     text,
-    at: "just now",
+    at: nowIso,
   };
 
   let postAuthor: MemberId | null = null;
@@ -2096,7 +2341,8 @@ export async function addPostCommentRecord(
       postId,
       by: comment.by,
       text: comment.text,
-      at: comment.at,
+      at: nowIso,
+      createdAt: now,
     });
   } else {
     const fam = getMemoryStore().families.get(familyId);
@@ -2121,6 +2367,77 @@ export async function addPostCommentRecord(
     );
   }
   return comment;
+}
+
+export async function deletePostCommentRecord(
+  familyId: string,
+  postId: string,
+  commentId: string,
+  actorId: MemberId
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  const db = await getReadyDb();
+  if (db) {
+    const postRows = await db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(and(eq(posts.id, postId), eq(posts.familyId, familyId)))
+      .limit(1);
+    if (!postRows[0]) {
+      return { ok: false, error: "Post not found.", status: 404 };
+    }
+
+    const commentRows = await db
+      .select()
+      .from(postComments)
+      .where(
+        and(eq(postComments.id, commentId), eq(postComments.postId, postId))
+      )
+      .limit(1);
+    const existing = commentRows[0];
+    if (!existing) {
+      return { ok: false, error: "Comment not found.", status: 404 };
+    }
+    if (existing.by !== actorId) {
+      return {
+        ok: false,
+        error: "Only the person who wrote this comment can delete it.",
+        status: 403,
+      };
+    }
+
+    await db
+      .delete(postComments)
+      .where(
+        and(eq(postComments.id, commentId), eq(postComments.postId, postId))
+      );
+    return { ok: true };
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  if (!fam) {
+    return { ok: false, error: "Family not found.", status: 404 };
+  }
+  const post = fam.posts.find((p) => p.id === postId);
+  if (!post) {
+    return { ok: false, error: "Post not found.", status: 404 };
+  }
+  const existing = (post.comments || []).find((c) => c.id === commentId);
+  if (!existing) {
+    return { ok: false, error: "Comment not found.", status: 404 };
+  }
+  if (existing.by !== actorId) {
+    return {
+      ok: false,
+      error: "Only the person who wrote this comment can delete it.",
+      status: 403,
+    };
+  }
+  fam.posts = fam.posts.map((p) =>
+    p.id === postId
+      ? { ...p, comments: (p.comments || []).filter((c) => c.id !== commentId) }
+      : p
+  );
+  return { ok: true };
 }
 
 /* ---------------- Extensible Notifications ---------------- */
@@ -2293,7 +2610,20 @@ export async function getPostsForFamily(familyId: string): Promise<WallPost[]> {
       return postRows.map((p) => {
         const pComments = commentRows
           .filter((c) => c.postId === p.id)
-          .map((c) => ({ id: c.id, by: c.by, text: c.text, at: c.at }));
+          .sort(
+            (a, b) =>
+              (a.createdAt ? a.createdAt.getTime() : 0) -
+              (b.createdAt ? b.createdAt.getTime() : 0)
+          )
+          .map((c) => ({
+            id: c.id,
+            by: c.by,
+            text: c.text,
+            at:
+              c.createdAt instanceof Date && !Number.isNaN(c.createdAt.getTime())
+                ? c.createdAt.toISOString()
+                : c.at,
+          }));
 
         const reactions: Record<string, MemberId[]> = {
           "❤️": [],
@@ -2313,7 +2643,10 @@ export async function getPostsForFamily(familyId: string): Promise<WallPost[]> {
           type: p.type,
           content: p.content,
           images: p.images || [],
-          createdAt: p.createdAtLabel,
+          createdAt:
+            p.createdAt instanceof Date && !Number.isNaN(p.createdAt.getTime())
+              ? p.createdAt.toISOString()
+              : p.createdAtLabel,
           reactions,
           comments: pComments,
         };
