@@ -77,7 +77,19 @@ export function expandAllTasks(
   rangeStart: string,
   rangeEnd: string
 ): FamilyTask[] {
-  return tasks.flatMap((t) => expandOccurrences(t, "dueDate", rangeStart, rangeEnd));
+  return tasks.flatMap((t) => {
+    if (!t.recurrence || !t.dueDate) {
+      return [
+        {
+          ...t,
+          occurrenceDate: t.dueDate || undefined,
+          masterId: t.id,
+          isRecurring: false,
+        },
+      ];
+    }
+    return expandOccurrences(t, "dueDate", rangeStart, rangeEnd);
+  });
 }
 
 export function recurrenceLabel(recurrence?: string | null, dateStr?: string): string | null {

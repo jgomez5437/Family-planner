@@ -486,6 +486,7 @@ export function HomeTab({
           <AvatarDot id={currentUser} size={52} />
           <div style={{ minWidth: 0 }}>
             <div
+              suppressHydrationWarning
               style={{
                 fontFamily: "'Baloo 2', sans-serif",
                 fontSize: 25,
@@ -495,7 +496,10 @@ export function HomeTab({
             >
               {greeting}, {memberById(currentUser).name}
             </div>
-            <div style={{ color: "#8A7F70", fontSize: 13.5, marginTop: 3 }}>
+            <div
+              suppressHydrationWarning
+              style={{ color: "#8A7F70", fontSize: 13.5, marginTop: 3 }}
+            >
               {dateStr}
             </div>
           </div>

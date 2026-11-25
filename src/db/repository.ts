@@ -1940,9 +1940,28 @@ export async function updateTaskRecord(
       },
     };
   } else {
+    const clearedKeys = Object.keys(patch).filter(
+      (k) => k !== "recurrence" && k !== "dueDate"
+    );
+    let nextOverrides = target.overrides || {};
+    if (clearedKeys.length > 0 && Object.keys(nextOverrides).length > 0) {
+      nextOverrides = Object.fromEntries(
+        Object.entries(nextOverrides).map(([d, ov]) => {
+          const copy: Record<string, unknown> = { ...ov };
+          for (const k of clearedKeys) {
+            delete copy[k];
+          }
+          if (clearedKeys.includes("linkedEventId")) {
+            delete copy.linkedEventTitle;
+          }
+          return [d, copy as TaskOverride];
+        })
+      );
+    }
     updatedMaster = {
       ...target,
       ...patch,
+      overrides: nextOverrides,
       linkedEventId:
         patch.linkedEventId !== undefined
           ? patch.linkedEventId || undefined
