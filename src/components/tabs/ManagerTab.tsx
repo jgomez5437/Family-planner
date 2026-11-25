@@ -58,6 +58,7 @@ import {
   EmptyRow,
   EmptyState,
   FieldLabel,
+  LocalClock,
   ModalShell,
   SectionLabel,
 } from "@/components/ui/Primitives";
@@ -379,7 +380,8 @@ function ManagerOverview({
                         fontWeight: 600,
                       }}
                     >
-                      ✓ Given by {memberById(entry.by).name} · {entry.at}
+                      ✓ Given by {memberById(entry.by).name} ·{" "}
+                      <LocalClock value={entry.at} />
                     </div>
                   ) : overdue ? (
                     <div
@@ -1630,9 +1632,14 @@ export function CaregiverSheet({
                                 <td style={sheetTd}>{d.med.name}</td>
                                 <td style={sheetTd}>{d.med.dose}</td>
                                 <td style={sheetTd}>
-                                  {entry
-                                    ? `✓ ${memberById(entry.by).name} · ${entry.at}`
-                                    : "☐  ____________"}
+                                  {entry ? (
+                                    <>
+                                      ✓ {memberById(entry.by).name} ·{" "}
+                                      <LocalClock value={entry.at} />
+                                    </>
+                                  ) : (
+                                    "☐  ____________"
+                                  )}
                                 </td>
                               </tr>
                             );

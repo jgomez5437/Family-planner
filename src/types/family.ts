@@ -69,9 +69,30 @@ export interface FamilyEvent {
 }
 
 export interface TaskOverride {
+  title?: string;
+  category?: string;
+  assignedTo?: MemberId | null;
+  priority?: "Low" | "Medium" | "High" | string;
+  dueDate?: string;
+  dueTime?: string | null;
+  notes?: string;
+  linkedEventId?: string | null;
+  linkedEventTitle?: string | null;
   completed?: boolean;
   completedBy?: MemberId | null;
   completedAt?: string | null;
+}
+
+export interface TaskUpdateInput {
+  title?: string;
+  category?: string;
+  assignedTo?: MemberId | null;
+  priority?: "Low" | "Medium" | "High" | string;
+  dueDate?: string;
+  dueTime?: string | null;
+  notes?: string;
+  recurrence?: RecurrenceFrequency | string | null;
+  linkedEventId?: string | null;
 }
 
 export interface FamilyTask {
@@ -90,8 +111,8 @@ export interface FamilyTask {
   completedBy?: MemberId | null;
   completedAt?: string | null;
   createdBy: MemberId;
-  linkedEventId?: string;
-  linkedEventTitle?: string;
+  linkedEventId?: string | null;
+  linkedEventTitle?: string | null;
   recurrence?: RecurrenceFrequency | string | null;
   overrides?: Record<string, TaskOverride>;
   exceptions?: string[];

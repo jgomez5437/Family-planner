@@ -25,7 +25,7 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import { MEMBER_COLOR_PALETTES } from "@/lib/constants";
-import { fmtTime, nowClock, relativeDay, uid } from "@/lib/dates";
+import { fmtShortDate, fmtTime, isIsoTimestamp, uid } from "@/lib/dates";
 import type {
   ActivityItem,
   AppTabId,
@@ -43,6 +43,8 @@ import type {
   NotificationTarget,
   PostComment,
   ProfilesMap,
+  TaskOverride,
+  TaskUpdateInput,
   WallPost,
 } from "@/types/family";
 
@@ -708,11 +710,6 @@ export async function getFamilyState(
         };
       }
 
-      const doseLog: DoseLogMap = {};
-      for (const d of doseRows) {
-        doseLog[d.key] = { by: d.givenBy, at: d.givenAt };
-      }
-
       const toIsoTimestamp = (
         value?: Date | string | null,
         fallback?: string | null
@@ -727,6 +724,16 @@ export async function getFamilyState(
         if (fallback && fallback.trim()) return fallback;
         return new Date().toISOString();
       };
+
+      const doseLog: DoseLogMap = {};
+      for (const d of doseRows) {
+        doseLog[d.key] = {
+          by: d.givenBy,
+          at: isIsoTimestamp(d.givenAt)
+            ? d.givenAt
+            : toIsoTimestamp(d.createdAt, d.givenAt),
+        };
+      }
 
       const formattedEvents: FamilyEvent[] = eventRows.map((e) => {
         const createdIso = toIsoTimestamp(e.createdAt);
@@ -826,17 +833,25 @@ export async function getFamilyState(
         };
       });
 
-      const formattedActivity: ActivityItem[] = activityRows.map((a) => ({
-        id: a.id,
-        text: a.text,
-        sub: a.sub,
-        by: a.by,
-        at: toIsoTimestamp(a.createdAt, a.at),
-        targetEventId: a.targetEventId,
-        target: a.targetEventId
-          ? formattedEvents.find((ev) => ev.id === a.targetEventId) || null
-          : null,
-      }));
+      const LEGACY_CLOCK_RE = /^\d{1,2}:\d{2}\s*[AP]M$/i;
+      const formattedActivity: ActivityItem[] = activityRows.map((a) => {
+        const isLegacyTaskCompletionClock =
+          Boolean(a.sub && LEGACY_CLOCK_RE.test(a.sub.trim())) &&
+          /\bcompleted\s+"[^"]+"$/.test(a.text);
+        return {
+          id: a.id,
+          text: a.text,
+          sub: isLegacyTaskCompletionClock
+            ? toIsoTimestamp(a.createdAt, a.sub)
+            : a.sub,
+          by: a.by,
+          at: toIsoTimestamp(a.createdAt, a.at),
+          targetEventId: a.targetEventId,
+          target: a.targetEventId
+            ? formattedEvents.find((ev) => ev.id === a.targetEventId) || null
+            : null,
+        };
+      });
 
       const formattedNotifications: FamilyNotification[] = notificationRows.map(
         (n) => ({
@@ -1543,7 +1558,7 @@ export async function updateEventRecord(
         ...(target.history || []),
         {
           ...historyEntry,
-          note: `${historyEntry.note} (${relativeDay(occDate)} only)`,
+          note: `${historyEntry.note} (${fmtShortDate(occDate)} only)`,
         },
       ],
     };
@@ -1750,6 +1765,231 @@ export async function createTaskRecord(
   return full;
 }
 
+const VALID_TASK_PRIORITIES = new Set(["Low", "Medium", "High"]);
+const VALID_TASK_RECURRENCES = new Set(["Daily", "Weekly", "Monthly", "Yearly"]);
+
+export async function updateTaskRecord(
+  familyId: string,
+  id: string,
+  updates: TaskUpdateInput,
+  scope: "instance" | "series",
+  actorId: MemberId
+): Promise<
+  { ok: true; task: FamilyTask } | { ok: false; error: string; status: number }
+> {
+  const [masterId, occDate] = id.includes("::") ? id.split("::") : [id, null];
+  const db = await getReadyDb();
+  const fam = getMemoryStore().families.get(familyId);
+
+  let target: FamilyTask | undefined;
+  if (db) {
+    const rows = await db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, masterId), eq(tasks.familyId, familyId)))
+      .limit(1);
+    if (rows[0]) {
+      target = {
+        id: rows[0].id,
+        title: rows[0].title,
+        category: rows[0].category,
+        assignedTo: rows[0].assignedTo,
+        priority: rows[0].priority,
+        dueDate: rows[0].dueDate,
+        dueTime: rows[0].dueTime,
+        notes: rows[0].notes,
+        completed: rows[0].completed,
+        completedBy: rows[0].completedBy,
+        completedAt: rows[0].completedAt,
+        createdBy: rows[0].createdBy,
+        linkedEventId: rows[0].linkedEventId || undefined,
+        linkedEventTitle: rows[0].linkedEventTitle || undefined,
+        recurrence: rows[0].recurrence,
+        overrides: rows[0].overrides || {},
+        exceptions: rows[0].exceptions || [],
+      };
+    }
+  } else {
+    target = fam?.tasks.find((t) => t.id === masterId);
+  }
+
+  if (!target) {
+    return { ok: false, error: "Task not found.", status: 404 };
+  }
+
+  const patch: Partial<TaskOverride> & { recurrence?: string | null } = {};
+
+  if (updates.title !== undefined) {
+    const trimmed = updates.title.trim();
+    if (!trimmed) {
+      return { ok: false, error: "Task title cannot be empty.", status: 400 };
+    }
+    patch.title = trimmed;
+  }
+
+  if (updates.category !== undefined) {
+    const trimmed = updates.category.trim();
+    patch.category = trimmed || "Household";
+  }
+
+  if (updates.priority !== undefined) {
+    if (!VALID_TASK_PRIORITIES.has(updates.priority)) {
+      return { ok: false, error: "Invalid priority value.", status: 400 };
+    }
+    patch.priority = updates.priority;
+  }
+
+  if (updates.dueDate !== undefined) {
+    const trimmed = updates.dueDate.trim();
+    if (trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return { ok: false, error: "Invalid due date.", status: 400 };
+    }
+    patch.dueDate = trimmed;
+  }
+
+  if (updates.dueTime !== undefined) {
+    const trimmed = updates.dueTime ? updates.dueTime.trim() : "";
+    if (trimmed && !/^\d{2}:\d{2}$/.test(trimmed)) {
+      return { ok: false, error: "Invalid due time.", status: 400 };
+    }
+    patch.dueTime = trimmed || null;
+  }
+
+  if (updates.notes !== undefined) {
+    patch.notes = String(updates.notes);
+  }
+
+  if (updates.assignedTo !== undefined) {
+    const nextAssignee = updates.assignedTo?.trim() || null;
+    if (nextAssignee) {
+      let memberExists = false;
+      if (db) {
+        const mRows = await db
+          .select({ id: members.id })
+          .from(members)
+          .where(and(eq(members.id, nextAssignee), eq(members.familyId, familyId)))
+          .limit(1);
+        memberExists = mRows.length > 0;
+      } else {
+        memberExists = Boolean(fam?.members.some((m) => m.id === nextAssignee));
+      }
+      if (!memberExists) {
+        return { ok: false, error: "Assigned member not found.", status: 400 };
+      }
+    }
+    patch.assignedTo = nextAssignee;
+  }
+
+  if (updates.recurrence !== undefined) {
+    const rawRec = updates.recurrence ? updates.recurrence.trim() : "";
+    if (!rawRec || rawRec === "None") {
+      patch.recurrence = null;
+    } else if (!VALID_TASK_RECURRENCES.has(rawRec)) {
+      return { ok: false, error: "Invalid recurrence value.", status: 400 };
+    } else {
+      patch.recurrence = rawRec;
+    }
+  }
+
+  if (updates.linkedEventId !== undefined) {
+    const rawEventId = updates.linkedEventId?.trim() || "";
+    if (!rawEventId) {
+      patch.linkedEventId = null;
+      patch.linkedEventTitle = null;
+    } else {
+      const eventMasterId = rawEventId.includes("::")
+        ? rawEventId.split("::")[0]
+        : rawEventId;
+      let evTitle: string | null = null;
+      if (db) {
+        const eRows = await db
+          .select({ id: events.id, title: events.title })
+          .from(events)
+          .where(and(eq(events.id, eventMasterId), eq(events.familyId, familyId)))
+          .limit(1);
+        if (eRows[0]) evTitle = eRows[0].title;
+      } else {
+        const foundEv = fam?.events.find((e) => e.id === eventMasterId);
+        if (foundEv) evTitle = foundEv.title;
+      }
+      if (!evTitle) {
+        return { ok: false, error: "Linked event not found.", status: 400 };
+      }
+      patch.linkedEventId = eventMasterId;
+      patch.linkedEventTitle = evTitle;
+    }
+  }
+
+  const isRecurring = Boolean(target.recurrence);
+  const editingJustThisOne = Boolean(
+    isRecurring && occDate && scope === "instance" && patch.recurrence === undefined
+  );
+
+  let updatedMaster: FamilyTask;
+  if (editingJustThisOne && occDate) {
+    const existingOverride = target.overrides?.[occDate] || {};
+    const { recurrence: _ignored, ...overridePatch } = patch;
+    updatedMaster = {
+      ...target,
+      overrides: {
+        ...(target.overrides || {}),
+        [occDate]: {
+          ...existingOverride,
+          ...overridePatch,
+        },
+      },
+    };
+  } else {
+    updatedMaster = {
+      ...target,
+      ...patch,
+      linkedEventId:
+        patch.linkedEventId !== undefined
+          ? patch.linkedEventId || undefined
+          : target.linkedEventId,
+      linkedEventTitle:
+        patch.linkedEventTitle !== undefined
+          ? patch.linkedEventTitle || undefined
+          : target.linkedEventTitle,
+    };
+  }
+
+  if (db) {
+    await db
+      .update(tasks)
+      .set({
+        title: updatedMaster.title,
+        category: updatedMaster.category,
+        assignedTo: updatedMaster.assignedTo,
+        priority: updatedMaster.priority,
+        dueDate: updatedMaster.dueDate,
+        dueTime: updatedMaster.dueTime || null,
+        notes: updatedMaster.notes || "",
+        recurrence: updatedMaster.recurrence || null,
+        linkedEventId: updatedMaster.linkedEventId || null,
+        linkedEventTitle: updatedMaster.linkedEventTitle || null,
+        overrides: updatedMaster.overrides || {},
+      })
+      .where(and(eq(tasks.id, masterId), eq(tasks.familyId, familyId)));
+  } else if (fam) {
+    fam.tasks = fam.tasks.map((t) => (t.id === masterId ? updatedMaster : t));
+  }
+
+  const actorName = await resolveMemberName(familyId, actorId);
+  const displayTitle =
+    editingJustThisOne && occDate
+      ? updatedMaster.overrides?.[occDate]?.title || updatedMaster.title
+      : updatedMaster.title;
+  await recordActivity(
+    familyId,
+    `${actorName} updated "${displayTitle}"`,
+    null,
+    actorId
+  );
+
+  return { ok: true, task: updatedMaster };
+}
+
 export async function toggleTaskRecord(
   familyId: string,
   id: string,
@@ -1793,7 +2033,6 @@ export async function toggleTaskRecord(
 
   if (!target) return null;
 
-  const clock = nowClock();
   const completedIso = new Date().toISOString();
   let updated: FamilyTask;
   let nowDone = false;
@@ -1839,10 +2078,14 @@ export async function toggleTaskRecord(
 
   if (nowDone) {
     const actorName = await resolveMemberName(familyId, currentUser);
+    const displayTitle =
+      occDate && updated.overrides?.[occDate]?.title
+        ? updated.overrides[occDate].title!
+        : updated.title;
     await recordActivity(
       familyId,
-      `${actorName} completed "${updated.title}"`,
-      clock,
+      `${actorName} completed "${displayTitle}"`,
+      completedIso,
       currentUser
     );
   }
@@ -2031,7 +2274,7 @@ export async function toggleDoseRecord(
     return { given: false };
   }
 
-  const entry = { by: currentUser, at: nowClock() };
+  const entry = { by: currentUser, at: new Date().toISOString() };
   if (db) {
     await db.insert(doseLogs).values({
       key,

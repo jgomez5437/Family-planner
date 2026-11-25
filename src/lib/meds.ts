@@ -13,6 +13,7 @@ import {
   fmtDayLong,
   fmtShortDate,
   fmtTime,
+  formatLocalClock,
   nowHHMM,
   parseLocalDate,
   relativeDay,
@@ -193,7 +194,7 @@ export function buildSheetText(
         day.doses.forEach((d) => {
           const entry = doseLog[d.key];
           lines.push(
-            `  ${fmtTime(d.time)}  ${d.med.name} ${d.med.dose}  ${entry ? `[x] given by ${findMemberById(entry.by, members).name} ${entry.at}` : "[ ] given: ____"}`
+            `  ${fmtTime(d.time)}  ${d.med.name} ${d.med.dose}  ${entry ? `[x] given by ${findMemberById(entry.by, members).name} ${formatLocalClock(entry.at)}` : "[ ] given: ____"}`
           );
         });
       });

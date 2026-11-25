@@ -14,7 +14,7 @@ import {
   findMemberById,
   TABS,
 } from "@/lib/constants";
-import { fmtTime, nowClock, relativeDay, todayISO, uid } from "@/lib/dates";
+import { fmtShortDate, fmtTime, todayISO, uid } from "@/lib/dates";
 import { useRelativeTimeTicker } from "@/lib/useRelativeTime";
 import { dosesFor } from "@/lib/meds";
 import {
@@ -39,6 +39,8 @@ import type {
   MemberId,
   ProfilesMap,
   ScheduledDose,
+  TaskOverride,
+  TaskUpdateInput,
   WallPost,
 } from "@/types/family";
 import { MembersProvider } from "@/components/MembersContext";
@@ -61,7 +63,7 @@ import {
 } from "@/components/layout/MemberModal";
 import { HomeTab } from "@/components/tabs/HomeTab";
 import { CaregiverSheet, ManagerTab } from "@/components/tabs/ManagerTab";
-import { TasksTab } from "@/components/tabs/TasksTab";
+import { TaskEditModal, TasksTab } from "@/components/tabs/TasksTab";
 import { EventDetailModal, EventsTab } from "@/components/tabs/EventsTab";
 import { WallTab } from "@/components/tabs/WallTab";
 import { PwaInstallBanner } from "@/components/pwa/PwaContext";
@@ -160,6 +162,7 @@ export default function FamilyApp({
   const [profiles, setProfiles] = useState<ProfilesMap>(initialState.profiles);
   const [sheet, setSheet] = useState<{ kidIds: MemberId[] } | null>(null);
   const [historyModal, setHistoryModal] = useState<FamilyEvent | null>(null);
+  const [editingTask, setEditingTask] = useState<FamilyTask | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsScreen, setSettingsScreen] =
@@ -678,7 +681,7 @@ export default function FamilyApp({
               ...e.history,
               {
                 ...historyEntry,
-                note: `${historyEntry.note} (${relativeDay(occDate)} only)`,
+                note: `${historyEntry.note} (${fmtShortDate(occDate)} only)`,
               },
             ],
           };
@@ -847,14 +850,14 @@ export default function FamilyApp({
         if (occDate) {
           const existing = (t.overrides && t.overrides[occDate]) || {};
           const nowDone = !existing.completed;
+          const displayTitle = existing.title || t.title;
           if (nowDone) {
-            const clock = nowClock();
             pushActivity(
-              `${memberById(currentUser).name} completed "${t.title}"`,
-              clock,
+              `${memberById(currentUser).name} completed "${displayTitle}"`,
+              completedIso,
               currentUser
             );
-            fireToast(`"${t.title}" completed`);
+            fireToast(`"${displayTitle}" completed`);
           }
           return {
             ...t,
@@ -872,10 +875,9 @@ export default function FamilyApp({
 
         const nowDone = !t.completed;
         if (nowDone) {
-          const clock = nowClock();
           pushActivity(
             `${memberById(currentUser).name} completed "${t.title}"`,
-            clock,
+            completedIso,
             currentUser
           );
           fireToast(`"${t.title}" completed`);
@@ -897,6 +899,101 @@ export default function FamilyApp({
       });
     } catch {
       /* background sync */
+    }
+  }
+
+  async function updateTask(
+    id: string,
+    updates: TaskUpdateInput,
+    scope: "instance" | "series"
+  ) {
+    const [masterId, occDate] = id.includes("::")
+      ? id.split("::")
+      : [id, null];
+    const target = tasks.find((t) => t.id === masterId);
+    if (!target) return;
+
+    const previousTasks = tasks;
+    const isRecurring = Boolean(target.recurrence);
+    const editingJustThisOne = Boolean(
+      isRecurring && occDate && scope === "instance" && updates.recurrence === undefined
+    );
+
+    const linkedEventTitle =
+      updates.linkedEventId !== undefined
+        ? updates.linkedEventId
+          ? events.find((e) => e.id === updates.linkedEventId)?.title ||
+            target.linkedEventTitle ||
+            null
+          : null
+        : undefined;
+
+    setTasks((ts) =>
+      ts.map((t) => {
+        if (t.id !== masterId) return t;
+        if (editingJustThisOne && occDate) {
+          const existingOverride = (t.overrides && t.overrides[occDate]) || {};
+          const { recurrence: _ignored, ...restUpdates } = updates;
+          const nextOverride: TaskOverride = {
+            ...existingOverride,
+            ...restUpdates,
+            ...(linkedEventTitle !== undefined ? { linkedEventTitle } : {}),
+          };
+          return {
+            ...t,
+            overrides: {
+              ...(t.overrides || {}),
+              [occDate]: nextOverride,
+            },
+          };
+        }
+        return {
+          ...t,
+          ...updates,
+          linkedEventId:
+            updates.linkedEventId !== undefined
+              ? updates.linkedEventId || undefined
+              : t.linkedEventId,
+          linkedEventTitle:
+            linkedEventTitle !== undefined
+              ? linkedEventTitle || undefined
+              : t.linkedEventTitle,
+        };
+      })
+    );
+
+    const displayTitle =
+      updates.title ||
+      (editingJustThisOne && occDate && target.overrides?.[occDate]?.title) ||
+      target.title;
+    pushActivity(
+      `${memberById(currentUser).name} updated "${displayTitle}"`,
+      null,
+      currentUser
+    );
+    fireToast("Task updated");
+
+    try {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates, scope }),
+      });
+      if (!res.ok) {
+        setTasks(previousTasks);
+        const json = await res.json().catch(() => ({}));
+        fireToast(json.error || "Could not update task");
+        return;
+      }
+      const json = await res.json().catch(() => ({}));
+      if (json.task) {
+        setTasks((ts) =>
+          ts.map((t) => (t.id === masterId ? json.task : t))
+        );
+      }
+    } catch {
+      setTasks(previousTasks);
+      fireToast("Could not update task");
     }
   }
 
@@ -930,6 +1027,11 @@ export default function FamilyApp({
       setTasks((ts) => ts.filter((t) => t.id !== masterId));
       fireToast("Task deleted");
     }
+    setEditingTask((cur) =>
+      cur && (cur.id === id || cur.id === masterId || cur.masterId === masterId)
+        ? null
+        : cur
+    );
 
     try {
       const res = await fetch(
@@ -1184,7 +1286,10 @@ export default function FamilyApp({
         delete next[dose.key];
         return next;
       }
-      return { ...log, [dose.key]: { by: currentUser, at: nowClock() } };
+      return {
+        ...log,
+        [dose.key]: { by: currentUser, at: new Date().toISOString() },
+      };
     });
 
     if (wasGiven) {
@@ -1351,6 +1456,29 @@ export default function FamilyApp({
     }
     return events.find((e) => e.id === masterId) || null;
   }, [historyModal, events, expandedEvents]);
+
+  const resolvedEditingTask = useMemo(() => {
+    if (!editingTask) return null;
+    const [masterId, occDate] = editingTask.id.includes("::")
+      ? editingTask.id.split("::")
+      : [editingTask.masterId || editingTask.id, null];
+    const master = tasks.find((t) => t.id === masterId);
+    if (!master) return null;
+    if (occDate) {
+      if ((master.exceptions || []).includes(occDate)) return null;
+      return (
+        expandedTasks.find((t) => t.id === `${masterId}::${occDate}`) || {
+          ...master,
+          ...(master.overrides?.[occDate] || {}),
+          id: `${masterId}::${occDate}`,
+          masterId,
+          occurrenceDate: occDate,
+          isRecurring: true,
+        }
+      );
+    }
+    return expandedTasks.find((t) => t.id === masterId) || master;
+  }, [editingTask, tasks, expandedTasks]);
 
   if (sheet) {
     return (
@@ -1657,6 +1785,7 @@ export default function FamilyApp({
                 toggleReaction={toggleReaction}
                 onDeletePost={deletePost}
                 openHistory={setHistoryModal}
+                onOpenTask={setEditingTask}
                 goTab={setTab}
                 openComposer={openComposerFor}
                 isDesktop={isDesktop}
@@ -1687,6 +1816,7 @@ export default function FamilyApp({
                 toggleTask={toggleTask}
                 currentUser={currentUser}
                 openComposer={openComposerFor}
+                onEditTask={setEditingTask}
                 onDeleteTask={deleteTask}
                 onOpenLinkedEvent={(task) => {
                   const master = events.find(
@@ -1815,8 +1945,26 @@ export default function FamilyApp({
             tasks={expandedTasks}
             currentUser={currentUser}
             onToggleTask={toggleTask}
+            onOpenTask={setEditingTask}
             onDelete={deleteEvent}
             onClose={() => setHistoryModal(null)}
+          />
+        )}
+
+        {resolvedEditingTask && (
+          <TaskEditModal
+            key={resolvedEditingTask.id}
+            task={resolvedEditingTask}
+            existingEvents={events}
+            canDelete={resolvedEditingTask.createdBy === currentUser}
+            onClose={() => setEditingTask(null)}
+            onToggle={toggleTask}
+            onSave={updateTask}
+            onDelete={deleteTask}
+            onOpenLinkedEvent={(task) => {
+              const master = events.find((e) => e.id === task.linkedEventId);
+              if (master) setHistoryModal(master);
+            }}
           />
         )}
 
@@ -1829,6 +1977,10 @@ export default function FamilyApp({
             onOpenEvent={(e) => {
               setSearchOpen(false);
               setHistoryModal(e);
+            }}
+            onOpenTask={(t) => {
+              setSearchOpen(false);
+              setEditingTask(t);
             }}
           />
         )}

@@ -51,12 +51,14 @@ export function SearchOverlay({
   tasks,
   posts,
   onOpenEvent,
+  onOpenTask,
 }: {
   onClose: () => void;
   events: FamilyEvent[];
   tasks: FamilyTask[];
   posts: WallPost[];
   onOpenEvent: (e: FamilyEvent) => void;
+  onOpenTask?: (t: FamilyTask) => void;
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -192,7 +194,13 @@ export function SearchOverlay({
           <div style={{ marginBottom: 18 }}>
             <SectionLabel text="Tasks" />
             {grouped.tasks.map((t) => (
-              <SearchResultRow key={t.id} kind="task" data={t} query={query} />
+              <SearchResultRow
+                key={t.id}
+                kind="task"
+                data={t}
+                query={query}
+                onOpenTask={onOpenTask}
+              />
             ))}
           </div>
         )}
@@ -214,15 +222,29 @@ function SearchResultRow({
   data,
   query,
   onOpenEvent,
+  onOpenTask,
 }:
   | {
       kind: "event";
       data: FamilyEvent;
       query: string;
       onOpenEvent: (e: FamilyEvent) => void;
+      onOpenTask?: undefined;
     }
-  | { kind: "task"; data: FamilyTask; query: string; onOpenEvent?: undefined }
-  | { kind: "post"; data: WallPost; query: string; onOpenEvent?: undefined }) {
+  | {
+      kind: "task";
+      data: FamilyTask;
+      query: string;
+      onOpenEvent?: undefined;
+      onOpenTask?: (t: FamilyTask) => void;
+    }
+  | {
+      kind: "post";
+      data: WallPost;
+      query: string;
+      onOpenEvent?: undefined;
+      onOpenTask?: undefined;
+    }) {
   const { memberById } = useMembers();
   if (kind === "event") {
     const meta = CATEGORY_META[data.category] || CATEGORY_META.Other;
@@ -257,7 +279,15 @@ function SearchResultRow({
   }
   if (kind === "task") {
     return (
-      <div style={searchRowStyle}>
+      <button
+        type="button"
+        onClick={onOpenTask ? () => onOpenTask(data) : undefined}
+        disabled={!onOpenTask}
+        style={{
+          ...searchRowStyle,
+          cursor: onOpenTask ? "pointer" : "default",
+        }}
+      >
         <div
           style={{
             width: 30,
@@ -287,7 +317,7 @@ function SearchResultRow({
             {data.dueDate ? relativeDay(data.dueDate) : "No due date"}
           </div>
         </div>
-      </div>
+      </button>
     );
   }
   return (

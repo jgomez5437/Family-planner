@@ -502,6 +502,7 @@ export function EventDetailModal({
   currentUser,
   onClose,
   onToggleTask,
+  onOpenTask,
   onDelete,
 }: {
   event: FamilyEvent;
@@ -509,6 +510,7 @@ export function EventDetailModal({
   currentUser?: MemberId;
   onClose: () => void;
   onToggleTask?: (id: string) => void;
+  onOpenTask?: (t: FamilyTask) => void;
   onDelete?: (id: string, scope: "instance" | "series") => void;
 }) {
   const { memberById } = useMembers();
@@ -730,16 +732,40 @@ export function EventDetailModal({
                     <Circle size={16} />
                   )}
                 </button>
-                <span
-                  style={{
-                    fontSize: 13,
-                    textDecoration: t.completed ? "line-through" : "none",
-                    color: t.completed ? "#A69C8E" : "#2B2622",
-                    flex: 1,
-                  }}
-                >
-                  {t.title}
-                </span>
+                {onOpenTask ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenTask(t);
+                    }}
+                    style={{
+                      fontSize: 13,
+                      textDecoration: t.completed ? "line-through" : "none",
+                      color: t.completed ? "#A69C8E" : "#2B2622",
+                      flex: 1,
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      textAlign: "left",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {t.title}
+                  </button>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: 13,
+                      textDecoration: t.completed ? "line-through" : "none",
+                      color: t.completed ? "#A69C8E" : "#2B2622",
+                      flex: 1,
+                    }}
+                  >
+                    {t.title}
+                  </span>
+                )}
                 {t.assignedTo && <AvatarDot id={t.assignedTo} size={17} />}
               </div>
             ))}

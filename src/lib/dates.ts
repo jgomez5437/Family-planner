@@ -117,3 +117,47 @@ export function formatRelativeTime(
   return `${diffDays}d`;
 }
 
+const ISO_TIMESTAMP_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+export function isIsoTimestamp(value?: string | null): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  return ISO_TIMESTAMP_RE.test(trimmed) && !Number.isNaN(Date.parse(trimmed));
+}
+
+/**
+ * Formats an ISO 8601 timestamp (or Date/epoch ms) as a local wall-clock
+ * string like "6:48 PM" in the user's browser timezone. Non-ISO legacy
+ * strings (e.g. "4:30 PM") are returned as-is.
+ */
+export function formatLocalClock(
+  input?: string | number | Date | null
+): string {
+  if (input === null || input === undefined) return "";
+  let d: Date;
+  if (input instanceof Date) {
+    d = input;
+  } else if (typeof input === "number") {
+    d = new Date(input);
+  } else {
+    const trimmed = input.trim();
+    if (!trimmed) return "";
+    if (!isIsoTimestamp(trimmed)) return trimmed;
+    d = new Date(trimmed);
+  }
+  if (Number.isNaN(d.getTime())) {
+    return typeof input === "string" ? input : "";
+  }
+  let h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, "0");
+  const period = h >= 12 ? "PM" : "AM";
+  h = h % 12 === 0 ? 12 : h % 12;
+  return `${h}:${m} ${period}`;
+}
+
+export function formatActivitySub(sub?: string | null): string {
+  if (!sub) return "";
+  return isIsoTimestamp(sub) ? formatLocalClock(sub) : sub;
+}
+
