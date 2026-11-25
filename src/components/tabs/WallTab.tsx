@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { ChevronLeft, ChevronRight, Send, Trash2, X } from "lucide-react";
 import {
   CARD_SHADOW,
+  POST_TYPE_BG,
   POST_TYPE_COLORS,
   POST_TYPE_EMOJI,
   REACTION_LABELS,
@@ -53,15 +54,15 @@ export function WallTab({
       >
         Family Wall
       </div>
-      <div style={{ fontSize: 13, color: "#948C80", marginBottom: 14 }}>
+      <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>
         Your household&apos;s private feed.
       </div>
 
       {openComposer && (
         <div
           style={{
-            background: "#fff",
-            border: "1px solid #F1E8D9",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
             boxShadow: CARD_SHADOW,
             borderRadius: 20,
             padding: "12px 12px 6px",
@@ -75,11 +76,11 @@ export function WallTab({
               style={{
                 flex: 1,
                 textAlign: "left",
-                background: "#FBF5EA",
-                border: "1px solid #F1E8D9",
+                background: "var(--bg-subtle)",
+                border: "1px solid var(--border-subtle)",
                 borderRadius: 999,
                 padding: "12px 16px",
-                color: "#948C80",
+                color: "var(--text-muted)",
                 fontSize: 14,
                 cursor: "pointer",
                 minHeight: 44,
@@ -93,7 +94,7 @@ export function WallTab({
               display: "flex",
               marginTop: 8,
               paddingTop: 4,
-              borderTop: "1px solid #F3ECE0",
+              borderTop: "1px solid var(--border-divider)",
             }}
           >
             {(
@@ -114,7 +115,7 @@ export function WallTab({
                   padding: "10px 4px",
                   fontSize: 12.5,
                   fontWeight: 700,
-                  color: "#6B6259",
+                  color: "var(--text-secondary)",
                   cursor: "pointer",
                   minHeight: 42,
                 }}
@@ -208,7 +209,8 @@ export function PostCard({
 }) {
   const { memberById } = useMembers();
   const author = memberById(post.author);
-  const color = POST_TYPE_COLORS[post.type] || "#6B6259";
+  const color = POST_TYPE_COLORS[post.type] || "var(--cat-slate)";
+  const bg = POST_TYPE_BG[post.type] || "var(--cat-slate-soft)";
   const emoji = POST_TYPE_EMOJI[post.type] || "💬";
   const images = post.images || [];
   const comments = post.comments || [];
@@ -238,8 +240,10 @@ export function PostCard({
     <article
       id={compact ? undefined : `post-${post.id}`}
       style={{
-        background: "#fff",
-        border: highlighted ? "2px solid #E8622C" : "1px solid #F1E8D9",
+        background: "var(--bg-surface)",
+        border: highlighted
+          ? "2px solid var(--accent)"
+          : "1px solid var(--border-subtle)",
         boxShadow: highlighted
           ? "0 6px 24px rgba(232,98,44,0.22)"
           : CARD_SHADOW,
@@ -263,7 +267,7 @@ export function PostCard({
           <div style={{ fontSize: 14.5, fontWeight: 700 }}>{author.name}</div>
           <div
             suppressHydrationWarning
-            style={{ fontSize: 11.5, color: "#A69C8E" }}
+            style={{ fontSize: 11.5, color: "var(--text-faint)" }}
           >
             {formatRelativeTime(post.createdAt)}
           </div>
@@ -274,7 +278,7 @@ export function PostCard({
               fontSize: 11.5,
               fontWeight: 700,
               color,
-              background: `${color}15`,
+              background: bg,
               borderRadius: 999,
               padding: "5px 11px",
               whiteSpace: "nowrap",
@@ -293,7 +297,7 @@ export function PostCard({
                   onDelete?.();
                 }}
                 style={{
-                  background: "#C4402A",
+                  background: "var(--danger)",
                   color: "#fff",
                   border: "none",
                   borderRadius: 8,
@@ -309,8 +313,8 @@ export function PostCard({
                 type="button"
                 onClick={() => setConfirmDeletePost(false)}
                 style={{
-                  background: "#F5EFE3",
-                  color: "#6B6259",
+                  background: "var(--bg-subtle-alt)",
+                  color: "var(--text-secondary)",
                   border: "none",
                   borderRadius: 8,
                   padding: "5px 8px",
@@ -333,7 +337,7 @@ export function PostCard({
                 border: "none",
                 cursor: "pointer",
                 padding: 5,
-                color: "#B7AE9F",
+                color: "var(--text-faint)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -352,7 +356,7 @@ export function PostCard({
             padding: "10px 14px 0",
             fontSize: compact ? 13.5 : 15,
             lineHeight: 1.5,
-            color: "#2B2622",
+            color: "var(--text-primary)",
             ...(compact ? clampStyle : {}),
           }}
         >
@@ -382,7 +386,7 @@ export function PostCard({
                 aspectRatio:
                   images.length === 1 ? (compact ? "16/9" : "4/3") : "1/1",
                 overflow: "hidden",
-                background: "#F1E9DA",
+                background: "var(--bg-muted)",
                 borderRadius: 0,
               }}
             >
@@ -401,7 +405,7 @@ export function PostCard({
                   style={{
                     position: "absolute",
                     inset: 0,
-                    background: "rgba(43,38,34,0.55)",
+                    background: "var(--bg-scrim)",
                     color: "#fff",
                     display: "flex",
                     alignItems: "center",
@@ -427,7 +431,7 @@ export function PostCard({
             gap: 8,
             padding: "10px 14px 0",
             fontSize: 12.5,
-            color: "#8A7F70",
+            color: "var(--text-muted)",
           }}
         >
           <span style={{ minWidth: 0 }}>
@@ -444,7 +448,7 @@ export function PostCard({
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#8A7F70",
+                  color: "var(--text-muted)",
                   fontSize: 12.5,
                   cursor: "pointer",
                   padding: "4px 0",
@@ -464,7 +468,7 @@ export function PostCard({
             gap: 2,
             margin: "10px 8px 0",
             padding: "4px 0",
-            borderTop: "1px solid #F3ECE0",
+            borderTop: "1px solid var(--border-divider)",
           }}
         >
           {REACTIONS.map((emo) => {
@@ -483,12 +487,12 @@ export function PostCard({
                   minHeight: 44,
                   whiteSpace: "nowrap",
                   padding: "0 2px",
-                  background: mine ? "#FCE9DF" : "transparent",
+                  background: mine ? "var(--accent-soft)" : "transparent",
                   border: "none",
                   borderRadius: 12,
                   fontSize: 12,
                   fontWeight: 700,
-                  color: mine ? "#B24A1D" : "#6B6259",
+                  color: mine ? "var(--accent-ink)" : "var(--text-secondary)",
                   cursor: "pointer",
                 }}
               >
@@ -506,12 +510,12 @@ export function PostCard({
               minHeight: 44,
               whiteSpace: "nowrap",
               padding: "0 2px",
-              background: showComments ? "#F7F0E4" : "transparent",
+              background: showComments ? "var(--bg-muted)" : "transparent",
               border: "none",
               borderRadius: 12,
               fontSize: 12,
               fontWeight: 700,
-              color: "#6B6259",
+              color: "var(--text-secondary)",
               cursor: "pointer",
             }}
           >
@@ -533,7 +537,7 @@ export function PostCard({
                 <div style={{ minWidth: 0 }}>
                   <div
                     style={{
-                      background: "#F7F0E4",
+                      background: "var(--bg-muted)",
                       borderRadius: 16,
                       padding: "8px 12px",
                     }}
@@ -557,7 +561,7 @@ export function PostCard({
                       alignItems: "center",
                       gap: 8,
                       fontSize: 11,
-                      color: "#A69C8E",
+                      color: "var(--text-faint)",
                       margin: "3px 0 0 10px",
                     }}
                   >
@@ -577,7 +581,7 @@ export function PostCard({
                               background: "none",
                               border: "none",
                               padding: 0,
-                              color: "#C4402A",
+                              color: "var(--danger)",
                               fontSize: 11,
                               fontWeight: 700,
                               cursor: "pointer",
@@ -592,7 +596,7 @@ export function PostCard({
                               background: "none",
                               border: "none",
                               padding: 0,
-                              color: "#8A7F70",
+                              color: "var(--text-muted)",
                               fontSize: 11,
                               fontWeight: 600,
                               cursor: "pointer",
@@ -609,7 +613,7 @@ export function PostCard({
                             background: "none",
                             border: "none",
                             padding: 0,
-                            color: "#A69C8E",
+                            color: "var(--text-faint)",
                             fontSize: 11,
                             fontWeight: 600,
                             cursor: "pointer",
@@ -642,13 +646,13 @@ export function PostCard({
               style={{
                 flex: 1,
                 minWidth: 0,
-                background: "#FBF5EA",
-                border: "1px solid #F1E8D9",
+                background: "var(--bg-subtle)",
+                border: "1px solid var(--border-subtle)",
                 borderRadius: 999,
                 padding: "10px 14px",
                 fontSize: 13.5,
                 fontFamily: "inherit",
-                color: "#2B2622",
+                color: "var(--text-primary)",
               }}
             />
             <button
@@ -659,7 +663,7 @@ export function PostCard({
                 width: 38,
                 height: 38,
                 borderRadius: "50%",
-                background: "#E8622C",
+                background: "var(--accent)",
                 color: "#fff",
                 border: "none",
                 display: "flex",

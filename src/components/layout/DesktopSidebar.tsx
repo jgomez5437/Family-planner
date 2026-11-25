@@ -62,8 +62,8 @@ export function DesktopSidebar({
       style={{
         width: 232,
         flexShrink: 0,
-        background: "#FFFDF9",
-        borderRight: "1px solid #EFE4D2",
+        background: "var(--bg-surface-warm)",
+        borderRight: "1px solid var(--border-default)",
         display: "flex",
         flexDirection: "column",
         height: "100vh",
@@ -90,7 +90,7 @@ export function DesktopSidebar({
         onClick={onQuickAdd}
         style={{
           margin: "0 16px 18px",
-          background: "#E8622C",
+          background: "var(--accent)",
           color: "#fff",
           border: "none",
           borderRadius: 12,
@@ -121,13 +121,13 @@ export function DesktopSidebar({
                 alignItems: "center",
                 gap: 11,
                 width: "100%",
-                background: active ? "#FCE9DF" : "transparent",
+                background: active ? "var(--accent-soft)" : "transparent",
                 border: "none",
                 borderRadius: 11,
                 padding: "10px 12px",
                 marginBottom: 3,
                 cursor: "pointer",
-                color: active ? "#B24A1D" : "#6B6259",
+                color: active ? "var(--accent-ink)" : "var(--text-secondary)",
                 textAlign: "left",
               }}
             >
@@ -144,7 +144,7 @@ export function DesktopSidebar({
         ref={menuContainerRef}
         style={{
           padding: 12,
-          borderTop: "1px solid #EFE4D2",
+          borderTop: "1px solid var(--border-default)",
           position: "relative",
         }}
       >
@@ -152,7 +152,7 @@ export function DesktopSidebar({
           style={{
             fontSize: 9.5,
             fontWeight: 700,
-            color: "#A69C8E",
+            color: "var(--text-faint)",
             letterSpacing: 0.5,
             padding: "0 2px 5px",
           }}
@@ -166,7 +166,8 @@ export function DesktopSidebar({
             alignItems: "center",
             gap: 8,
             width: "100%",
-            background: "#FFFDF9",
+            background: "var(--bg-surface-warm)",
+            color: "var(--text-primary)",
             border: `1.5px solid ${me.color}55`,
             borderRadius: 12,
             padding: "8px 10px",
@@ -179,7 +180,7 @@ export function DesktopSidebar({
               style={{
                 fontSize: 13,
                 fontWeight: 700,
-                color: "#2B2622",
+                color: "var(--text-primary)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -191,7 +192,7 @@ export function DesktopSidebar({
               <div
                 style={{
                   fontSize: 10.5,
-                  color: "#948C80",
+                  color: "var(--text-muted)",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
@@ -201,7 +202,7 @@ export function DesktopSidebar({
               </div>
             )}
           </div>
-          <ChevronDown size={13} color="#8A7F70" />
+          <ChevronDown size={13} color="var(--text-muted)" />
         </button>
 
         {menuOpen && (
@@ -211,10 +212,10 @@ export function DesktopSidebar({
               left: 12,
               right: 12,
               bottom: "108%",
-              background: "#fff",
-              border: "1px solid #F1E8D9",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
               borderRadius: 14,
-              boxShadow: "0 8px 28px rgba(0,0,0,0.14)",
+              boxShadow: "var(--menu-shadow)",
               padding: 6,
               zIndex: 60,
             }}
@@ -226,7 +227,7 @@ export function DesktopSidebar({
               }}
               style={menuItemStyle}
             >
-              <User size={15} color="#6B6259" /> Account
+              <User size={15} color="var(--text-secondary)" /> Account
             </button>
             <button
               onClick={() => {
@@ -235,7 +236,7 @@ export function DesktopSidebar({
               }}
               style={menuItemStyle}
             >
-              <Users size={15} color="#6B6259" /> Family &amp; Members
+              <Users size={15} color="var(--text-secondary)" /> Family &amp; Members
             </button>
             <button
               onClick={() => {
@@ -244,12 +245,12 @@ export function DesktopSidebar({
               }}
               style={menuItemStyle}
             >
-              <Settings size={15} color="#6B6259" /> Settings
+              <Settings size={15} color="var(--text-secondary)" /> Settings
             </button>
             <div
               style={{
                 height: 1,
-                background: "#F3ECE0",
+                background: "var(--border-divider)",
                 margin: "4px 6px",
               }}
             />
@@ -258,9 +259,9 @@ export function DesktopSidebar({
                 setMenuOpen(false);
                 onSignOut();
               }}
-              style={{ ...menuItemStyle, color: "#C4402A" }}
+              style={{ ...menuItemStyle, color: "var(--danger)" }}
             >
-              <LogOut size={15} color="#C4402A" /> Sign Out
+              <LogOut size={15} color="var(--danger)" /> Sign Out
             </button>
           </div>
         )}
@@ -281,6 +282,6 @@ const menuItemStyle: React.CSSProperties = {
   cursor: "pointer",
   fontSize: 13,
   fontWeight: 600,
-  color: "#2B2622",
+  color: "var(--text-primary)",
   textAlign: "left",
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Check,
   CheckCircle2,
@@ -86,9 +86,9 @@ export function DoseChip({
         alignItems: "center",
         gap: 5,
         minHeight: 36,
-        border: `1.5px solid ${given ? "#1F6F5C" : "#E4D9C6"}`,
-        background: given ? "#E4F1EC" : "#fff",
-        color: given ? "#155C4A" : "#2B2622",
+        border: `1.5px solid ${given ? "var(--success)" : "var(--border-strong)"}`,
+        background: given ? "var(--success-soft)" : "var(--bg-surface)",
+        color: given ? "var(--success-ink)" : "var(--text-primary)",
         borderRadius: 999,
         padding: "6px 12px",
         fontSize: 12.5,
@@ -113,30 +113,46 @@ export function MedCard({
   doseLog,
   onToggleDose,
   onEdit,
+  highlighted = false,
 }: {
   med: Medication;
   doseLog: DoseLogMap;
   onToggleDose: (dose: ScheduledDose) => void;
   onEdit: () => void;
+  highlighted?: boolean;
 }) {
   const todays = dosesFor(med, todayISO(0));
   const nd = nextDose(med, doseLog);
   return (
-    <div style={managerCard}>
+    <div
+      id={`med-${med.id}`}
+      style={{
+        ...managerCard,
+        border: highlighted
+          ? "1.5px solid var(--accent)"
+          : managerCard.border,
+        boxShadow: highlighted
+          ? "0 0 0 3px var(--accent-soft), var(--card-shadow)"
+          : managerCard.boxShadow,
+        transition: "border-color 0.25s ease, box-shadow 0.25s ease",
+      }}
+    >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>
             {med.name}{" "}
-            <span style={{ fontWeight: 500, color: "#6B6259" }}>· {med.dose}</span>
+            <span style={{ fontWeight: 500, color: "var(--text-secondary)" }}>
+              · {med.dose}
+            </span>
           </div>
-          <div style={{ fontSize: 12.5, color: "#6B6259", marginTop: 3 }}>
+          <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 3 }}>
             {medWhenLabel(med)}
           </div>
           {med.instructions && (
             <div
               style={{
                 fontSize: 12,
-                color: "#8A7F70",
+                color: "var(--text-muted)",
                 marginTop: 3,
                 fontStyle: "italic",
               }}
@@ -160,7 +176,7 @@ export function MedCard({
             style={{
               fontSize: 10.5,
               fontWeight: 700,
-              color: "#A69C8E",
+              color: "var(--text-faint)",
               letterSpacing: 0.5,
               marginBottom: 6,
             }}
@@ -188,16 +204,16 @@ export function MedCard({
           flexWrap: "wrap",
           marginTop: 10,
           paddingTop: 9,
-          borderTop: "1px solid #F3ECE0",
+          borderTop: "1px solid var(--border-divider)",
           fontSize: 11.5,
-          color: "#948C80",
+          color: "var(--text-muted)",
         }}
       >
         <span>{medCourseLabel(med)}</span>
         {nd && (
           <span
             style={{
-              color: nd.overdue ? "#C4402A" : "#948C80",
+              color: nd.overdue ? "var(--danger)" : "var(--text-muted)",
               fontWeight: nd.overdue ? 700 : 500,
             }}
           >
@@ -269,14 +285,14 @@ function ManagerOverview({
               display: "flex",
               alignItems: "center",
               gap: 6,
-              background: "#fff",
-              border: "1.5px solid #EFE4D2",
+              background: "var(--bg-surface)",
+              border: "1.5px solid var(--border-default)",
               borderRadius: 10,
               padding: "8px 12px",
               fontSize: 12.5,
               fontWeight: 700,
               cursor: "pointer",
-              color: "#2B2622",
+              color: "var(--text-primary)",
               minHeight: 38,
             }}
           >
@@ -284,7 +300,7 @@ function ManagerOverview({
           </button>
         )}
       </div>
-      <div style={{ fontSize: 13, color: "#948C80", marginBottom: 18 }}>
+      <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 18 }}>
         Who takes what, who has appointments, and what a sitter needs to know.
       </div>
 
@@ -294,8 +310,8 @@ function ManagerOverview({
       ) : (
         <div
           style={{
-            background: "#fff",
-            border: "1px solid #F1E8D9",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
             boxShadow: CARD_SHADOW,
             borderRadius: 14,
             padding: "2px 14px",
@@ -314,7 +330,7 @@ function ManagerOverview({
                   gap: 10,
                   padding: "10px 0",
                   borderBottom:
-                    i === todays.length - 1 ? "none" : "1px solid #F3ECE0",
+                    i === todays.length - 1 ? "none" : "1px solid var(--border-divider)",
                   opacity: entry ? 0.65 : 1,
                 }}
               >
@@ -331,7 +347,7 @@ function ManagerOverview({
                     border: "none",
                     cursor: "pointer",
                     padding: 4,
-                    color: entry ? "#1F6F5C" : "#C9BEAC",
+                    color: entry ? "var(--success)" : "var(--border-muted)",
                     display: "flex",
                   }}
                 >
@@ -347,7 +363,7 @@ function ManagerOverview({
                     flexShrink: 0,
                     fontSize: 11.5,
                     fontWeight: 700,
-                    color: overdue ? "#C4402A" : "#948C80",
+                    color: overdue ? "var(--danger)" : "var(--text-muted)",
                   }}
                 >
                   {fmtTime(d.time)}
@@ -365,7 +381,7 @@ function ManagerOverview({
                     <span
                       style={{
                         fontWeight: 500,
-                        color: "#6B6259",
+                        color: "var(--text-secondary)",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -376,7 +392,7 @@ function ManagerOverview({
                     <div
                       style={{
                         fontSize: 11,
-                        color: "#1F6F5C",
+                        color: "var(--success)",
                         fontWeight: 600,
                       }}
                     >
@@ -387,7 +403,7 @@ function ManagerOverview({
                     <div
                       style={{
                         fontSize: 11,
-                        color: "#C4402A",
+                        color: "var(--danger)",
                         fontWeight: 700,
                       }}
                     >
@@ -395,7 +411,7 @@ function ManagerOverview({
                       {d.med.instructions ? ` · ${d.med.instructions}` : ""}
                     </div>
                   ) : d.med.instructions ? (
-                    <div style={{ fontSize: 11, color: "#A69C8E" }}>
+                    <div style={{ fontSize: 11, color: "var(--text-faint)" }}>
                       {d.med.instructions}
                     </div>
                   ) : null}
@@ -446,14 +462,14 @@ function ManagerOverview({
               <AvatarDot id={kid.id} size={46} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 15.5, fontWeight: 700 }}>{kid.name}</div>
-                <div style={{ fontSize: 12.5, color: "#6B6259", marginTop: 2 }}>
+                <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
                   {kidMeds.length === 0
                     ? "No medications"
                     : `${kidMeds.length} medication${kidMeds.length > 1 ? "s" : ""}`}
                   {nextDoses[0] && ` · next ${nextDoseLabel(nextDoses[0])}`}
                 </div>
                 {nextAppt && (
-                  <div style={{ fontSize: 12, color: "#948C80", marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
                     {nextAppt.recurrence ? "🔁 " : ""}
                     {nextAppt.title} · {relativeDay(nextAppt.date)}
                   </div>
@@ -462,7 +478,7 @@ function ManagerOverview({
                   <div
                     style={{
                       fontSize: 11.5,
-                      color: "#C4402A",
+                      color: "var(--danger)",
                       fontWeight: 600,
                       marginTop: 3,
                     }}
@@ -471,7 +487,7 @@ function ManagerOverview({
                   </div>
                 )}
               </div>
-              <ChevronRightIcon size={18} color="#C9BEAC" />
+              <ChevronRightIcon size={18} color="var(--border-muted)" />
             </button>
           );
         })
@@ -515,6 +531,7 @@ function KidProfile({
   doseLog,
   profile,
   events,
+  highlightedMedId,
   onBack,
   onToggleDose,
   onAddMed,
@@ -529,6 +546,7 @@ function KidProfile({
   doseLog: DoseLogMap;
   profile: ChildProfile;
   events: FamilyEvent[];
+  highlightedMedId?: string | null;
   onBack: () => void;
   onToggleDose: (dose: ScheduledDose) => void;
   onAddMed: () => void;
@@ -541,10 +559,22 @@ function KidProfile({
   const { memberById } = useMembers();
   const kid = memberById(kidId);
   const kidMeds = meds.filter((m) => m.kidId === kidId && medIsCurrent(m));
+  const pastMeds = meds.filter((m) => m.kidId === kidId && !medIsCurrent(m));
   const series = groupKidSeries(events, kidId);
   const hasCare = Boolean(
     profile.allergies || profile.doctor || profile.contact || profile.notes
   );
+
+  useEffect(() => {
+    if (!highlightedMedId) return;
+    const frame = window.requestAnimationFrame(() => {
+      const el = document.getElementById(`med-${highlightedMedId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [highlightedMedId, kidId, meds.length]);
 
   return (
     <div>
@@ -556,7 +586,7 @@ function KidProfile({
           gap: 3,
           background: "none",
           border: "none",
-          color: "#6B6259",
+          color: "var(--text-secondary)",
           fontSize: 13,
           fontWeight: 600,
           cursor: "pointer",
@@ -587,7 +617,7 @@ function KidProfile({
           >
             {kid.name}
           </div>
-          <div style={{ fontSize: 12.5, color: "#948C80", marginTop: 2 }}>
+          <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
             {kidMeds.length} medication{kidMeds.length === 1 ? "" : "s"} ·{" "}
             {series.length} upcoming appointment{series.length === 1 ? "" : "s"}
           </div>
@@ -598,14 +628,14 @@ function KidProfile({
             display: "flex",
             alignItems: "center",
             gap: 6,
-            background: "#fff",
-            border: "1.5px solid #EFE4D2",
+            background: "var(--bg-surface)",
+            border: "1.5px solid var(--border-default)",
             borderRadius: 10,
             padding: "8px 12px",
             fontSize: 12.5,
             fontWeight: 700,
             cursor: "pointer",
-            color: "#2B2622",
+            color: "var(--text-primary)",
             minHeight: 38,
           }}
         >
@@ -617,12 +647,12 @@ function KidProfile({
         <div
           role="note"
           style={{
-            background: "#FDECE8",
-            border: "1px solid #F3C9BF",
+            background: "var(--danger-soft)",
+            border: "1px solid var(--danger-border)",
             borderRadius: 12,
             padding: "10px 12px",
             fontSize: 13,
-            color: "#8F2F1D",
+            color: "var(--danger-ink)",
             fontWeight: 600,
           }}
         >
@@ -650,8 +680,25 @@ function KidProfile({
             doseLog={doseLog}
             onToggleDose={onToggleDose}
             onEdit={() => onEditMed(m)}
+            highlighted={highlightedMedId === m.id}
           />
         ))
+      )}
+
+      {pastMeds.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <SectionLabel text="Past medications" style={{ marginBottom: 8 }} />
+          {pastMeds.map((m) => (
+            <MedCard
+              key={m.id}
+              med={m}
+              doseLog={doseLog}
+              onToggleDose={onToggleDose}
+              onEdit={() => onEditMed(m)}
+              highlighted={highlightedMedId === m.id}
+            />
+          ))}
+        </div>
       )}
 
       <SectionHeader
@@ -689,7 +736,7 @@ function KidProfile({
                   width: 36,
                   height: 36,
                   borderRadius: 11,
-                  background: `${meta.color}15`,
+                  background: meta.bg,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -700,7 +747,7 @@ function KidProfile({
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 700 }}>{e.title}</div>
-                <div style={{ fontSize: 12, color: "#6B6259", marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
                   {e.recurrence
                     ? `🔁 ${recurrenceLabel(e.recurrence, e.date)} · next `
                     : ""}
@@ -709,7 +756,7 @@ function KidProfile({
                 </div>
                 {e.location && (
                   <div
-                    style={{ fontSize: 11.5, color: "#A69C8E", marginTop: 1 }}
+                    style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 1 }}
                   >
                     {e.location}
                   </div>
@@ -747,14 +794,14 @@ function KidProfile({
                 key={label}
                 style={{
                   padding: "7px 0",
-                  borderBottom: "1px solid #F3ECE0",
+                  borderBottom: "1px solid var(--border-divider)",
                 }}
               >
                 <div
                   style={{
                     fontSize: 10.5,
                     fontWeight: 700,
-                    color: "#A69C8E",
+                    color: "var(--text-faint)",
                     letterSpacing: 0.5,
                   }}
                 >
@@ -942,7 +989,7 @@ function MedModal({
           gap: 8,
           fontSize: 13,
           fontWeight: 600,
-          color: "#6B6259",
+          color: "var(--text-secondary)",
           marginTop: 10,
           minHeight: 32,
         }}
@@ -957,7 +1004,7 @@ function MedModal({
 
       <FieldLabel style={{ marginTop: 12 }}>
         Instructions{" "}
-        <span style={{ fontWeight: 400, color: "#A69C8E" }}>(optional)</span>
+        <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
       </FieldLabel>
       <input
         aria-label="Instructions"
@@ -974,7 +1021,7 @@ function MedModal({
             marginTop: 12,
             fontSize: 12.5,
             fontWeight: 600,
-            color: "#C4402A",
+            color: "var(--danger)",
           }}
         >
           {error}
@@ -989,9 +1036,9 @@ function MedModal({
             }
             style={{
               ...btnStyle,
-              background: confirmDelete ? "#C4402A" : "#fff",
-              color: confirmDelete ? "#fff" : "#C4402A",
-              border: "1.5px solid #F3D9D2",
+              background: confirmDelete ? "var(--danger)" : "var(--bg-surface)",
+              color: confirmDelete ? "#fff" : "var(--danger)",
+              border: "1.5px solid var(--danger-border)",
             }}
           >
             {confirmDelete ? "Tap again to delete" : "Delete"}
@@ -999,7 +1046,7 @@ function MedModal({
         )}
         <button
           onClick={save}
-          style={{ ...btnStyle, flex: 1, background: "#E8622C", color: "#fff" }}
+          style={{ ...btnStyle, flex: 1, background: "var(--accent)", color: "#fff" }}
         >
           {isEdit ? "Save changes" : "Add medication"}
         </button>
@@ -1073,7 +1120,7 @@ function CareInfoModal({
         style={{
           ...btnStyle,
           width: "100%",
-          background: "#E8622C",
+          background: "var(--accent)",
           color: "#fff",
           marginTop: 18,
         }}
@@ -1089,6 +1136,9 @@ export function ManagerTab({
   doseLog,
   profiles,
   events,
+  selectedKidId,
+  onSelectKid,
+  highlightedMedId,
   onToggleDose,
   onSaveMed,
   onDeleteMed,
@@ -1102,6 +1152,9 @@ export function ManagerTab({
   doseLog: DoseLogMap;
   profiles: ProfilesMap;
   events: FamilyEvent[];
+  selectedKidId?: MemberId | null;
+  onSelectKid?: (kidId: MemberId | null) => void;
+  highlightedMedId?: string | null;
   onToggleDose: (dose: ScheduledDose) => void;
   onSaveMed: (med: Medication, isNew: boolean) => void;
   onDeleteMed: (id: string) => void;
@@ -1111,7 +1164,13 @@ export function ManagerTab({
   onOpenSheet: (kidIds: MemberId[]) => void;
   onAddChild?: () => void;
 }) {
-  const [kidId, setKidId] = useState<MemberId | null>(null);
+  const [internalKidId, setInternalKidId] = useState<MemberId | null>(null);
+  const activeKidId = selectedKidId !== undefined ? selectedKidId : internalKidId;
+  const setActiveKidId = (next: MemberId | null) => {
+    if (onSelectKid) onSelectKid(next);
+    else setInternalKidId(next);
+  };
+
   const [medModal, setMedModal] = useState<{
     kidId: MemberId;
     med: Medication | null;
@@ -1120,13 +1179,13 @@ export function ManagerTab({
 
   return (
     <div>
-      {kidId ? (
+      {activeKidId ? (
         <KidProfile
-          kidId={kidId}
+          kidId={activeKidId}
           meds={meds}
           doseLog={doseLog}
           profile={
-            profiles[kidId] || {
+            profiles[activeKidId] || {
               allergies: "",
               doctor: "",
               contact: "",
@@ -1134,13 +1193,14 @@ export function ManagerTab({
             }
           }
           events={events}
-          onBack={() => setKidId(null)}
+          highlightedMedId={highlightedMedId}
+          onBack={() => setActiveKidId(null)}
           onToggleDose={onToggleDose}
-          onAddMed={() => setMedModal({ kidId, med: null })}
-          onEditMed={(med) => setMedModal({ kidId, med })}
-          onEditCare={() => setCareModal(kidId)}
+          onAddMed={() => setMedModal({ kidId: activeKidId, med: null })}
+          onEditMed={(med) => setMedModal({ kidId: activeKidId, med })}
+          onEditCare={() => setCareModal(activeKidId)}
           onOpenEvent={onOpenEvent}
-          onAddAppointment={() => onAddAppointment(kidId)}
+          onAddAppointment={() => onAddAppointment(activeKidId)}
           onOpenSheet={onOpenSheet}
         />
       ) : (
@@ -1150,7 +1210,7 @@ export function ManagerTab({
           profiles={profiles}
           events={events}
           onToggleDose={onToggleDose}
-          onSelectKid={setKidId}
+          onSelectKid={(id) => setActiveKidId(id)}
           onOpenSheet={onOpenSheet}
           onAddChild={onAddChild}
         />
@@ -1296,15 +1356,16 @@ export function CaregiverSheet({
       className="sheet-root"
       style={{
         minHeight: "100vh",
-        background: "#F5EFE3",
+        background: "var(--bg-subtle-alt)",
+        color: "var(--text-primary)",
         paddingBottom: "calc(40px + env(safe-area-inset-bottom))",
       }}
     >
       <div
         className="no-print"
         style={{
-          background: "#FFF9F0",
-          borderBottom: "1px solid #EFE4D2",
+          background: "var(--bg-app)",
+          borderBottom: "1px solid var(--border-default)",
           padding: "calc(12px + env(safe-area-inset-top)) 16px 12px",
           position: "sticky",
           top: 0,
@@ -1341,9 +1402,9 @@ export function CaregiverSheet({
             onClick={copyText}
             style={{
               ...btnStyle,
-              background: "#fff",
-              border: "1.5px solid #EFE4D2",
-              color: "#2B2622",
+              background: "var(--bg-surface)",
+              border: "1.5px solid var(--border-default)",
+              color: "var(--text-primary)",
               padding: "9px 14px",
               fontSize: 13,
             }}
@@ -1354,7 +1415,7 @@ export function CaregiverSheet({
             onClick={doPrint}
             style={{
               ...btnStyle,
-              background: "#E8622C",
+              background: "var(--accent)",
               color: "#fff",
               padding: "9px 14px",
               fontSize: 13,
@@ -1374,8 +1435,8 @@ export function CaregiverSheet({
       >
         <div
           style={{
-            background: "#fff",
-            border: "1px solid #F1E8D9",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
             boxShadow: CARD_SHADOW,
             borderRadius: 14,
             padding: 14,
@@ -1431,7 +1492,7 @@ export function CaregiverSheet({
             <div style={{ flex: "1 1 200px" }}>
               <FieldLabel>
                 Prepared for{" "}
-                <span style={{ fontWeight: 400, color: "#A69C8E" }}>
+                <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>
                   (optional)
                 </span>
               </FieldLabel>
@@ -1446,7 +1507,7 @@ export function CaregiverSheet({
             <div style={{ flex: "2 1 260px" }}>
               <FieldLabel>
                 Extra notes{" "}
-                <span style={{ fontWeight: 400, color: "#A69C8E" }}>
+                <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>
                   (optional)
                 </span>
               </FieldLabel>
@@ -1466,13 +1527,13 @@ export function CaregiverSheet({
                 marginTop: 10,
                 fontSize: 12.5,
                 fontWeight: 600,
-                color: "#6B6259",
+                color: "var(--text-secondary)",
               }}
             >
               {msg}
             </div>
           )}
-          <div style={{ marginTop: 8, fontSize: 11.5, color: "#A69C8E" }}>
+          <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--text-faint)" }}>
             If Print does nothing, your preview may block printing. Copy text
             works anywhere.
           </div>
@@ -1502,7 +1563,7 @@ export function CaregiverSheet({
           background: "#fff",
           color: "#111",
           padding: "28px 32px",
-          border: "1px solid #E4D9C6",
+          border: "1px solid var(--border-strong)",
           borderRadius: 8,
           fontSize: 13,
           lineHeight: 1.45,

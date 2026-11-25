@@ -61,9 +61,9 @@ export function StatChip({
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    background: alert ? "#E8622C" : "rgba(255,255,255,0.8)",
-    color: alert ? "#fff" : "#2B2622",
-    border: alert ? "none" : "1px solid rgba(232,98,44,0.18)",
+    background: alert ? "var(--accent)" : "var(--bg-surface-warm)",
+    color: alert ? "#fff" : "var(--text-primary)",
+    border: alert ? "none" : "1px solid var(--accent-border)",
     borderRadius: 999,
     padding: "7px 12px",
     fontSize: 12.5,
@@ -129,8 +129,8 @@ export function FamilyStatusCard({
   return (
     <div
       style={{
-        background: "#fff",
-        border: "1px solid #F1E8D9",
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border-subtle)",
         boxShadow: CARD_SHADOW,
         borderRadius: 18,
         padding: "12px 14px",
@@ -148,7 +148,7 @@ export function FamilyStatusCard({
         <div
           style={{
             fontSize: 12,
-            color: "#2B2622",
+            color: "var(--text-primary)",
             fontWeight: 600,
             whiteSpace: "nowrap",
             overflow: "hidden",
@@ -158,7 +158,7 @@ export function FamilyStatusCard({
         >
           {status.text}
         </div>
-        <div style={{ fontSize: 11, color: "#A69C8E" }}>{status.sub}</div>
+        <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{status.sub}</div>
       </div>
     </div>
   );
@@ -167,7 +167,7 @@ export function FamilyStatusCard({
 const linkBtnStyle: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#E8622C",
+  color: "var(--accent)",
   fontSize: 12,
   fontWeight: 700,
   cursor: "pointer",
@@ -324,8 +324,8 @@ export function HomeTab({
       {timeline.length > 0 && (
         <div
           style={{
-            background: "#fff",
-            border: "1px solid #F1E8D9",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
             boxShadow: CARD_SHADOW,
             borderRadius: 14,
             padding: "6px 14px",
@@ -415,8 +415,8 @@ export function HomeTab({
       ) : (
         <div
           style={{
-            background: "#fff",
-            border: "1px solid #F1E8D9",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
             boxShadow: CARD_SHADOW,
             borderRadius: 14,
             padding: "4px 14px",
@@ -431,11 +431,13 @@ export function HomeTab({
                 alignItems: "center",
                 gap: 9,
                 padding: "10px 0",
+                border: "none",
                 borderBottom:
-                  i === activity.length - 1 ? "none" : "1px solid #F3ECE0",
+                  i === activity.length - 1
+                    ? "none"
+                    : "1px solid var(--border-divider)",
                 width: "100%",
                 background: "none",
-                border: "none",
                 cursor: a.target ? "pointer" : "default",
                 textAlign: "left",
                 borderRadius: 0,
@@ -445,7 +447,7 @@ export function HomeTab({
               <div style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
                 <span style={{ fontWeight: 500 }}>{a.text}</span>
                 {a.sub && (
-                  <span style={{ color: "#948C80" }}>
+                  <span style={{ color: "var(--text-muted)" }}>
                     {" — "}
                     <LocalClock value={a.sub} />
                   </span>
@@ -456,7 +458,7 @@ export function HomeTab({
                 style={{
                   marginLeft: "auto",
                   fontSize: 11,
-                  color: "#B7AE9F",
+                  color: "var(--text-faint)",
                   flexShrink: 0,
                 }}
               >
@@ -473,9 +475,8 @@ export function HomeTab({
     <div>
       <div
         style={{
-          background:
-            "linear-gradient(135deg, #FFE5CF 0%, #FFF1DF 55%, #FFF9F0 100%)",
-          border: "1px solid #F6DFC8",
+          background: "var(--bg-banner-gradient)",
+          border: "1px solid var(--accent-warm-border)",
           boxShadow: CARD_SHADOW,
           borderRadius: 22,
           padding: "18px 18px 16px",
@@ -498,7 +499,7 @@ export function HomeTab({
             </div>
             <div
               suppressHydrationWarning
-              style={{ color: "#8A7F70", fontSize: 13.5, marginTop: 3 }}
+              style={{ color: "var(--text-muted)", fontSize: 13.5, marginTop: 3 }}
             >
               {dateStr}
             </div>
@@ -561,8 +562,9 @@ export function HomeTab({
             key={a.label}
             onClick={() => openComposer(a.type)}
             style={{
-              background: "#fff",
-              border: "1px solid #F1E8D9",
+              background: "var(--bg-surface)",
+              color: "var(--text-primary)",
+              border: "1px solid var(--border-subtle)",
               boxShadow: CARD_SHADOW,
               borderRadius: 14,
               padding: "12px 4px",
@@ -573,7 +575,7 @@ export function HomeTab({
               cursor: "pointer",
             }}
           >
-            <a.icon size={18} color="#E8622C" />
+            <a.icon size={18} color="var(--accent)" />
             <span style={{ fontSize: 11, fontWeight: 600 }}>{a.label}</span>
           </button>
         ))}
@@ -619,21 +621,21 @@ function NowDivider() {
       }}
     >
       <div
-        style={{ flex: 1, height: 1.5, background: "#E8622C", opacity: 0.35 }}
+        style={{ flex: 1, height: 1.5, background: "var(--accent)", opacity: 0.35 }}
       />
       <span
         suppressHydrationWarning
         style={{
           fontSize: 10,
           fontWeight: 800,
-          color: "#E8622C",
+          color: "var(--accent)",
           letterSpacing: 0.6,
         }}
       >
         {label ? `NOW · ${label}` : "NOW"}
       </span>
       <div
-        style={{ flex: 1, height: 1.5, background: "#E8622C", opacity: 0.35 }}
+        style={{ flex: 1, height: 1.5, background: "var(--accent)", opacity: 0.35 }}
       />
     </div>
   );
@@ -682,13 +684,13 @@ function TimelineRow({
         padding: isCurrent ? "10px 10px" : "10px 0",
         margin: isCurrent ? "2px -10px" : 0,
         borderRadius: isCurrent ? 12 : 0,
-        background: isCurrent ? "#FCE9DF" : "transparent",
+        background: isCurrent ? "var(--accent-soft)" : "transparent",
         borderBottom:
           isLast && !isCurrent
             ? "none"
             : isCurrent
               ? "none"
-              : "1px solid #F3ECE0",
+              : "1px solid var(--border-divider)",
         opacity: rowOpacity,
         transition: "opacity 0.2s",
       }}
@@ -699,7 +701,7 @@ function TimelineRow({
           flexShrink: 0,
           fontSize: 11.5,
           fontWeight: isCurrent ? 800 : 600,
-          color: isCurrent ? "#B24A1D" : "#948C80",
+          color: isCurrent ? "var(--accent-ink)" : "var(--text-muted)",
           paddingTop: 2,
         }}
       >
@@ -714,10 +716,10 @@ function TimelineRow({
             cursor: "pointer",
             padding: 0,
             color: data.completed
-              ? "#1F6F5C"
+              ? "var(--success)"
               : isMine
-                ? "#E8622C"
-                : "#C9BEAC",
+                ? "var(--accent)"
+                : "var(--border-muted)",
             flexShrink: 0,
           }}
           aria-label={
@@ -731,7 +733,7 @@ function TimelineRow({
           )}
         </button>
       ) : (
-        <div style={{ color: meta?.color || "#6B6259", flexShrink: 0 }}>
+        <div style={{ color: meta?.color || "var(--text-secondary)", flexShrink: 0 }}>
           <Icon size={17} />
         </div>
       )}
@@ -754,12 +756,12 @@ function TimelineRow({
             fontSize: 13.5,
             fontWeight: 600,
             textDecoration: isDone ? "line-through" : "none",
-            color: isDone ? "#A69C8E" : "#2B2622",
+            color: isDone ? "var(--text-faint)" : "var(--text-primary)",
           }}
         >
           {data.title}
           {kind === "event" && data.recurrence && (
-            <span style={{ fontSize: 10, color: "#A69C8E", fontWeight: 500 }}>
+            <span style={{ fontSize: 10, color: "var(--text-faint)", fontWeight: 500 }}>
               {" "}
               · 🔁
             </span>
@@ -769,7 +771,7 @@ function TimelineRow({
           <div
             style={{
               fontSize: 11.5,
-              color: isMine && !isDone ? "#E8622C" : "#A69C8E",
+              color: isMine && !isDone ? "var(--accent)" : "var(--text-faint)",
               marginTop: 1,
               fontWeight: isMine && !isDone ? 700 : 400,
             }}
@@ -779,7 +781,7 @@ function TimelineRow({
         )}
         {kind === "event" &&
           (data.location || (data.participants && data.participants.length > 0)) && (
-            <div style={{ fontSize: 11.5, color: "#A69C8E", marginTop: 1 }}>
+            <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 1 }}>
               {data.location}
               {data.location &&
                 data.participants &&
@@ -799,7 +801,7 @@ function TimelineRow({
         <span
           style={{
             fontSize: 10.5,
-            color: "#C9BEAC",
+            color: "var(--border-muted)",
             flexShrink: 0,
             alignSelf: "center",
           }}
@@ -825,8 +827,8 @@ export function EventRow({
   return (
     <div
       style={{
-        background: "#fff",
-        border: "1px solid #F1E8D9",
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border-subtle)",
         boxShadow: CARD_SHADOW,
         borderRadius: 14,
         padding: "12px 14px",
@@ -856,7 +858,7 @@ export function EventRow({
         >
           <span style={{ fontWeight: 700, fontSize: 14.5 }}>{event.title}</span>
           {event.recurrence && (
-            <span style={{ fontSize: 10, color: "#A69C8E" }}>
+            <span style={{ fontSize: 10, color: "var(--text-faint)" }}>
               🔁 {recurrenceLabel(event.recurrence, event.date)}
             </span>
           )}
@@ -864,7 +866,7 @@ export function EventRow({
         <div
           style={{
             fontSize: 12.5,
-            color: "#6B6259",
+            color: "var(--text-secondary)",
             marginTop: 3,
             display: "flex",
             gap: 8,
@@ -873,7 +875,7 @@ export function EventRow({
           }}
         >
           {showDay && (
-            <span style={{ fontWeight: 600, color: "#E8622C" }}>
+            <span style={{ fontWeight: 600, color: "var(--accent)" }}>
               {relativeDay(event.date)}
             </span>
           )}
@@ -902,7 +904,7 @@ export function EventRow({
           <AvatarStack ids={event.participants} />
           {cd && (
             <span
-              style={{ fontSize: 11, color: "#948C80", marginLeft: "auto" }}
+              style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}
             >
               {cd}
             </span>
@@ -916,7 +918,7 @@ export function EventRow({
             background: "none",
             border: "none",
             cursor: "pointer",
-            color: "#C9BEAC",
+            color: "var(--border-muted)",
             padding: 2,
           }}
           title="View history"

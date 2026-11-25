@@ -1,9 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import { PwaProvider } from "@/components/pwa/PwaContext";
+import { ThemeProvider } from "@/components/ThemeContext";
+import { THEME_COLORS, THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 export const viewport: Viewport = {
-  themeColor: "#FFF9F0",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: THEME_COLORS.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_COLORS.dark },
+  ],
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -44,9 +49,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>
-        <PwaProvider>{children}</PwaProvider>
+        <ThemeProvider>
+          <PwaProvider>{children}</PwaProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

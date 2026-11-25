@@ -27,7 +27,7 @@ export function AvatarPreview({
         width: size,
         height: size,
         borderRadius: "50%",
-        background: `linear-gradient(145deg, ${light}, #fff)`,
+        background: `linear-gradient(145deg, ${color}26, var(--bg-surface))`,
         border: `2px solid ${color}`,
         display: "flex",
         alignItems: "center",
@@ -175,9 +175,9 @@ export function AvatarPicker({
           onClick={() => selectMode("emoji")}
           aria-pressed={mode === "emoji"}
           style={{
-            border: `1.5px solid ${mode === "emoji" ? "#E8622C" : "#EFE4D2"}`,
-            background: mode === "emoji" ? "#FCE9DF" : "#fff",
-            color: mode === "emoji" ? "#B24A1D" : "#6B6259",
+            border: `1.5px solid ${mode === "emoji" ? "var(--accent)" : "var(--border-default)"}`,
+            background: mode === "emoji" ? "var(--accent-soft)" : "var(--bg-surface)",
+            color: mode === "emoji" ? "var(--accent-ink)" : "var(--text-secondary)",
             borderRadius: 12,
             padding: "8px 10px",
             fontSize: 12.5,
@@ -196,9 +196,9 @@ export function AvatarPicker({
           onClick={() => selectMode("photo")}
           aria-pressed={mode === "photo"}
           style={{
-            border: `1.5px solid ${mode === "photo" ? "#E8622C" : "#EFE4D2"}`,
-            background: mode === "photo" ? "#FCE9DF" : "#fff",
-            color: mode === "photo" ? "#B24A1D" : "#6B6259",
+            border: `1.5px solid ${mode === "photo" ? "var(--accent)" : "var(--border-default)"}`,
+            background: mode === "photo" ? "var(--accent-soft)" : "var(--bg-surface)",
+            color: mode === "photo" ? "var(--accent-ink)" : "var(--text-secondary)",
             borderRadius: 12,
             padding: "8px 10px",
             fontSize: 12.5,
@@ -231,8 +231,8 @@ export function AvatarPicker({
                 border:
                   emoji === em
                     ? `2px solid ${color}`
-                    : "1.5px solid #EFE4D2",
-                background: emoji === em ? light : "#fff",
+                    : "1.5px solid var(--border-default)",
+                background: emoji === em ? `${color}24` : "var(--bg-surface)",
                 fontSize: 18,
                 cursor: "pointer",
                 display: "flex",
@@ -247,8 +247,8 @@ export function AvatarPicker({
       ) : (
         <div
           style={{
-            background: "#FFFDF9",
-            border: "1.5px dashed #E4D9C6",
+            background: "var(--bg-surface-warm)",
+            border: "1.5px dashed var(--border-strong)",
             borderRadius: 14,
             padding: 12,
           }}
@@ -294,9 +294,9 @@ export function AvatarPicker({
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   style={{
-                    border: "1.5px solid #EFE4D2",
-                    background: "#fff",
-                    color: "#2B2622",
+                    border: "1.5px solid var(--border-default)",
+                    background: "var(--bg-surface)",
+                    color: "var(--text-primary)",
                     borderRadius: 10,
                     padding: "7px 12px",
                     fontSize: 12.5,
@@ -316,9 +316,9 @@ export function AvatarPicker({
                     type="button"
                     onClick={handleOpenAdjust}
                     style={{
-                      border: "1.5px solid #F2C4AF",
-                      background: "#FCE9DF",
-                      color: "#B24A1D",
+                      border: "1.5px solid var(--accent-border)",
+                      background: "var(--accent-soft)",
+                      color: "var(--accent-ink)",
                       borderRadius: 10,
                       padding: "7px 10px",
                       fontSize: 12.5,
@@ -338,9 +338,9 @@ export function AvatarPicker({
                     type="button"
                     onClick={handleRemovePhoto}
                     style={{
-                      border: "1.5px solid #F3D9D2",
-                      background: "#fff",
-                      color: "#C4402A",
+                      border: "1.5px solid var(--danger-border)",
+                      background: "var(--bg-surface)",
+                      color: "var(--danger)",
                       borderRadius: 10,
                       padding: "7px 10px",
                       fontSize: 12.5,
@@ -355,7 +355,7 @@ export function AvatarPicker({
                   </button>
                 )}
               </div>
-              <div style={{ fontSize: 11.5, color: "#8A7F70", marginTop: 6 }}>
+              <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6 }}>
                 {draftPhoto
                   ? "Framed for your circular profile picture. Tap Adjust to zoom or reposition."
                   : "Upload a JPG, PNG, or WebP photo — you can zoom and position it inside the frame."}
@@ -370,7 +370,7 @@ export function AvatarPicker({
                 marginTop: 8,
                 fontSize: 12,
                 fontWeight: 600,
-                color: "#C4402A",
+                color: "var(--danger)",
               }}
             >
               {error}

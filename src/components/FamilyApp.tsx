@@ -105,6 +105,9 @@ export default function FamilyApp({
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(
     null
   );
+  const [selectedManagerKidId, setSelectedManagerKidId] =
+    useState<MemberId | null>(null);
+  const [highlightedMedId, setHighlightedMedId] = useState<string | null>(null);
   const seenNotificationIdsRef = useRef<Set<string>>(
     new Set((initialState.notifications || []).map((n) => n.id))
   );
@@ -113,6 +116,7 @@ export default function FamilyApp({
 
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const medHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load saved notification preferences for the current user
   useEffect(() => {
@@ -184,8 +188,17 @@ export default function FamilyApp({
     return () => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      if (medHighlightTimerRef.current) clearTimeout(medHighlightTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!highlightedMedId || tab !== "manager") return;
+    if (medHighlightTimerRef.current) clearTimeout(medHighlightTimerRef.current);
+    medHighlightTimerRef.current = setTimeout(() => {
+      setHighlightedMedId(null);
+    }, 3500);
+  }, [highlightedMedId, tab]);
 
   // Close mobile profile dropdown on outside click or Escape
   useEffect(() => {
@@ -562,7 +575,13 @@ export default function FamilyApp({
       }
       memberMutationSeqRef.current += 1;
       setMembers((ms) => ms.filter((m) => m.id !== memberId));
-      setMeds((ms) => ms.filter((m) => m.kidId !== memberId));
+      setMeds((ms) => {
+        if (highlightedMedId && ms.some((m) => m.id === highlightedMedId && m.kidId === memberId)) {
+          setHighlightedMedId(null);
+        }
+        return ms.filter((m) => m.kidId !== memberId);
+      });
+      setSelectedManagerKidId((cur) => (cur === memberId ? null : cur));
       setProfiles((p) => {
         const next = { ...p };
         delete next[memberId];
@@ -1505,7 +1524,7 @@ export default function FamilyApp({
         <div
           style={{
             fontFamily: "'Inter', system-ui, sans-serif",
-            color: "#2B2622",
+            color: "var(--text-primary)",
           }}
         >
           <CaregiverSheet
@@ -1527,9 +1546,9 @@ export default function FamilyApp({
       <div
         style={{
           fontFamily: "'Inter', system-ui, sans-serif",
-          background: "#FFF9F0",
+          background: "var(--bg-app)",
           minHeight: "100vh",
-          color: "#2B2622",
+          color: "var(--text-primary)",
           display: "flex",
         }}
       >
@@ -1554,10 +1573,10 @@ export default function FamilyApp({
               position: "sticky",
               top: 0,
               zIndex: 50,
-              background: "rgba(255,249,240,0.86)",
+              background: "var(--bg-header)",
               backdropFilter: "blur(14px)",
               WebkitBackdropFilter: "blur(14px)",
-              borderBottom: "1px solid #F1E8D9",
+              borderBottom: "1px solid var(--border-subtle)",
               padding: isDesktop
                 ? "16px 32px"
                 : "calc(12px + env(safe-area-inset-top)) 18px 12px",
@@ -1586,7 +1605,7 @@ export default function FamilyApp({
                       fontFamily: "'Baloo 2', sans-serif",
                       fontSize: 17,
                       fontWeight: 700,
-                      color: "#2B2622",
+                      color: "var(--text-primary)",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -1602,7 +1621,7 @@ export default function FamilyApp({
                       fontFamily: "'Baloo 2', sans-serif",
                       fontSize: 19,
                       fontWeight: 700,
-                      color: "#2B2622",
+                      color: "var(--text-primary)",
                       textTransform: "capitalize",
                     }}
                   >
@@ -1632,7 +1651,7 @@ export default function FamilyApp({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "#6B6259",
+                    color: "var(--text-secondary)",
                     flexShrink: 0,
                   }}
                 >
@@ -1658,7 +1677,7 @@ export default function FamilyApp({
                       width: 36,
                       height: 36,
                       borderRadius: "50%",
-                      background: "#E8622C",
+                      background: "var(--accent)",
                       color: "#fff",
                       border: "none",
                       display: "flex",
@@ -1682,7 +1701,8 @@ export default function FamilyApp({
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
-                        background: "#FFFDF9",
+                        background: "var(--bg-surface-warm)",
+                        color: "var(--text-primary)",
                         border: `1.5px solid ${me.color}55`,
                         borderRadius: 999,
                         padding: "5px 11px 5px 6px",
@@ -1700,10 +1720,10 @@ export default function FamilyApp({
                           position: "absolute",
                           right: 0,
                           top: "115%",
-                          background: "#fff",
-                          border: "1px solid #F1E8D9",
+                          background: "var(--bg-surface)",
+                          border: "1px solid var(--border-subtle)",
                           borderRadius: 14,
-                          boxShadow: "0 8px 28px rgba(0,0,0,0.15)",
+                          boxShadow: "var(--menu-shadow)",
                           padding: 6,
                           zIndex: 60,
                           minWidth: 196,
@@ -1712,7 +1732,7 @@ export default function FamilyApp({
                         <div
                           style={{
                             padding: "6px 10px 8px",
-                            borderBottom: "1px solid #F3ECE0",
+                            borderBottom: "1px solid var(--border-divider)",
                             marginBottom: 4,
                           }}
                         >
@@ -1720,7 +1740,7 @@ export default function FamilyApp({
                             {me.name}
                           </div>
                           {me.email && (
-                            <div style={{ fontSize: 11, color: "#948C80" }}>
+                            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                               {me.email}
                             </div>
                           )}
@@ -1732,7 +1752,7 @@ export default function FamilyApp({
                           }}
                           style={mobileMenuItemStyle}
                         >
-                          <User size={14} color="#6B6259" /> Account
+                          <User size={14} color="var(--text-secondary)" /> Account
                         </button>
                         <button
                           onClick={() => {
@@ -1741,7 +1761,7 @@ export default function FamilyApp({
                           }}
                           style={mobileMenuItemStyle}
                         >
-                          <Users size={14} color="#6B6259" /> Family &amp;
+                          <Users size={14} color="var(--text-secondary)" /> Family &amp;
                           Members
                         </button>
                         <button
@@ -1751,12 +1771,12 @@ export default function FamilyApp({
                           }}
                           style={mobileMenuItemStyle}
                         >
-                          <SettingsIcon size={14} color="#6B6259" /> Settings
+                          <SettingsIcon size={14} color="var(--text-secondary)" /> Settings
                         </button>
                         <div
                           style={{
                             height: 1,
-                            background: "#F3ECE0",
+                            background: "var(--border-divider)",
                             margin: "4px 6px",
                           }}
                         />
@@ -1765,9 +1785,9 @@ export default function FamilyApp({
                             setUserMenuOpen(false);
                             handleSignOut();
                           }}
-                          style={{ ...mobileMenuItemStyle, color: "#C4402A" }}
+                          style={{ ...mobileMenuItemStyle, color: "var(--danger)" }}
                         >
-                          <LogOut size={14} color="#C4402A" /> Sign Out
+                          <LogOut size={14} color="var(--danger)" /> Sign Out
                         </button>
                       </div>
                     )}
@@ -1817,6 +1837,12 @@ export default function FamilyApp({
                 doseLog={doseLog}
                 profiles={profiles}
                 events={sortedUpcomingEvents}
+                selectedKidId={selectedManagerKidId}
+                onSelectKid={(kidId) => {
+                  setSelectedManagerKidId(kidId);
+                  if (!kidId) setHighlightedMedId(null);
+                }}
+                highlightedMedId={highlightedMedId}
                 onToggleDose={toggleDose}
                 onSaveMed={saveMed}
                 onDeleteMed={deleteMed}
@@ -1878,10 +1904,10 @@ export default function FamilyApp({
               bottom: 0,
               left: 0,
               right: 0,
-              background: "rgba(255,253,249,0.92)",
+              background: "var(--bg-nav)",
               backdropFilter: "blur(14px)",
               WebkitBackdropFilter: "blur(14px)",
-              borderTop: "1px solid #F1E8D9",
+              borderTop: "1px solid var(--border-subtle)",
               display: "flex",
               zIndex: 60,
               paddingBottom: "max(6px, env(safe-area-inset-bottom))",
@@ -1905,7 +1931,7 @@ export default function FamilyApp({
                     flexDirection: "column",
                     alignItems: "center",
                     gap: 2,
-                    color: active ? "#E8622C" : "#A69C8E",
+                    color: active ? "var(--accent)" : "var(--text-faint)",
                   }}
                 >
                   <span
@@ -1916,7 +1942,7 @@ export default function FamilyApp({
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      background: active ? "#FCE9DF" : "transparent",
+                      background: active ? "var(--accent-soft)" : "transparent",
                       transition: "background 0.2s",
                     }}
                   >
@@ -1990,9 +2016,32 @@ export default function FamilyApp({
         {searchOpen && (
           <SearchOverlay
             onClose={() => setSearchOpen(false)}
-            events={sortedUpcomingEvents}
-            tasks={expandedTasks}
+            events={events}
+            expandedEvents={sortedUpcomingEvents}
+            tasks={tasks}
+            expandedTasks={expandedTasks}
             posts={posts}
+            meds={meds}
+            doseLog={doseLog}
+            profiles={profiles}
+            onOpenPerson={(member) => {
+              setSearchOpen(false);
+              if (member.isChild) {
+                setSelectedManagerKidId(member.id);
+                setHighlightedMedId(null);
+                setTab("manager");
+              } else {
+                setSettingsScreen(
+                  member.id === currentUser ? "account" : "family"
+                );
+              }
+            }}
+            onOpenMed={(med) => {
+              setSearchOpen(false);
+              setSelectedManagerKidId(med.kidId);
+              setHighlightedMedId(med.id);
+              setTab("manager");
+            }}
             onOpenEvent={(e) => {
               setSearchOpen(false);
               setHistoryModal(e);
@@ -2000,6 +2049,11 @@ export default function FamilyApp({
             onOpenTask={(t) => {
               setSearchOpen(false);
               setEditingTask(t);
+            }}
+            onOpenPost={(p) => {
+              setSearchOpen(false);
+              setTab("wall");
+              setHighlightedPostId(p.id);
             }}
           />
         )}
@@ -2046,6 +2100,6 @@ const mobileMenuItemStyle: React.CSSProperties = {
   cursor: "pointer",
   fontSize: 13,
   fontWeight: 600,
-  color: "#2B2622",
+  color: "var(--text-primary)",
   textAlign: "left",
 };

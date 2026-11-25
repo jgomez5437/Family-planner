@@ -31,7 +31,7 @@ export function AvatarDot({ id, size = 22 }: { id?: MemberId | null; size?: numb
         width: size,
         height: size,
         borderRadius: "50%",
-        background: `linear-gradient(145deg, ${m.light}, #fff)`,
+        background: `linear-gradient(145deg, ${m.color}26, var(--bg-surface))`,
         border: `${size >= 28 ? 2 : 1.5}px solid ${m.color}`,
         boxShadow: size >= 28 ? `0 2px 6px ${m.color}33` : "none",
         display: "flex",
@@ -71,7 +71,7 @@ export function AvatarStack({ ids = [] }: { ids?: MemberId[] }) {
             marginLeft: i === 0 ? 0 : -8,
             zIndex: ids.length - i,
             borderRadius: "50%",
-            boxShadow: "0 0 0 2px #fff",
+            boxShadow: "0 0 0 2px var(--bg-surface)",
           }}
         >
           <AvatarDot id={id} size={24} />
@@ -94,7 +94,7 @@ export function CategoryBadge({ category }: { category: string }) {
         fontWeight: 600,
         padding: "3px 8px 3px 6px",
         borderRadius: 999,
-        background: `${meta.color}15`,
+        background: meta.bg,
         color: meta.color,
         letterSpacing: 0.2,
       }}
@@ -114,8 +114,9 @@ export function LiveToast({ toast }: { toast: string | null }) {
         top: "calc(72px + env(safe-area-inset-top))",
         left: "50%",
         transform: "translateX(-50%)",
-        background: "#2B2622",
-        color: "#FFF9F0",
+        background: "var(--toast-bg)",
+        color: "var(--toast-ink)",
+        border: "1px solid var(--toast-border)",
         padding: "9px 16px",
         borderRadius: 12,
         fontSize: 13,
@@ -124,12 +125,12 @@ export function LiveToast({ toast }: { toast: string | null }) {
         display: "flex",
         alignItems: "center",
         gap: 7,
-        boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
         maxWidth: "88%",
         animation: "slideDown 0.25s ease",
       }}
     >
-      <Check size={14} color="#7FD9A8" strokeWidth={3} />
+      <Check size={14} color="var(--toast-check)" strokeWidth={3} />
       {toast}
     </div>
   );
@@ -151,7 +152,7 @@ export function ModalShell({
           style={{
             width: 36,
             height: 4,
-            background: "#E4D9C6",
+            background: "var(--border-strong)",
             borderRadius: 4,
             margin: "0 auto 16px",
           }}
@@ -170,7 +171,8 @@ export function ModalShell({
           <button
             onClick={onClose}
             style={{
-              background: "#F5EFE3",
+              background: "var(--bg-subtle-alt)",
+              color: "var(--text-primary)",
               border: "none",
               borderRadius: "50%",
               width: 28,
@@ -198,7 +200,7 @@ export function FieldLabel({
   style?: React.CSSProperties;
 }) {
   return (
-    <div style={{ fontSize: 12, fontWeight: 700, color: "#6B6259", marginBottom: 6, ...style }}>
+    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", marginBottom: 6, ...style }}>
       {children}
     </div>
   );
@@ -218,22 +220,22 @@ export function EmptyState({
   return (
     <div
       style={{
-        background: "#fff",
-        border: "1px dashed #E4D9C6",
+        background: "var(--bg-surface)",
+        border: "1px dashed var(--border-strong)",
         borderRadius: 14,
         padding: "22px 16px",
         textAlign: "center",
         marginBottom: 10,
       }}
     >
-      <div style={{ fontSize: 13.5, fontWeight: 600, color: "#6B6259" }}>{text}</div>
-      {sub && <div style={{ fontSize: 12.5, color: "#A69C8E", marginTop: 3 }}>{sub}</div>}
+      <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-secondary)" }}>{text}</div>
+      {sub && <div style={{ fontSize: 12.5, color: "var(--text-faint)", marginTop: 3 }}>{sub}</div>}
       {actionLabel && (
         <button
           onClick={onAction}
           style={{
             marginTop: 12,
-            background: "#E8622C",
+            background: "var(--accent)",
             color: "#fff",
             border: "none",
             borderRadius: 10,
@@ -262,7 +264,7 @@ export function SectionLabel({
       style={{
         fontSize: 13,
         fontWeight: 700,
-        color: "#6B6259",
+        color: "var(--text-secondary)",
         textTransform: "uppercase",
         letterSpacing: 0.5,
         marginBottom: 8,
@@ -278,12 +280,12 @@ export function EmptyRow({ text }: { text: string }) {
   return (
     <div
       style={{
-        background: "#fff",
-        border: "1px dashed #E4D9C6",
+        background: "var(--bg-surface)",
+        border: "1px dashed var(--border-strong)",
         borderRadius: 14,
         padding: "16px",
         textAlign: "center",
-        color: "#A69C8E",
+        color: "var(--text-faint)",
         fontSize: 13,
         marginBottom: 10,
       }}

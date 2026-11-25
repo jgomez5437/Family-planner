@@ -74,7 +74,7 @@ export function NotificationBell({
         aria-expanded={open}
         style={{
           position: "relative",
-          background: open ? "#FCE9DF" : "none",
+          background: open ? "var(--accent-soft)" : "none",
           border: "none",
           cursor: "pointer",
           width: 34,
@@ -83,7 +83,7 @@ export function NotificationBell({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: open ? "#B24A1D" : "#6B6259",
+          color: open ? "var(--accent-ink)" : "var(--text-secondary)",
           flexShrink: 0,
         }}
       >
@@ -99,13 +99,13 @@ export function NotificationBell({
               height: 16,
               padding: "0 4px",
               borderRadius: 999,
-              background: "#E8622C",
+              background: "var(--accent)",
               color: "#fff",
               fontSize: 10,
               fontWeight: 800,
               lineHeight: "16px",
               textAlign: "center",
-              boxShadow: "0 0 0 2px #FFF9F0",
+              boxShadow: "0 0 0 2px var(--bg-app)",
             }}
           >
             {unreadCount > 9 ? "9+" : unreadCount}
@@ -127,10 +127,10 @@ export function NotificationBell({
             width: isDesktop ? 360 : "auto",
             maxWidth: isDesktop ? "92vw" : 420,
             marginLeft: isDesktop ? 0 : "auto",
-            background: "#fff",
-            border: "1px solid #F1E8D9",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
             borderRadius: 18,
-            boxShadow: "0 14px 36px rgba(43,38,34,0.16)",
+            boxShadow: "var(--menu-shadow)",
             zIndex: 80,
             overflow: "hidden",
             display: "flex",
@@ -146,8 +146,8 @@ export function NotificationBell({
               justifyContent: "space-between",
               gap: 8,
               padding: "12px 14px",
-              borderBottom: "1px solid #F3ECE0",
-              background: "#FFFDF9",
+              borderBottom: "1px solid var(--border-divider)",
+              background: "var(--bg-surface-warm)",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -156,7 +156,7 @@ export function NotificationBell({
                   fontFamily: "'Baloo 2', sans-serif",
                   fontSize: 16,
                   fontWeight: 700,
-                  color: "#2B2622",
+                  color: "var(--text-primary)",
                 }}
               >
                 Notifications
@@ -166,8 +166,8 @@ export function NotificationBell({
                   style={{
                     fontSize: 11,
                     fontWeight: 700,
-                    color: "#B24A1D",
-                    background: "#FCE9DF",
+                    color: "var(--accent-ink)",
+                    background: "var(--accent-soft)",
                     borderRadius: 999,
                     padding: "2px 8px",
                   }}
@@ -186,7 +186,7 @@ export function NotificationBell({
                   style={{
                     background: "none",
                     border: "none",
-                    color: "#E8622C",
+                    color: "var(--accent)",
                     fontSize: 12,
                     fontWeight: 700,
                     cursor: "pointer",
@@ -211,7 +211,7 @@ export function NotificationBell({
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#6B6259",
+                  color: "var(--text-secondary)",
                   width: 30,
                   height: 30,
                   borderRadius: 8,
@@ -240,8 +240,8 @@ export function NotificationBell({
                     width: 44,
                     height: 44,
                     borderRadius: 14,
-                    background: "#FBF5EA",
-                    color: "#B5AA9A",
+                    background: "var(--bg-subtle)",
+                    color: "var(--text-faint)",
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -254,7 +254,7 @@ export function NotificationBell({
                   style={{
                     fontSize: 14,
                     fontWeight: 700,
-                    color: "#2B2622",
+                    color: "var(--text-primary)",
                     marginBottom: 4,
                   }}
                 >
@@ -263,7 +263,7 @@ export function NotificationBell({
                 <div
                   style={{
                     fontSize: 12.5,
-                    color: "#948C80",
+                    color: "var(--text-muted)",
                     lineHeight: 1.4,
                   }}
                 >
@@ -289,12 +289,12 @@ export function NotificationBell({
                       width: "100%",
                       textAlign: "left",
                       padding: "12px 14px",
-                      background: n.read ? "#fff" : "#FFF8F2",
+                      background: n.read ? "var(--bg-surface)" : "var(--bg-tint-unread)",
                       border: "none",
                       borderBottom:
                         index === visibleNotifications.length - 1
                           ? "none"
-                          : "1px solid #F3ECE0",
+                          : "1px solid var(--border-divider)",
                       cursor: "pointer",
                     }}
                   >
@@ -310,8 +310,8 @@ export function NotificationBell({
                             width: 17,
                             height: 17,
                             borderRadius: "50%",
-                            background: "#fff",
-                            boxShadow: "0 1px 3px rgba(0,0,0,0.14)",
+                            background: "var(--bg-surface)",
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.22)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -328,7 +328,7 @@ export function NotificationBell({
                         style={{
                           fontSize: 13,
                           fontWeight: n.read ? 600 : 700,
-                          color: "#2B2622",
+                          color: "var(--text-primary)",
                           lineHeight: 1.35,
                         }}
                       >
@@ -338,7 +338,7 @@ export function NotificationBell({
                         <div
                           style={{
                             fontSize: 12.5,
-                            color: "#6B6259",
+                            color: "var(--text-secondary)",
                             marginTop: 2,
                             lineHeight: 1.35,
                             display: "-webkit-box",
@@ -354,7 +354,7 @@ export function NotificationBell({
                         suppressHydrationWarning
                         style={{
                           fontSize: 11,
-                          color: "#A69C8E",
+                          color: "var(--text-faint)",
                           marginTop: 4,
                           fontWeight: 500,
                         }}
@@ -370,7 +370,7 @@ export function NotificationBell({
                           width: 8,
                           height: 8,
                           borderRadius: "50%",
-                          background: "#E8622C",
+                          background: "var(--accent)",
                           flexShrink: 0,
                           marginTop: 6,
                         }}
@@ -386,11 +386,11 @@ export function NotificationBell({
           {visibleNotifications.length > 0 && (
             <div
               style={{
-                borderTop: "1px solid #F3ECE0",
+                borderTop: "1px solid var(--border-divider)",
                 padding: "8px 12px",
                 display: "flex",
                 justifyContent: "flex-end",
-                background: "#FFFDF9",
+                background: "var(--bg-surface-warm)",
               }}
             >
               <button
@@ -399,7 +399,7 @@ export function NotificationBell({
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#8A7F70",
+                  color: "var(--text-muted)",
                   fontSize: 12,
                   fontWeight: 600,
                   cursor: "pointer",

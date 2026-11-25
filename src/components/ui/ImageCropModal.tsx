@@ -423,10 +423,11 @@ export function ImageCropModal({
         style={{
           width: "100%",
           maxWidth: 440,
-          background: "#FFF9F0",
+          background: "var(--bg-app)",
+          color: "var(--text-primary)",
           borderRadius: 24,
-          border: "1px solid #EFE4D2",
-          boxShadow: "0 20px 50px rgba(20, 17, 14, 0.35)",
+          border: "1px solid var(--border-default)",
+          boxShadow: "0 20px 50px rgba(0, 0, 0, 0.45)",
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
@@ -448,7 +449,7 @@ export function ImageCropModal({
                 fontFamily: "'Baloo 2', sans-serif",
                 fontSize: 18,
                 fontWeight: 700,
-                color: "#2B2622",
+                color: "var(--text-primary)",
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
@@ -461,8 +462,8 @@ export function ImageCropModal({
                     fontSize: 11.5,
                     fontWeight: 700,
                     fontFamily: "inherit",
-                    background: "#FCE9DF",
-                    color: "#B24A1D",
+                    background: "var(--accent-soft)",
+                    color: "var(--accent-ink)",
                     borderRadius: 999,
                     padding: "2px 9px",
                   }}
@@ -474,7 +475,7 @@ export function ImageCropModal({
             <div
               style={{
                 fontSize: 12,
-                color: "#8A7F70",
+                color: "var(--text-muted)",
                 display: "flex",
                 alignItems: "center",
                 gap: 5,
@@ -489,7 +490,7 @@ export function ImageCropModal({
             onClick={onCancel}
             aria-label="Close photo editor"
             style={{
-              background: "#F5EFE3",
+              background: "var(--bg-subtle-alt)",
               border: "none",
               borderRadius: "50%",
               width: 32,
@@ -498,7 +499,7 @@ export function ImageCropModal({
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
-              color: "#2B2622",
+              color: "var(--text-primary)",
               flexShrink: 0,
             }}
           >
@@ -630,7 +631,7 @@ export function ImageCropModal({
                 marginBottom: 12,
               }}
             >
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#6B6259" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)" }}>
                 Frame
               </span>
               <div style={{ display: "flex", gap: 6 }}>
@@ -643,9 +644,9 @@ export function ImageCropModal({
                       onClick={() => handleAspectChange(preset.key)}
                       aria-pressed={active}
                       style={{
-                        border: `1.5px solid ${active ? "#E8622C" : "#EFE4D2"}`,
-                        background: active ? "#FCE9DF" : "#fff",
-                        color: active ? "#B24A1D" : "#6B6259",
+                        border: `1.5px solid ${active ? "var(--accent)" : "var(--border-default)"}`,
+                        background: active ? "var(--accent-soft)" : "var(--bg-surface)",
+                        color: active ? "var(--accent-ink)" : "var(--text-secondary)",
                         borderRadius: 999,
                         padding: "5px 10px",
                         fontSize: 11.5,
@@ -667,8 +668,8 @@ export function ImageCropModal({
               display: "flex",
               alignItems: "center",
               gap: 8,
-              background: "#fff",
-              border: "1px solid #EFE4D2",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-default)",
               borderRadius: 14,
               padding: "8px 10px",
             }}
@@ -679,7 +680,7 @@ export function ImageCropModal({
               disabled={zoom <= MIN_ZOOM}
               aria-label="Zoom out"
               style={{
-                background: "#F7F0E4",
+                background: "var(--bg-muted)",
                 border: "none",
                 borderRadius: 8,
                 width: 28,
@@ -688,7 +689,7 @@ export function ImageCropModal({
                 alignItems: "center",
                 justifyContent: "center",
                 cursor: zoom <= MIN_ZOOM ? "default" : "pointer",
-                color: "#2B2622",
+                color: "var(--text-primary)",
                 opacity: zoom <= MIN_ZOOM ? 0.45 : 1,
                 flexShrink: 0,
               }}
@@ -706,7 +707,7 @@ export function ImageCropModal({
               onChange={(e) => updateZoom(parseFloat(e.target.value))}
               style={{
                 flex: 1,
-                accentColor: "#E8622C",
+                accentColor: "var(--accent)",
                 cursor: "pointer",
               }}
             />
@@ -717,7 +718,7 @@ export function ImageCropModal({
               disabled={zoom >= MAX_ZOOM}
               aria-label="Zoom in"
               style={{
-                background: "#F7F0E4",
+                background: "var(--bg-muted)",
                 border: "none",
                 borderRadius: 8,
                 width: 28,
@@ -726,7 +727,7 @@ export function ImageCropModal({
                 alignItems: "center",
                 justifyContent: "center",
                 cursor: zoom >= MAX_ZOOM ? "default" : "pointer",
-                color: "#2B2622",
+                color: "var(--text-primary)",
                 opacity: zoom >= MAX_ZOOM ? 0.45 : 1,
                 flexShrink: 0,
               }}
@@ -738,7 +739,7 @@ export function ImageCropModal({
               style={{
                 fontSize: 11.5,
                 fontWeight: 700,
-                color: "#6B6259",
+                color: "var(--text-secondary)",
                 minWidth: 34,
                 textAlign: "right",
                 fontVariantNumeric: "tabular-nums",
@@ -755,7 +756,7 @@ export function ImageCropModal({
               aria-label="Reset zoom and position"
               style={{
                 background: "none",
-                border: "1px solid #EFE4D2",
+                border: "1px solid var(--border-default)",
                 borderRadius: 8,
                 width: 28,
                 height: 28,
@@ -764,7 +765,7 @@ export function ImageCropModal({
                 justifyContent: "center",
                 cursor:
                   zoom === 1 && pan.x === 0 && pan.y === 0 ? "default" : "pointer",
-                color: "#6B6259",
+                color: "var(--text-secondary)",
                 opacity: zoom === 1 && pan.x === 0 && pan.y === 0 ? 0.4 : 1,
                 flexShrink: 0,
               }}
@@ -778,9 +779,9 @@ export function ImageCropModal({
               role="alert"
               style={{
                 marginTop: 10,
-                background: "#FCE9DF",
-                border: "1px solid #F2C4AF",
-                color: "#B23A1D",
+                background: "var(--accent-soft)",
+                border: "1px solid var(--accent-border)",
+                color: "var(--danger)",
                 borderRadius: 10,
                 padding: "8px 10px",
                 fontSize: 12.5,
@@ -798,9 +799,9 @@ export function ImageCropModal({
               onClick={onCancel}
               disabled={applying}
               style={{
-                border: "1.5px solid #EFE4D2",
-                background: "#fff",
-                color: "#6B6259",
+                border: "1.5px solid var(--border-default)",
+                background: "var(--bg-surface)",
+                color: "var(--text-secondary)",
                 borderRadius: 14,
                 padding: "11px 14px",
                 fontSize: 13.5,
@@ -817,9 +818,9 @@ export function ImageCropModal({
                 onClick={queueInfo.onAutoFitRest}
                 disabled={applying}
                 style={{
-                  border: "1.5px solid #EFE4D2",
-                  background: "#FFFDF9",
-                  color: "#2B2622",
+                  border: "1.5px solid var(--border-default)",
+                  background: "var(--bg-surface-warm)",
+                  color: "var(--text-primary)",
                   borderRadius: 14,
                   padding: "11px 12px",
                   fontSize: 12.5,
@@ -839,7 +840,7 @@ export function ImageCropModal({
               style={{
                 flex: 1,
                 border: "none",
-                background: "#E8622C",
+                background: "var(--accent)",
                 color: "#fff",
                 borderRadius: 14,
                 padding: "11px 16px",

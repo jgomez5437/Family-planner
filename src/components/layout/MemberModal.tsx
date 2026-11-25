@@ -115,8 +115,8 @@ export function MemberModal({
           display: "flex",
           alignItems: "center",
           gap: 12,
-          background: "#fff",
-          border: "1px solid #F1E8D9",
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border-subtle)",
           borderRadius: 14,
           padding: "10px 12px",
           marginBottom: 14,
@@ -134,7 +134,7 @@ export function MemberModal({
           <div style={{ fontSize: 14, fontWeight: 700 }}>
             {name.trim() || (isChild ? "Child Profile" : "Family Member")}
           </div>
-          <div style={{ fontSize: 12, color: "#8A7F70" }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {isChild
               ? "Appears in Family Manager, Medications & Caregiver Sheets"
               : "Appears across Events, Tasks & Family Wall"}
@@ -159,9 +159,9 @@ export function MemberModal({
               type="button"
               onClick={() => setIsChild(false)}
               style={{
-                border: `1.5px solid ${!isChild ? "#E8622C" : "#EFE4D2"}`,
-                background: !isChild ? "#FCE9DF" : "#fff",
-                color: !isChild ? "#B24A1D" : "#6B6259",
+                border: `1.5px solid ${!isChild ? "var(--accent)" : "var(--border-default)"}`,
+                background: !isChild ? "var(--accent-soft)" : "var(--bg-surface)",
+                color: !isChild ? "var(--accent-ink)" : "var(--text-secondary)",
                 borderRadius: 12,
                 padding: "9px 10px",
                 fontSize: 13,
@@ -175,9 +175,9 @@ export function MemberModal({
               type="button"
               onClick={() => setIsChild(true)}
               style={{
-                border: `1.5px solid ${isChild ? "#E8622C" : "#EFE4D2"}`,
-                background: isChild ? "#FCE9DF" : "#fff",
-                color: isChild ? "#B24A1D" : "#6B6259",
+                border: `1.5px solid ${isChild ? "var(--accent)" : "var(--border-default)"}`,
+                background: isChild ? "var(--accent-soft)" : "var(--bg-surface)",
+                color: isChild ? "var(--accent-ink)" : "var(--text-secondary)",
                 borderRadius: 12,
                 padding: "9px 10px",
                 fontSize: 13,
@@ -195,7 +195,7 @@ export function MemberModal({
         <>
           <FieldLabel style={{ marginTop: 12 }}>
             Email{" "}
-            <span style={{ fontWeight: 400, color: "#A69C8E" }}>
+            <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>
               (optional — lets them claim this profile when joining)
             </span>
           </FieldLabel>
@@ -234,7 +234,9 @@ export function MemberModal({
               borderRadius: "50%",
               background: p.color,
               border:
-                paletteIdx === idx ? "3px solid #2B2622" : "2px solid #fff",
+                paletteIdx === idx
+                  ? "3px solid var(--text-primary)"
+                  : "2px solid var(--bg-surface)",
               boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
               cursor: "pointer",
             }}
@@ -249,7 +251,7 @@ export function MemberModal({
             marginTop: 12,
             fontSize: 12.5,
             fontWeight: 600,
-            color: "#C4402A",
+            color: "var(--danger)",
           }}
         >
           {error}
@@ -264,9 +266,9 @@ export function MemberModal({
             onClick={handleDelete}
             style={{
               ...btnStyle,
-              background: confirmDelete ? "#C4402A" : "#fff",
-              color: confirmDelete ? "#fff" : "#C4402A",
-              border: "1.5px solid #F3D9D2",
+              background: confirmDelete ? "var(--danger)" : "var(--bg-surface)",
+              color: confirmDelete ? "#fff" : "var(--danger)",
+              border: "1.5px solid var(--danger-border)",
             }}
           >
             {confirmDelete ? "Tap again to remove" : "Remove"}
@@ -279,7 +281,7 @@ export function MemberModal({
           style={{
             ...btnStyle,
             flex: 1,
-            background: "#E8622C",
+            background: "var(--accent)",
             color: "#fff",
             opacity: saving || avatarProcessing ? 0.65 : 1,
           }}
