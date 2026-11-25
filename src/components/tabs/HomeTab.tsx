@@ -22,6 +22,7 @@ import {
   nowHHMM,
   relativeDay,
 } from "@/lib/dates";
+import { useHydrated } from "@/lib/useRelativeTime";
 import { recurrenceLabel } from "@/lib/recurrence";
 import type {
   ActivityItem,
@@ -38,6 +39,7 @@ import {
   CategoryBadge,
   EmptyRow,
   EmptyState,
+  LocalClock,
   SectionLabel,
 } from "@/components/ui/Primitives";
 import type { ComposerKind } from "@/components/layout/QuickAddSheet";
@@ -199,6 +201,7 @@ export function HomeTab({
   toggleReaction,
   onDeletePost,
   openHistory,
+  onOpenTask,
   goTab,
   openComposer,
   isDesktop,
@@ -214,6 +217,7 @@ export function HomeTab({
   toggleReaction: (postId: string, emoji: string) => void;
   onDeletePost?: (postId: string) => void;
   openHistory: (e: FamilyEvent) => void;
+  onOpenTask?: (t: FamilyTask) => void;
   goTab: (tab: string) => void;
   openComposer: (
     type: ComposerKind,
@@ -344,6 +348,11 @@ export function HomeTab({
                     ? () => openHistory(item.data)
                     : undefined
                 }
+                onOpenTask={
+                  item.kind === "task" && onOpenTask
+                    ? () => onOpenTask(item.data)
+                    : undefined
+                }
                 currentUser={currentUser}
               />
             </React.Fragment>
@@ -435,7 +444,12 @@ export function HomeTab({
               <AvatarDot id={a.by} size={22} />
               <div style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
                 <span style={{ fontWeight: 500 }}>{a.text}</span>
-                {a.sub && <span style={{ color: "#948C80" }}> — {a.sub}</span>}
+                {a.sub && (
+                  <span style={{ color: "#948C80" }}>
+                    {" — "}
+                    <LocalClock value={a.sub} />
+                  </span>
+                )}
               </div>
               <div
                 suppressHydrationWarning
@@ -472,6 +486,7 @@ export function HomeTab({
           <AvatarDot id={currentUser} size={52} />
           <div style={{ minWidth: 0 }}>
             <div
+              suppressHydrationWarning
               style={{
                 fontFamily: "'Baloo 2', sans-serif",
                 fontSize: 25,
@@ -481,7 +496,10 @@ export function HomeTab({
             >
               {greeting}, {memberById(currentUser).name}
             </div>
-            <div style={{ color: "#8A7F70", fontSize: 13.5, marginTop: 3 }}>
+            <div
+              suppressHydrationWarning
+              style={{ color: "#8A7F70", fontSize: 13.5, marginTop: 3 }}
+            >
               {dateStr}
             </div>
           </div>
@@ -584,10 +602,13 @@ export function HomeTab({
 }
 
 function NowDivider() {
-  const label = new Date().toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const hydrated = useHydrated();
+  const label = hydrated
+    ? new Date().toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "";
   return (
     <div
       style={{
@@ -601,6 +622,7 @@ function NowDivider() {
         style={{ flex: 1, height: 1.5, background: "#E8622C", opacity: 0.35 }}
       />
       <span
+        suppressHydrationWarning
         style={{
           fontSize: 10,
           fontWeight: 800,
@@ -608,7 +630,7 @@ function NowDivider() {
           letterSpacing: 0.6,
         }}
       >
-        NOW · {label}
+        {label ? `NOW · ${label}` : "NOW"}
       </span>
       <div
         style={{ flex: 1, height: 1.5, background: "#E8622C", opacity: 0.35 }}
@@ -622,12 +644,14 @@ function TimelineRow({
   isLast,
   onToggleTask,
   onOpenEvent,
+  onOpenTask,
   currentUser,
 }: {
   item: TimelineItem;
   isLast: boolean;
   onToggleTask?: () => void;
   onOpenEvent?: () => void;
+  onOpenTask?: () => void;
   currentUser: MemberId;
 }) {
   const { memberById } = useMembers();
@@ -648,6 +672,7 @@ function TimelineRow({
   const isMine = kind === "task" && data.assignedTo === currentUser;
 
   const rowOpacity = isPast ? 0.55 : isDone ? 0.6 : 1;
+  const handleRowOpen = kind === "event" ? onOpenEvent : onOpenTask;
 
   return (
     <div
@@ -711,7 +736,9 @@ function TimelineRow({
         </div>
       )}
       <button
-        onClick={kind === "event" ? onOpenEvent : undefined}
+        type="button"
+        onClick={handleRowOpen}
+        disabled={!handleRowOpen}
         style={{
           flex: 1,
           minWidth: 0,
@@ -719,7 +746,7 @@ function TimelineRow({
           background: "none",
           border: "none",
           padding: 0,
-          cursor: kind === "event" ? "pointer" : "default",
+          cursor: handleRowOpen ? "pointer" : "default",
         }}
       >
         <div

@@ -39,7 +39,11 @@ export function expandOccurrences<
     if (cursor >= rangeStart) {
       const exceptions = master.exceptions || [];
       if (!exceptions.includes(cursor)) {
-        const override = (master.overrides && master.overrides[cursor]) || {};
+        const override =
+          (master.overrides && master.overrides[cursor]) || {};
+        const overriddenDate = (override as Record<string, unknown>)[
+          dateField as string
+        ];
         out.push({
           ...master,
           ...override,
@@ -47,7 +51,10 @@ export function expandOccurrences<
           masterId: master.id,
           occurrenceDate: cursor,
           isRecurring: true,
-          [dateField]: cursor,
+          [dateField]:
+            typeof overriddenDate === "string" && overriddenDate
+              ? overriddenDate
+              : cursor,
         } as T);
       }
     }
@@ -70,7 +77,19 @@ export function expandAllTasks(
   rangeStart: string,
   rangeEnd: string
 ): FamilyTask[] {
-  return tasks.flatMap((t) => expandOccurrences(t, "dueDate", rangeStart, rangeEnd));
+  return tasks.flatMap((t) => {
+    if (!t.recurrence || !t.dueDate) {
+      return [
+        {
+          ...t,
+          occurrenceDate: t.dueDate || undefined,
+          masterId: t.id,
+          isRecurring: false,
+        },
+      ];
+    }
+    return expandOccurrences(t, "dueDate", rangeStart, rangeEnd);
+  });
 }
 
 export function recurrenceLabel(recurrence?: string | null, dateStr?: string): string | null {

@@ -3,10 +3,11 @@ import {
   deleteTaskRecord,
   getAuthenticatedSession,
   toggleTaskRecord,
+  updateTaskRecord,
 } from "@/db/repository";
 
 export async function PATCH(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   const session = await getAuthenticatedSession();
@@ -15,6 +16,26 @@ export async function PATCH(
   }
   const { id } = await context.params;
   const decodedId = decodeURIComponent(id);
+  const body = await request.json().catch(() => ({}));
+
+  if (body && typeof body.updates === "object" && body.updates !== null) {
+    const scope = body.scope === "instance" ? "instance" : "series";
+    const result = await updateTaskRecord(
+      session.familyId,
+      decodedId,
+      body.updates,
+      scope,
+      session.member.id
+    );
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.status }
+      );
+    }
+    return NextResponse.json({ task: result.task });
+  }
+
   const updated = await toggleTaskRecord(
     session.familyId,
     decodedId,

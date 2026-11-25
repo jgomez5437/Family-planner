@@ -8,8 +8,18 @@ import {
   pillStyle,
   sheetStyle,
 } from "@/lib/constants";
+import { formatLocalClock, isIsoTimestamp } from "@/lib/dates";
+import { useHydrated } from "@/lib/useRelativeTime";
 import { useMembers } from "@/components/MembersContext";
 import type { MemberId } from "@/types/family";
+
+export function LocalClock({ value }: { value?: string | null }) {
+  const hydrated = useHydrated();
+  if (!value) return null;
+  if (!isIsoTimestamp(value)) return <>{value}</>;
+  if (!hydrated) return <span suppressHydrationWarning>…</span>;
+  return <span suppressHydrationWarning>{formatLocalClock(value)}</span>;
+}
 
 export function AvatarDot({ id, size = 22 }: { id?: MemberId | null; size?: number }) {
   const { memberById } = useMembers();
