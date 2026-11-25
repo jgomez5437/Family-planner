@@ -17,7 +17,7 @@ import {
 import type { Member, MemberId } from "@/types/family";
 import type React from "react";
 
-export const CARD_SHADOW = "0 1px 2px rgba(74,50,24,0.05), 0 6px 18px rgba(74,50,24,0.06)";
+export const CARD_SHADOW = "var(--card-shadow)";
 
 export const MEMBER_COLOR_PALETTES = [
   { name: "Forest", color: "#1F6F5C", light: "#E4F1EC" },
@@ -67,16 +67,16 @@ export function findMemberById(
   );
 }
 
-export const CATEGORY_META: Record<string, { icon: LucideIcon; color: string }> = {
-  Family:      { icon: Users,          color: "#1F6F5C" },
-  School:      { icon: School,         color: "#3E6FD9" },
-  Work:        { icon: Briefcase,      color: "#6B6259" },
-  Medical:     { icon: Stethoscope,    color: "#E8622C" },
-  Sports:      { icon: Trophy,         color: "#C9972B" },
-  Appointment: { icon: Clock,          color: "#B25CC9" },
-  Birthday:    { icon: Cake,           color: "#E8622C" },
-  Holiday:     { icon: PartyPopper,    color: "#1F6F5C" },
-  Other:       { icon: MoreHorizontal, color: "#6B6259" },
+export const CATEGORY_META: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
+  Family:      { icon: Users,          color: "var(--success)",   bg: "var(--success-soft)" },
+  School:      { icon: School,         color: "var(--cat-blue)",  bg: "var(--cat-blue-soft)" },
+  Work:        { icon: Briefcase,      color: "var(--cat-slate)", bg: "var(--cat-slate-soft)" },
+  Medical:     { icon: Stethoscope,    color: "var(--cat-coral)", bg: "var(--cat-coral-soft)" },
+  Sports:      { icon: Trophy,         color: "var(--cat-ochre)", bg: "var(--cat-ochre-soft)" },
+  Appointment: { icon: Clock,          color: "var(--cat-plum)",  bg: "var(--cat-plum-soft)" },
+  Birthday:    { icon: Cake,           color: "var(--cat-coral)", bg: "var(--cat-coral-soft)" },
+  Holiday:     { icon: PartyPopper,    color: "var(--success)",   bg: "var(--success-soft)" },
+  Other:       { icon: MoreHorizontal, color: "var(--cat-slate)", bg: "var(--cat-slate-soft)" },
 };
 
 export const TASK_CATEGORIES = [
@@ -100,11 +100,19 @@ export const REACTION_LABELS: Record<string, string> = {
 };
 
 export const POST_TYPE_COLORS: Record<string, string> = {
-  Announcement: "#E8622C",
-  Update: "#3E6FD9",
-  Reminder: "#C9972B",
-  Change: "#B25CC9",
-  Photo: "#1F6F5C",
+  Announcement: "var(--cat-coral)",
+  Update: "var(--cat-blue)",
+  Reminder: "var(--cat-ochre)",
+  Change: "var(--cat-plum)",
+  Photo: "var(--success)",
+};
+
+export const POST_TYPE_BG: Record<string, string> = {
+  Announcement: "var(--cat-coral-soft)",
+  Update: "var(--cat-blue-soft)",
+  Reminder: "var(--cat-ochre-soft)",
+  Change: "var(--cat-plum-soft)",
+  Photo: "var(--success-soft)",
 };
 
 export const POST_TYPE_EMOJI: Record<string, string> = {
@@ -128,7 +136,7 @@ export const DESKTOP_BREAKPOINT = 900;
 export const overlayStyle: React.CSSProperties = {
   position: "fixed",
   inset: 0,
-  background: "rgba(43,38,34,0.42)",
+  background: "var(--bg-overlay)",
   zIndex: 100,
   display: "flex",
   alignItems: "flex-end",
@@ -136,24 +144,26 @@ export const overlayStyle: React.CSSProperties = {
 };
 
 export const sheetStyle: React.CSSProperties = {
-  background: "#FFF9F0",
+  background: "var(--bg-app)",
+  color: "var(--text-primary)",
   width: "100%",
   maxWidth: 560,
   borderRadius: "22px 22px 0 0",
   padding: "14px 20px calc(20px + env(safe-area-inset-bottom))",
-  boxShadow: "0 -8px 30px rgba(0,0,0,0.2)",
+  boxShadow: "var(--sheet-shadow)",
+  borderTop: "1px solid var(--border-subtle)",
   animation: "slideUp 0.25s ease",
 };
 
 export const inputStyle: React.CSSProperties = {
   width: "100%",
-  border: "1.5px solid #EFE4D2",
+  border: "1.5px solid var(--border-default)",
   borderRadius: 12,
   padding: "10px 12px",
   fontSize: 14,
   fontFamily: "inherit",
-  background: "#fff",
-  color: "#2B2622",
+  background: "var(--bg-surface)",
+  color: "var(--text-primary)",
   boxSizing: "border-box",
 };
 
@@ -167,7 +177,8 @@ export const btnStyle: React.CSSProperties = {
 };
 
 export const iconBtnStyle: React.CSSProperties = {
-  background: "#F5EFE3",
+  background: "var(--bg-subtle-alt)",
+  color: "var(--text-primary)",
   border: "none",
   borderRadius: "50%",
   width: 32,
@@ -180,8 +191,8 @@ export const iconBtnStyle: React.CSSProperties = {
 };
 
 export const managerCard: React.CSSProperties = {
-  background: "#fff",
-  border: "1px solid #F1E8D9",
+  background: "var(--bg-surface)",
+  border: "1px solid var(--border-subtle)",
   boxShadow: CARD_SHADOW,
   borderRadius: 16,
   padding: 14,
@@ -191,7 +202,7 @@ export const managerCard: React.CSSProperties = {
 export const textBtn: React.CSSProperties = {
   background: "none",
   border: "none",
-  color: "#E8622C",
+  color: "var(--accent)",
   fontSize: 12.5,
   fontWeight: 700,
   cursor: "pointer",
@@ -201,9 +212,9 @@ export const textBtn: React.CSSProperties = {
 
 export function pillStyle(active: boolean): React.CSSProperties {
   return {
-    border: `1.5px solid ${active ? "#E8622C" : "#EFE4D2"}`,
-    background: active ? "#FCE9DF" : "#fff",
-    color: active ? "#B24A1D" : "#6B6259",
+    border: `1.5px solid ${active ? "var(--accent)" : "var(--border-default)"}`,
+    background: active ? "var(--accent-soft)" : "var(--bg-surface)",
+    color: active ? "var(--accent-ink)" : "var(--text-secondary)",
     borderRadius: 999,
     padding: "6px 12px",
     fontSize: 12.5,

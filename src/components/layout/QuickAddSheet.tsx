@@ -18,11 +18,12 @@ export function QuickAddSheet({
     label: string;
     icon: typeof Calendar;
     color: string;
+    bg: string;
   }[] = [
-    { id: "event", label: "Event", icon: Calendar, color: "#3E6FD9" },
-    { id: "task", label: "Task", icon: CheckSquare, color: "#1F6F5C" },
-    { id: "appointment", label: "Appointment", icon: Stethoscope, color: "#E8622C" },
-    { id: "post", label: "Family Update", icon: Camera, color: "#B25CC9" },
+    { id: "event", label: "Event", icon: Calendar, color: "var(--cat-blue)", bg: "var(--cat-blue-soft)" },
+    { id: "task", label: "Task", icon: CheckSquare, color: "var(--success)", bg: "var(--success-soft)" },
+    { id: "appointment", label: "Appointment", icon: Stethoscope, color: "var(--cat-coral)", bg: "var(--cat-coral-soft)" },
+    { id: "post", label: "Family Update", icon: Camera, color: "var(--cat-plum)", bg: "var(--cat-plum-soft)" },
   ];
   return (
     <div style={overlayStyle} onClick={onClose}>
@@ -31,7 +32,7 @@ export function QuickAddSheet({
           style={{
             width: 36,
             height: 4,
-            background: "#E4D9C6",
+            background: "var(--border-strong)",
             borderRadius: 4,
             margin: "0 auto 16px",
           }}
@@ -52,9 +53,10 @@ export function QuickAddSheet({
               key={o.id}
               onClick={() => onSelect(o.id)}
               style={{
-                border: "1px solid #F1E8D9",
+                border: "1px solid var(--border-subtle)",
                 boxShadow: CARD_SHADOW,
-                background: "#FFFDF9",
+                background: "var(--bg-surface-warm)",
+                color: "var(--text-primary)",
                 borderRadius: 16,
                 padding: "18px 10px",
                 display: "flex",
@@ -69,7 +71,7 @@ export function QuickAddSheet({
                   width: 42,
                   height: 42,
                   borderRadius: 12,
-                  background: `${o.color}15`,
+                  background: o.bg,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",

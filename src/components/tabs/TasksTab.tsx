@@ -110,9 +110,9 @@ export function TasksTab({
             onClick={() => setFilter(c)}
             style={{
               flexShrink: 0,
-              border: `1.5px solid ${filter === c ? "#1F6F5C" : "#EFE4D2"}`,
-              background: filter === c ? "#E4F1EC" : "#fff",
-              color: filter === c ? "#155C4A" : "#6B6259",
+              border: `1.5px solid ${filter === c ? "var(--success)" : "var(--border-default)"}`,
+              background: filter === c ? "var(--success-soft)" : "var(--bg-surface)",
+              color: filter === c ? "var(--success-ink)" : "var(--text-secondary)",
               borderRadius: 999,
               padding: "5px 12px",
               fontSize: 12,
@@ -146,8 +146,8 @@ export function TasksTab({
           />
           <div
             style={{
-              background: "#fff",
-              border: "1px solid #F1E8D9",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
               boxShadow: CARD_SHADOW,
               borderRadius: 14,
               padding: "4px 14px",
@@ -193,7 +193,7 @@ export function TasksTab({
           <div
             style={{
               fontSize: 13,
-              color: "#6B6259",
+              color: "var(--text-secondary)",
               marginBottom: 16,
               lineHeight: 1.5,
             }}
@@ -213,9 +213,9 @@ export function TasksTab({
               }}
               style={{
                 ...btnStyle,
-                background: "#fff",
-                border: "1.5px solid #EFE4D2",
-                color: "#2B2622",
+                background: "var(--bg-surface)",
+                border: "1.5px solid var(--border-default)",
+                color: "var(--text-primary)",
                 textAlign: "left",
               }}
             >
@@ -225,7 +225,7 @@ export function TasksTab({
               <div
                 style={{
                   fontSize: 11.5,
-                  color: "#948C80",
+                  color: "var(--text-muted)",
                   fontWeight: 400,
                   marginTop: 1,
                 }}
@@ -240,9 +240,9 @@ export function TasksTab({
               }}
               style={{
                 ...btnStyle,
-                background: "#fff",
-                border: "1.5px solid #F3D9D2",
-                color: "#C4402A",
+                background: "var(--bg-surface)",
+                border: "1.5px solid var(--danger-border)",
+                color: "var(--danger)",
                 textAlign: "left",
               }}
             >
@@ -252,7 +252,7 @@ export function TasksTab({
               <div
                 style={{
                   fontSize: 11.5,
-                  color: "#948C80",
+                  color: "var(--text-muted)",
                   fontWeight: 400,
                   marginTop: 1,
                 }}
@@ -296,7 +296,7 @@ export function TaskRow({
         alignItems: "center",
         gap: 10,
         padding: compact ? "7px 0" : "11px 0",
-        borderBottom: "1px solid #F3ECE0",
+        borderBottom: "1px solid var(--border-divider)",
       }}
     >
       <button
@@ -307,7 +307,7 @@ export function TaskRow({
           border: "none",
           cursor: "pointer",
           padding: 0,
-          color: task.completed ? "#1F6F5C" : "#C9BEAC",
+          color: task.completed ? "var(--success)" : "var(--border-muted)",
           flexShrink: 0,
         }}
         aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
@@ -335,7 +335,7 @@ export function TaskRow({
               fontSize: 13.5,
               fontWeight: 500,
               textDecoration: task.completed ? "line-through" : "none",
-              color: task.completed ? "#A69C8E" : "#2B2622",
+              color: task.completed ? "var(--text-faint)" : "var(--text-primary)",
             }}
           >
             {task.assignedTo && (
@@ -358,7 +358,7 @@ export function TaskRow({
               {task.completed && task.completedBy ? (
                 <span
                   suppressHydrationWarning
-                  style={{ fontSize: 10.5, color: "#1F6F5C", fontWeight: 600 }}
+                  style={{ fontSize: 10.5, color: "var(--success)", fontWeight: 600 }}
                 >
                   ✓ {memberById(task.completedBy).name} completed
                   {task.completedAt
@@ -367,30 +367,30 @@ export function TaskRow({
                 </span>
               ) : (
                 <>
-                  <span style={{ fontSize: 10.5, color: "#A69C8E" }}>
+                  <span style={{ fontSize: 10.5, color: "var(--text-faint)" }}>
                     {task.category}
                   </span>
                   {task.dueTime && (
-                    <span style={{ fontSize: 10.5, color: "#8A7F70", fontWeight: 600 }}>
+                    <span style={{ fontSize: 10.5, color: "var(--text-muted)", fontWeight: 600 }}>
                       · {fmtTime(task.dueTime)}
                     </span>
                   )}
                   {task.priority === "High" && (
                     <span
-                      style={{ fontSize: 10, fontWeight: 700, color: "#C4402A" }}
+                      style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)" }}
                     >
                       ● High
                     </span>
                   )}
                   {overdue && (
                     <span
-                      style={{ fontSize: 10, fontWeight: 700, color: "#C4402A" }}
+                      style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)" }}
                     >
                       Overdue
                     </span>
                   )}
                   {task.recurrence && (
-                    <span style={{ fontSize: 10, color: "#A69C8E" }}>
+                    <span style={{ fontSize: 10, color: "var(--text-faint)" }}>
                       🔁 {recurrenceLabel(task.recurrence, task.dueDate)}
                     </span>
                   )}
@@ -406,8 +406,8 @@ export function TaskRow({
               onClick={() => onOpenLinkedEvent?.(task)}
               style={{
                 fontSize: 10,
-                color: "#B24A1D",
-                background: "#FCE9DF",
+                color: "var(--accent-ink)",
+                background: "var(--accent-soft)",
                 border: "none",
                 borderRadius: 999,
                 padding: "1px 7px",
@@ -431,7 +431,7 @@ export function TaskRow({
                 onDelete();
               }}
               style={{
-                background: "#C4402A",
+                background: "var(--danger)",
                 color: "#fff",
                 border: "none",
                 borderRadius: 8,
@@ -447,8 +447,8 @@ export function TaskRow({
               type="button"
               onClick={() => setConfirmingDelete(false)}
               style={{
-                background: "#F5EFE3",
-                color: "#6B6259",
+                background: "var(--bg-subtle-alt)",
+                color: "var(--text-secondary)",
                 border: "none",
                 borderRadius: 8,
                 padding: "4px 7px",
@@ -474,7 +474,7 @@ export function TaskRow({
               border: "none",
               cursor: "pointer",
               padding: 4,
-              color: "#B7AE9F",
+              color: "var(--text-faint)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -608,7 +608,7 @@ export function TaskEditModal({
         <div
           style={{
             fontSize: 13,
-            color: "#6B6259",
+            color: "var(--text-secondary)",
             marginBottom: 16,
             lineHeight: 1.5,
           }}
@@ -629,9 +629,9 @@ export function TaskEditModal({
             }}
             style={{
               ...btnStyle,
-              background: "#fff",
-              border: "1.5px solid #EFE4D2",
-              color: "#2B2622",
+              background: "var(--bg-surface)",
+              border: "1.5px solid var(--border-default)",
+              color: "var(--text-primary)",
               textAlign: "left",
             }}
           >
@@ -641,7 +641,7 @@ export function TaskEditModal({
             <div
               style={{
                 fontSize: 11.5,
-                color: "#948C80",
+                color: "var(--text-muted)",
                 fontWeight: 400,
                 marginTop: 1,
               }}
@@ -663,11 +663,16 @@ export function TaskEditModal({
             }}
             style={{
               ...btnStyle,
-              background: "#fff",
+              background: "var(--bg-surface)",
               border: `1.5px solid ${
-                pendingAction === "delete" ? "#F3D9D2" : "#EFE4D2"
+                pendingAction === "delete"
+                  ? "var(--danger-border)"
+                  : "var(--border-default)"
               }`,
-              color: pendingAction === "delete" ? "#C4402A" : "#2B2622",
+              color:
+                pendingAction === "delete"
+                  ? "var(--danger)"
+                  : "var(--text-primary)",
               textAlign: "left",
             }}
           >
@@ -675,7 +680,7 @@ export function TaskEditModal({
             <div
               style={{
                 fontSize: 11.5,
-                color: "#948C80",
+                color: "var(--text-muted)",
                 fontWeight: 400,
                 marginTop: 1,
               }}
@@ -700,8 +705,8 @@ export function TaskEditModal({
           flexWrap: "wrap",
           marginBottom: 14,
           padding: "8px 10px",
-          background: task.completed ? "#E4F1EC" : "#FFFDF9",
-          border: `1px solid ${task.completed ? "#C4E2D6" : "#EFE4D2"}`,
+          background: task.completed ? "var(--success-soft)" : "var(--bg-surface-warm)",
+          border: `1px solid ${task.completed ? "var(--success-border)" : "var(--border-default)"}`,
           borderRadius: 12,
         }}
       >
@@ -716,22 +721,22 @@ export function TaskEditModal({
             border: "none",
             padding: 0,
             cursor: "pointer",
-            color: task.completed ? "#155C4A" : "#2B2622",
+            color: task.completed ? "var(--success-ink)" : "var(--text-primary)",
             fontSize: 12.5,
             fontWeight: 700,
           }}
         >
           {task.completed ? (
-            <CheckCircle2 size={17} color="#1F6F5C" />
+            <CheckCircle2 size={17} color="var(--success)" />
           ) : (
-            <Circle size={17} color="#C9BEAC" />
+            <Circle size={17} color="var(--border-muted)" />
           )}
           {task.completed ? "Completed" : "Mark complete"}
         </button>
         {task.completed && task.completedBy && (
           <span
             suppressHydrationWarning
-            style={{ fontSize: 11.5, color: "#155C4A" }}
+            style={{ fontSize: 11.5, color: "var(--success-ink)" }}
           >
             by {memberById(task.completedBy).name}
             {task.completedAt ? (
@@ -744,7 +749,7 @@ export function TaskEditModal({
           </span>
         )}
         <span
-          style={{ fontSize: 11, color: "#948C80", marginLeft: "auto" }}
+          style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}
         >
           Added by {memberById(task.createdBy).name}
         </span>
@@ -760,8 +765,8 @@ export function TaskEditModal({
             }}
             style={{
               fontSize: 11.5,
-              color: "#B24A1D",
-              background: "#FCE9DF",
+              color: "var(--accent-ink)",
+              background: "var(--accent-soft)",
               border: "none",
               borderRadius: 999,
               padding: "4px 10px",
@@ -809,7 +814,7 @@ export function TaskEditModal({
           >
             <FieldLabel>
               Due time{" "}
-              <span style={{ fontWeight: 400, color: "#A69C8E" }}>
+              <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>
                 (optional)
               </span>
             </FieldLabel>
@@ -820,7 +825,7 @@ export function TaskEditModal({
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#E8622C",
+                  color: "var(--accent)",
                   fontSize: 11,
                   fontWeight: 600,
                   cursor: "pointer",
@@ -911,7 +916,7 @@ export function TaskEditModal({
         <>
           <FieldLabel style={{ marginTop: 12 }}>
             Link to an event{" "}
-            <span style={{ fontWeight: 400, color: "#A69C8E" }}>
+            <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>
               (optional)
             </span>
           </FieldLabel>
@@ -932,7 +937,7 @@ export function TaskEditModal({
 
       <FieldLabel style={{ marginTop: 12 }}>
         Notes{" "}
-        <span style={{ fontWeight: 400, color: "#A69C8E" }}>(optional)</span>
+        <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
       </FieldLabel>
       <textarea
         placeholder="Anything else worth noting?"
@@ -947,9 +952,9 @@ export function TaskEditModal({
           role="alert"
           style={{
             marginTop: 10,
-            background: "#FCE9DF",
-            border: "1px solid #F2C4AF",
-            color: "#B23A1D",
+            background: "var(--accent-soft)",
+            border: "1px solid var(--accent-border)",
+            color: "var(--danger)",
             borderRadius: 10,
             padding: "8px 10px",
             fontSize: 12.5,
@@ -969,8 +974,8 @@ export function TaskEditModal({
                 onClick={() => setConfirmDelete(false)}
                 style={{
                   ...btnStyle,
-                  background: "#F5EFE3",
-                  color: "#6B6259",
+                  background: "var(--bg-subtle-alt)",
+                  color: "var(--text-secondary)",
                 }}
               >
                 Cancel
@@ -981,9 +986,9 @@ export function TaskEditModal({
                 style={{
                   ...btnStyle,
                   flex: 1,
-                  background: "#C4402A",
+                  background: "var(--danger)",
                   color: "#fff",
-                  border: "1.5px solid #C4402A",
+                  border: "1.5px solid var(--danger)",
                 }}
               >
                 Confirm delete
@@ -995,9 +1000,9 @@ export function TaskEditModal({
               onClick={requestDelete}
               style={{
                 ...btnStyle,
-                background: "#fff",
-                color: "#C4402A",
-                border: "1.5px solid #F3D9D2",
+                background: "var(--bg-surface)",
+                color: "var(--danger)",
+                border: "1.5px solid var(--danger-border)",
               }}
             >
               Delete
@@ -1008,7 +1013,7 @@ export function TaskEditModal({
           <button
             type="button"
             onClick={requestSave}
-            style={{ ...btnStyle, flex: 1, background: "#E8622C", color: "#fff" }}
+            style={{ ...btnStyle, flex: 1, background: "var(--accent)", color: "#fff" }}
           >
             Save changes
           </button>

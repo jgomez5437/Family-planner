@@ -292,7 +292,7 @@ export function Composer({
                 gap: 6,
                 fontSize: 12,
                 fontWeight: 600,
-                color: "#6B6259",
+                color: "var(--text-secondary)",
                 paddingTop: 18,
                 whiteSpace: "nowrap",
               }}
@@ -319,7 +319,7 @@ export function Composer({
               </div>
               <div style={{ flex: 1 }}>
                 <FieldLabel>
-                  End time <span style={{ fontWeight: 400, color: "#A69C8E" }}>(optional)</span>
+                  End time <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
                 </FieldLabel>
                 <input
                   type="time"
@@ -381,7 +381,7 @@ export function Composer({
           </div>
 
           <FieldLabel style={{ marginTop: 12 }}>
-            Notes <span style={{ fontWeight: 400, color: "#A69C8E" }}>(optional)</span>
+            Notes <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
           </FieldLabel>
           <textarea
             placeholder="Anything else worth noting?"
@@ -415,7 +415,7 @@ export function Composer({
             </div>
             <div style={{ flex: 1 }}>
               <FieldLabel>
-                Due time <span style={{ fontWeight: 400, color: "#A69C8E" }}>(optional)</span>
+                Due time <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
               </FieldLabel>
               <input
                 type="time"
@@ -484,7 +484,7 @@ export function Composer({
             <>
               <FieldLabel style={{ marginTop: 12 }}>
                 Link to an event{" "}
-                <span style={{ fontWeight: 400, color: "#A69C8E" }}>(optional)</span>
+                <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
               </FieldLabel>
               <select
                 value={linkedEventId}
@@ -502,7 +502,7 @@ export function Composer({
           )}
 
           <FieldLabel style={{ marginTop: 12 }}>
-            Notes <span style={{ fontWeight: 400, color: "#A69C8E" }}>(optional)</span>
+            Notes <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
           </FieldLabel>
           <textarea
             placeholder="Anything else worth noting?"
@@ -558,7 +558,7 @@ export function Composer({
           />
 
           <FieldLabel style={{ marginTop: 12 }}>
-            Photos <span style={{ fontWeight: 400, color: "#A69C8E" }}>(optional)</span>
+            Photos <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
           </FieldLabel>
           <input
             ref={fileInputRef}
@@ -581,7 +581,7 @@ export function Composer({
                   height: 68,
                   borderRadius: 10,
                   overflow: "hidden",
-                  border: "1px solid #EFE4D2",
+                  border: "1px solid var(--border-default)",
                 }}
               >
                 <button
@@ -661,15 +661,15 @@ export function Composer({
                   width: 68,
                   height: 68,
                   borderRadius: 10,
-                  border: "1.5px dashed #E4D9C6",
-                  background: "#FFFDF9",
+                  border: "1.5px dashed var(--border-strong)",
+                  background: "var(--bg-surface-warm)",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 3,
                   cursor: saving ? "default" : "pointer",
-                  color: "#A69C8E",
+                  color: "var(--text-faint)",
                 }}
               >
                 <Camera size={19} />
@@ -678,12 +678,12 @@ export function Composer({
             )}
           </div>
           {postImages.length > 0 && (
-            <div style={{ fontSize: 11.5, color: "#8A7F70", marginTop: 6 }}>
+            <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 6 }}>
               Tap any photo to zoom or adjust its framing before posting.
             </div>
           )}
           {processingPhotos > 0 && (
-            <div style={{ fontSize: 12, color: "#8A7F70", marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
               Optimizing {processingPhotos} photo
               {processingPhotos === 1 ? "" : "s"}…
             </div>
@@ -693,9 +693,9 @@ export function Composer({
               role="alert"
               style={{
                 marginTop: 10,
-                background: "#FCE9DF",
-                border: "1px solid #F2C4AF",
-                color: "#B23A1D",
+                background: "var(--accent-soft)",
+                border: "1px solid var(--accent-border)",
+                color: "var(--danger)",
                 borderRadius: 10,
                 padding: "8px 10px",
                 fontSize: 12.5,
@@ -714,7 +714,7 @@ export function Composer({
         style={{
           ...btnStyle,
           width: "100%",
-          background: "#E8622C",
+          background: "var(--accent)",
           color: "#fff",
           marginTop: 18,
           opacity: saving || processingPhotos > 0 ? 0.65 : 1,

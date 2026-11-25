@@ -91,7 +91,7 @@ export function EventsTab({
       >
         Upcoming
       </div>
-      <div style={{ fontSize: 13, color: "#948C80", marginBottom: 16 }}>
+      <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
         Appointments and important dates, at a glance.
       </div>
       {Object.entries(groups).map(([label, list]) =>
@@ -153,8 +153,9 @@ export function AppointmentCard({
     <button
       onClick={onEdit}
       style={{
-        background: "#fff",
-        border: "1px solid #F1E8D9",
+        background: "var(--bg-surface)",
+        color: "var(--text-primary)",
+        border: "1px solid var(--border-subtle)",
         boxShadow: CARD_SHADOW,
         borderRadius: 16,
         padding: 16,
@@ -174,7 +175,7 @@ export function AppointmentCard({
       >
         <div>
           <div style={{ fontWeight: 700, fontSize: 15.5 }}>{event.title}</div>
-          <div style={{ fontSize: 12.5, color: "#6B6259", marginTop: 4 }}>
+          <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 4 }}>
             {relativeDay(event.date)}
             {!event.allDay && ` · ${fmtTime(event.startTime)}`}
           </div>
@@ -193,7 +194,7 @@ export function AppointmentCard({
                 fontSize: 11,
                 fontWeight: 700,
                 color: meta.color,
-                background: `${meta.color}15`,
+                background: meta.bg,
                 borderRadius: 999,
                 padding: "4px 10px",
               }}
@@ -208,7 +209,7 @@ export function AppointmentCard({
                 ev.stopPropagation();
                 onHistory();
               }}
-              style={{ color: "#C9BEAC", padding: 2, display: "flex" }}
+              style={{ color: "var(--border-muted)", padding: 2, display: "flex" }}
               title="View history"
             >
               <History size={15} />
@@ -220,7 +221,7 @@ export function AppointmentCard({
         <div
           style={{
             fontSize: 12.5,
-            color: "#6B6259",
+            color: "var(--text-secondary)",
             marginTop: 8,
             display: "flex",
             alignItems: "center",
@@ -240,7 +241,7 @@ export function AppointmentCard({
       >
         <CategoryBadge category={event.category} />
         <AvatarStack ids={event.participants} />
-        <span style={{ fontSize: 11, color: "#A69C8E", marginLeft: "auto" }}>
+        <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: "auto" }}>
           Added by {memberById(event.createdBy).name}
         </span>
       </div>
@@ -310,7 +311,7 @@ export function EventEditModal({
         <div
           style={{
             fontSize: 13,
-            color: "#6B6259",
+            color: "var(--text-secondary)",
             marginBottom: 16,
             lineHeight: 1.5,
           }}
@@ -327,9 +328,9 @@ export function EventEditModal({
             }
             style={{
               ...btnStyle,
-              background: "#fff",
-              border: "1.5px solid #EFE4D2",
-              color: "#2B2622",
+              background: "var(--bg-surface)",
+              border: "1.5px solid var(--border-default)",
+              color: "var(--text-primary)",
               textAlign: "left",
             }}
           >
@@ -339,7 +340,7 @@ export function EventEditModal({
             <div
               style={{
                 fontSize: 11.5,
-                color: "#948C80",
+                color: "var(--text-muted)",
                 fontWeight: 400,
                 marginTop: 1,
               }}
@@ -357,11 +358,16 @@ export function EventEditModal({
             }
             style={{
               ...btnStyle,
-              background: "#fff",
+              background: "var(--bg-surface)",
               border: `1.5px solid ${
-                pendingAction === "delete" ? "#F3D9D2" : "#EFE4D2"
+                pendingAction === "delete"
+                  ? "var(--danger-border)"
+                  : "var(--border-default)"
               }`,
-              color: pendingAction === "delete" ? "#C4402A" : "#2B2622",
+              color:
+                pendingAction === "delete"
+                  ? "var(--danger)"
+                  : "var(--text-primary)",
               textAlign: "left",
             }}
           >
@@ -369,7 +375,7 @@ export function EventEditModal({
             <div
               style={{
                 fontSize: 11.5,
-                color: "#948C80",
+                color: "var(--text-muted)",
                 fontWeight: 400,
                 marginTop: 1,
               }}
@@ -386,7 +392,7 @@ export function EventEditModal({
 
   return (
     <ModalShell onClose={onClose} title={event.title}>
-      <div style={{ fontSize: 12.5, color: "#6B6259", marginBottom: 14 }}>
+      <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 14 }}>
         {event.notes || event.description || "No notes"}
       </div>
       <div
@@ -403,7 +409,7 @@ export function EventEditModal({
           <AvatarStack ids={event.participants} />
         )}
         {isRecurring && (
-          <span style={{ fontSize: 11, color: "#A69C8E" }}>
+          <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
             🔁 {recurrenceLabel(event.recurrence, event.date)}
           </span>
         )}
@@ -432,7 +438,7 @@ export function EventEditModal({
         <>
           <FieldLabel style={{ marginTop: 12 }}>
             Why the change?{" "}
-            <span style={{ fontWeight: 400, color: "#A69C8E" }}>(optional)</span>
+            <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
           </FieldLabel>
           <input
             placeholder="e.g. Coach moved practice back an hour"
@@ -450,8 +456,8 @@ export function EventEditModal({
                 onClick={() => setConfirmDelete(false)}
                 style={{
                   ...btnStyle,
-                  background: "#F5EFE3",
-                  color: "#6B6259",
+                  background: "var(--bg-subtle-alt)",
+                  color: "var(--text-secondary)",
                 }}
               >
                 Cancel
@@ -461,9 +467,9 @@ export function EventEditModal({
                 style={{
                   ...btnStyle,
                   flex: 1,
-                  background: "#C4402A",
+                  background: "var(--danger)",
                   color: "#fff",
-                  border: "1.5px solid #C4402A",
+                  border: "1.5px solid var(--danger)",
                 }}
               >
                 Confirm delete
@@ -474,9 +480,9 @@ export function EventEditModal({
               onClick={requestDelete}
               style={{
                 ...btnStyle,
-                background: "#fff",
-                color: "#C4402A",
-                border: "1.5px solid #F3D9D2",
+                background: "var(--bg-surface)",
+                color: "var(--danger)",
+                border: "1.5px solid var(--danger-border)",
               }}
             >
               Delete
@@ -486,7 +492,7 @@ export function EventEditModal({
         {!confirmDelete && (
           <button
             onClick={requestSave}
-            style={{ ...btnStyle, flex: 1, background: "#E8622C", color: "#fff" }}
+            style={{ ...btnStyle, flex: 1, background: "var(--accent)", color: "#fff" }}
           >
             Save changes
           </button>
@@ -545,7 +551,7 @@ export function EventDetailModal({
         <div
           style={{
             fontSize: 13,
-            color: "#6B6259",
+            color: "var(--text-secondary)",
             marginBottom: 16,
             lineHeight: 1.5,
           }}
@@ -561,9 +567,9 @@ export function EventDetailModal({
             }}
             style={{
               ...btnStyle,
-              background: "#fff",
-              border: "1.5px solid #EFE4D2",
-              color: "#2B2622",
+              background: "var(--bg-surface)",
+              border: "1.5px solid var(--border-default)",
+              color: "var(--text-primary)",
               textAlign: "left",
             }}
           >
@@ -573,7 +579,7 @@ export function EventDetailModal({
             <div
               style={{
                 fontSize: 11.5,
-                color: "#948C80",
+                color: "var(--text-muted)",
                 fontWeight: 400,
                 marginTop: 1,
               }}
@@ -588,9 +594,9 @@ export function EventDetailModal({
             }}
             style={{
               ...btnStyle,
-              background: "#fff",
-              border: "1.5px solid #F3D9D2",
-              color: "#C4402A",
+              background: "var(--bg-surface)",
+              border: "1.5px solid var(--danger-border)",
+              color: "var(--danger)",
               textAlign: "left",
             }}
           >
@@ -598,7 +604,7 @@ export function EventDetailModal({
             <div
               style={{
                 fontSize: 11.5,
-                color: "#948C80",
+                color: "var(--text-muted)",
                 fontWeight: 400,
                 marginTop: 1,
               }}
@@ -627,7 +633,7 @@ export function EventDetailModal({
           <span
             style={{
               fontSize: 11,
-              color: "#A69C8E",
+              color: "var(--text-faint)",
               display: "flex",
               alignItems: "center",
               gap: 3,
@@ -638,7 +644,7 @@ export function EventDetailModal({
         )}
       </div>
 
-      <div style={{ fontSize: 13, color: "#6B6259", marginBottom: 4 }}>
+      <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 4 }}>
         {relativeDay(event.occurrenceDate || event.date)}
         {!event.allDay &&
           event.startTime &&
@@ -652,7 +658,7 @@ export function EventDetailModal({
         <div
           style={{
             fontSize: 13,
-            color: "#6B6259",
+            color: "var(--text-secondary)",
             marginBottom: 4,
             display: "flex",
             alignItems: "center",
@@ -672,7 +678,7 @@ export function EventDetailModal({
           }}
         >
           <AvatarStack ids={event.participants} />
-          <span style={{ fontSize: 12, color: "#948C80" }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {event.participants.map((id) => memberById(id).name).join(" + ")}
           </span>
         </div>
@@ -681,7 +687,7 @@ export function EventDetailModal({
         <div
           style={{
             fontSize: 12.5,
-            color: "#6B6259",
+            color: "var(--text-secondary)",
             marginTop: 10,
             lineHeight: 1.5,
           }}
@@ -695,8 +701,8 @@ export function EventDetailModal({
           <FieldLabel>Related Tasks</FieldLabel>
           <div
             style={{
-              background: "#FFFDF9",
-              border: "1px solid #EFE4D2",
+              background: "var(--bg-surface-warm)",
+              border: "1px solid var(--border-default)",
               borderRadius: 12,
               padding: "2px 12px",
             }}
@@ -712,7 +718,7 @@ export function EventDetailModal({
                   borderBottom:
                     i === relatedTasks.length - 1
                       ? "none"
-                      : "1px solid #F3ECE0",
+                      : "1px solid var(--border-divider)",
                 }}
               >
                 <button
@@ -722,7 +728,7 @@ export function EventDetailModal({
                     border: "none",
                     cursor: "pointer",
                     padding: 0,
-                    color: t.completed ? "#1F6F5C" : "#C9BEAC",
+                    color: t.completed ? "var(--success)" : "var(--border-muted)",
                   }}
                   aria-label={t.completed ? "Mark incomplete" : "Mark complete"}
                 >
@@ -742,7 +748,7 @@ export function EventDetailModal({
                     style={{
                       fontSize: 13,
                       textDecoration: t.completed ? "line-through" : "none",
-                      color: t.completed ? "#A69C8E" : "#2B2622",
+                      color: t.completed ? "var(--text-faint)" : "var(--text-primary)",
                       flex: 1,
                       background: "none",
                       border: "none",
@@ -759,7 +765,7 @@ export function EventDetailModal({
                     style={{
                       fontSize: 13,
                       textDecoration: t.completed ? "line-through" : "none",
-                      color: t.completed ? "#A69C8E" : "#2B2622",
+                      color: t.completed ? "var(--text-faint)" : "var(--text-primary)",
                       flex: 1,
                     }}
                   >
@@ -785,7 +791,7 @@ export function EventDetailModal({
             gap: 8,
             marginTop: 12,
             paddingTop: 12,
-            borderTop: "1px solid #F3ECE0",
+            borderTop: "1px solid var(--border-divider)",
           }}
         >
           {confirmDelete && (
@@ -793,8 +799,8 @@ export function EventDetailModal({
               onClick={() => setConfirmDelete(false)}
               style={{
                 ...btnStyle,
-                background: "#F5EFE3",
-                color: "#6B6259",
+                background: "var(--bg-subtle-alt)",
+                color: "var(--text-secondary)",
               }}
             >
               Cancel
@@ -805,9 +811,9 @@ export function EventDetailModal({
             style={{
               ...btnStyle,
               flex: 1,
-              background: confirmDelete ? "#C4402A" : "#fff",
-              color: confirmDelete ? "#fff" : "#C4402A",
-              border: "1.5px solid #F3D9D2",
+              background: confirmDelete ? "var(--danger)" : "var(--bg-surface)",
+              color: confirmDelete ? "#fff" : "var(--danger)",
+              border: "1.5px solid var(--danger-border)",
             }}
           >
             {confirmDelete ? "Confirm delete event" : "Delete event"}
@@ -849,7 +855,7 @@ export function HistoryTimeline({
                 style={{
                   width: 2,
                   flex: 1,
-                  background: "#EFE4D2",
+                  background: "var(--border-default)",
                   marginTop: 4,
                 }}
               />
@@ -860,7 +866,7 @@ export function HistoryTimeline({
               {humanizeHistoryNote(h.note)}{" "}
               <span
                 suppressHydrationWarning
-                style={{ fontWeight: 400, color: "#A69C8E" }}
+                style={{ fontWeight: 400, color: "var(--text-faint)" }}
               >
                 · {memberById(h.by).name} · {formatRelativeTime(h.at)}
               </span>
@@ -869,12 +875,12 @@ export function HistoryTimeline({
               <div
                 style={{
                   fontSize: 12.5,
-                  background: "#FDF6EA",
-                  border: "1px solid #F1E4C4",
+                  background: "var(--bg-warning-soft)",
+                  border: "1px solid var(--border-default)",
                   borderRadius: 10,
                   padding: "8px 10px",
                   marginTop: 6,
-                  color: "#6B5B2F",
+                  color: "var(--text-secondary)",
                   fontStyle: "italic",
                 }}
               >

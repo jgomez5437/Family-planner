@@ -6,26 +6,24 @@ export default function OfflinePage() {
     <div
       style={{
         minHeight: "100vh",
-        background:
-          "radial-gradient(circle at top left, #FFE8D4 0%, #FFF9F0 48%, #F8EFE0 100%)",
+        background: "var(--bg-auth-gradient)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding:
           "calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom))",
         fontFamily: "'Inter', system-ui, sans-serif",
-        color: "#2B2622",
+        color: "var(--text-primary)",
       }}
     >
       <div
         style={{
           width: "100%",
           maxWidth: 400,
-          background: "#fff",
-          border: "1px solid #F1E8D9",
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border-subtle)",
           borderRadius: 22,
-          boxShadow:
-            "0 1px 2px rgba(74,50,24,0.05), 0 6px 18px rgba(74,50,24,0.06)",
+          boxShadow: "var(--card-shadow)",
           padding: "28px 22px",
           textAlign: "center",
         }}
@@ -35,8 +33,8 @@ export default function OfflinePage() {
             width: 58,
             height: 58,
             borderRadius: 18,
-            background: "#FCE9DF",
-            color: "#E8622C",
+            background: "var(--accent-soft)",
+            color: "var(--accent)",
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
@@ -51,7 +49,7 @@ export default function OfflinePage() {
             fontSize: 24,
             fontWeight: 800,
             margin: "0 0 8px",
-            color: "#2B2622",
+            color: "var(--text-primary)",
           }}
         >
           You&apos;re offline
@@ -59,7 +57,7 @@ export default function OfflinePage() {
         <p
           style={{
             fontSize: 14,
-            color: "#6B6259",
+            color: "var(--text-secondary)",
             lineHeight: 1.5,
             margin: "0 0 22px",
           }}
@@ -78,7 +76,7 @@ export default function OfflinePage() {
             fontSize: 14,
             fontWeight: 700,
             cursor: "pointer",
-            background: "#E8622C",
+            background: "var(--accent)",
             color: "#fff",
             display: "inline-flex",
             alignItems: "center",

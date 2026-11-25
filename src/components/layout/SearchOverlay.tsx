@@ -1,31 +1,52 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { CheckSquare, Search, X } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { CheckSquare, ChevronRight, Pill, Search, X } from "lucide-react";
 import { CARD_SHADOW, CATEGORY_META } from "@/lib/constants";
 import { useMembers } from "@/components/MembersContext";
-import { formatRelativeTime, relativeDay } from "@/lib/dates";
-import type { FamilyEvent, FamilyTask, WallPost } from "@/types/family";
+import { fmtTime, formatRelativeTime, relativeDay } from "@/lib/dates";
+import { medWhenLabel, nextDoseLabel } from "@/lib/meds";
+import {
+  getHighlightSegments,
+  runFamilySearch,
+  type EventSearchHit,
+  type MedSearchHit,
+  type PersonSearchHit,
+  type PostSearchHit,
+  type TaskSearchHit,
+} from "@/lib/search";
+import type {
+  DoseLogMap,
+  FamilyEvent,
+  FamilyTask,
+  Medication,
+  Member,
+  ProfilesMap,
+  WallPost,
+} from "@/types/family";
 import { AvatarDot, SectionLabel } from "@/components/ui/Primitives";
 
-function highlightMatch(text: string, query: string) {
-  if (!query) return text;
-  const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return text;
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  const segments = getHighlightSegments(text, query);
   return (
     <>
-      {text.slice(0, idx)}
-      <mark
-        style={{
-          background: "#F4C95D",
-          color: "#2B2622",
-          borderRadius: 3,
-          padding: "0 1px",
-        }}
-      >
-        {text.slice(idx, idx + query.length)}
-      </mark>
-      {text.slice(idx + query.length)}
+      {segments.map((seg, idx) =>
+        seg.match ? (
+          <mark
+            key={idx}
+            style={{
+              background: "var(--highlight-bg)",
+              color: "var(--highlight-ink)",
+              borderRadius: 3,
+              padding: "0 2px",
+            }}
+          >
+            {seg.text}
+          </mark>
+        ) : (
+          <React.Fragment key={idx}>{seg.text}</React.Fragment>
+        )
+      )}
     </>
   );
 }
@@ -35,8 +56,9 @@ const searchRowStyle: React.CSSProperties = {
   alignItems: "center",
   gap: 10,
   width: "100%",
-  background: "#fff",
-  border: "1px solid #F1E8D9",
+  background: "var(--bg-surface)",
+  color: "var(--text-primary)",
+  border: "1px solid var(--border-subtle)",
   boxShadow: CARD_SHADOW,
   borderRadius: 12,
   padding: "10px 12px",
@@ -48,46 +70,83 @@ const searchRowStyle: React.CSSProperties = {
 export function SearchOverlay({
   onClose,
   events,
+  expandedEvents,
   tasks,
+  expandedTasks,
   posts,
+  meds,
+  doseLog,
+  profiles,
+  onOpenPerson,
+  onOpenMed,
   onOpenEvent,
   onOpenTask,
+  onOpenPost,
 }: {
   onClose: () => void;
   events: FamilyEvent[];
+  expandedEvents: FamilyEvent[];
   tasks: FamilyTask[];
+  expandedTasks: FamilyTask[];
   posts: WallPost[];
-  onOpenEvent: (e: FamilyEvent) => void;
-  onOpenTask?: (t: FamilyTask) => void;
+  meds: Medication[];
+  doseLog: DoseLogMap;
+  profiles: ProfilesMap;
+  onOpenPerson: (member: Member) => void;
+  onOpenMed: (med: Medication) => void;
+  onOpenEvent: (event: FamilyEvent) => void;
+  onOpenTask: (task: FamilyTask) => void;
+  onOpenPost: (post: WallPost) => void;
 }) {
+  const { members, memberById } = useMembers();
   const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
+  const trimmed = query.trim();
 
-  const grouped = useMemo(() => {
-    if (!q) return null;
-    const eventHits = events.filter(
-      (e) =>
-        e.title.toLowerCase().includes(q) ||
-        e.location?.toLowerCase().includes(q) ||
-        e.notes?.toLowerCase().includes(q)
-    );
-    const taskHits = tasks.filter(
-      (t) => t.title.toLowerCase().includes(q) || t.notes?.toLowerCase().includes(q)
-    );
-    const postHits = posts.filter((p) => p.content.toLowerCase().includes(q));
-    return { events: eventHits, tasks: taskHits, posts: postHits };
-  }, [q, events, tasks, posts]);
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
-  const totalResults = grouped
-    ? grouped.events.length + grouped.tasks.length + grouped.posts.length
-    : 0;
+  const results = useMemo(() => {
+    if (!trimmed) return null;
+    return runFamilySearch({
+      query: trimmed,
+      members,
+      meds,
+      doseLog,
+      profiles,
+      events,
+      expandedEvents,
+      tasks,
+      expandedTasks,
+      posts,
+    });
+  }, [
+    trimmed,
+    members,
+    meds,
+    doseLog,
+    profiles,
+    events,
+    expandedEvents,
+    tasks,
+    expandedTasks,
+    posts,
+  ]);
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Search Family Planner"
       style={{
         position: "fixed",
         inset: 0,
-        background: "#FFF9F0",
+        background: "var(--bg-app)",
+        color: "var(--text-primary)",
         zIndex: 150,
         display: "flex",
         flexDirection: "column",
@@ -96,7 +155,7 @@ export function SearchOverlay({
       <div
         style={{
           padding: "calc(14px + env(safe-area-inset-top)) 16px 10px",
-          borderBottom: "1px solid #EFE4D2",
+          borderBottom: "1px solid var(--border-default)",
           display: "flex",
           alignItems: "center",
           gap: 10,
@@ -108,16 +167,17 @@ export function SearchOverlay({
             display: "flex",
             alignItems: "center",
             gap: 8,
-            background: "#fff",
-            border: "1.5px solid #EFE4D2",
+            background: "var(--bg-surface)",
+            border: "1.5px solid var(--border-default)",
             borderRadius: 12,
             padding: "9px 12px",
           }}
         >
-          <Search size={16} color="#A69C8E" />
+          <Search size={16} color="var(--text-faint)" />
           <input
             autoFocus
-            placeholder="Search events, tasks, appointments, wall…"
+            aria-label="Search query"
+            placeholder="Search people, medications, events, tasks, wall…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             style={{
@@ -126,14 +186,40 @@ export function SearchOverlay({
               flex: 1,
               fontSize: 14,
               background: "transparent",
+              color: "var(--text-primary)",
               fontFamily: "inherit",
             }}
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              style={{
+                background: "var(--bg-subtle-alt)",
+                color: "var(--text-secondary)",
+                border: "none",
+                borderRadius: "50%",
+                width: 22,
+                height: 22,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
         <button
+          type="button"
           onClick={onClose}
+          aria-label="Close search"
           style={{
-            background: "#F5EFE3",
+            background: "var(--bg-subtle-alt)",
+            color: "var(--text-primary)",
             border: "none",
             borderRadius: "50%",
             width: 32,
@@ -142,11 +228,13 @@ export function SearchOverlay({
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
+            flexShrink: 0,
           }}
         >
           <X size={16} />
         </button>
       </div>
+
       <div
         style={{
           flex: 1,
@@ -154,61 +242,113 @@ export function SearchOverlay({
           padding: "14px 16px calc(40px + env(safe-area-inset-bottom))",
         }}
       >
-        {!q && (
+        {!trimmed && (
           <div
             style={{
               textAlign: "center",
-              color: "#A69C8E",
+              color: "var(--text-faint)",
               fontSize: 13,
               marginTop: 40,
             }}
           >
-            Search across events, appointments, tasks, and the Family Wall.
+            Search across people, medications, care info, events, tasks, and the
+            Family Wall.
           </div>
         )}
-        {q && totalResults === 0 && (
+
+        {results && results.total === 0 && (
           <div style={{ textAlign: "center", marginTop: 40 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: "#6B6259" }}>
+            <div
+              style={{
+                fontSize: 13.5,
+                fontWeight: 600,
+                color: "var(--text-secondary)",
+              }}
+            >
               Nothing found for &quot;{query}&quot;
             </div>
-            <div style={{ fontSize: 12.5, color: "#A69C8E", marginTop: 4 }}>
-              Try searching for an event, task, appointment, or family update.
+            <div
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-faint)",
+                marginTop: 4,
+              }}
+            >
+              Try searching for a family member, medication, event, task, or
+              wall post.
             </div>
           </div>
         )}
-        {grouped && grouped.events.length > 0 && (
+
+        {results && results.people.length > 0 && (
+          <div style={{ marginBottom: 18 }}>
+            <SectionLabel text="People" />
+            {results.people.map((hit) => (
+              <PersonResultRow
+                key={hit.member.id}
+                hit={hit}
+                query={trimmed}
+                onSelect={() => onOpenPerson(hit.member)}
+              />
+            ))}
+          </div>
+        )}
+
+        {results && results.meds.length > 0 && (
+          <div style={{ marginBottom: 18 }}>
+            <SectionLabel text="Medications" />
+            {results.meds.map((hit) => (
+              <MedResultRow
+                key={hit.med.id}
+                hit={hit}
+                query={trimmed}
+                onSelect={() => onOpenMed(hit.med)}
+              />
+            ))}
+          </div>
+        )}
+
+        {results && results.events.length > 0 && (
           <div style={{ marginBottom: 18 }}>
             <SectionLabel text="Events" />
-            {grouped.events.map((e) => (
-              <SearchResultRow
-                key={e.id}
-                kind="event"
-                data={e}
-                query={query}
-                onOpenEvent={onOpenEvent}
+            {results.events.map((hit) => (
+              <EventResultRow
+                key={hit.event.id}
+                hit={hit}
+                query={trimmed}
+                memberName={(id) => memberById(id).name}
+                onSelect={() => onOpenEvent(hit.event)}
               />
             ))}
           </div>
         )}
-        {grouped && grouped.tasks.length > 0 && (
+
+        {results && results.tasks.length > 0 && (
           <div style={{ marginBottom: 18 }}>
             <SectionLabel text="Tasks" />
-            {grouped.tasks.map((t) => (
-              <SearchResultRow
-                key={t.id}
-                kind="task"
-                data={t}
-                query={query}
-                onOpenTask={onOpenTask}
+            {results.tasks.map((hit) => (
+              <TaskResultRow
+                key={hit.task.id}
+                hit={hit}
+                query={trimmed}
+                memberName={(id) => memberById(id).name}
+                onSelect={() => onOpenTask(hit.task)}
               />
             ))}
           </div>
         )}
-        {grouped && grouped.posts.length > 0 && (
+
+        {results && results.posts.length > 0 && (
           <div style={{ marginBottom: 18 }}>
             <SectionLabel text="Family Wall" />
-            {grouped.posts.map((p) => (
-              <SearchResultRow key={p.id} kind="post" data={p} query={query} />
+            {results.posts.map((hit) => (
+              <PostResultRow
+                key={hit.post.id}
+                hit={hit}
+                query={trimmed}
+                authorName={memberById(hit.post.author).name}
+                onSelect={() => onOpenPost(hit.post)}
+              />
             ))}
           </div>
         )}
@@ -217,123 +357,311 @@ export function SearchOverlay({
   );
 }
 
-function SearchResultRow({
-  kind,
-  data,
+function PersonResultRow({
+  hit,
   query,
-  onOpenEvent,
-  onOpenTask,
-}:
-  | {
-      kind: "event";
-      data: FamilyEvent;
-      query: string;
-      onOpenEvent: (e: FamilyEvent) => void;
-      onOpenTask?: undefined;
-    }
-  | {
-      kind: "task";
-      data: FamilyTask;
-      query: string;
-      onOpenEvent?: undefined;
-      onOpenTask?: (t: FamilyTask) => void;
-    }
-  | {
-      kind: "post";
-      data: WallPost;
-      query: string;
-      onOpenEvent?: undefined;
-      onOpenTask?: undefined;
-    }) {
-  const { memberById } = useMembers();
-  if (kind === "event") {
-    const meta = CATEGORY_META[data.category] || CATEGORY_META.Other;
-    const Icon = meta.icon;
-    return (
-      <button onClick={() => onOpenEvent(data)} style={searchRowStyle}>
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 9,
-            background: `${meta.color}15`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <Icon size={15} color={meta.color} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-            {highlightMatch(data.title, query)}
-          </div>
-          <div style={{ fontSize: 11.5, color: "#A69C8E" }}>
-            {relativeDay(data.occurrenceDate || data.date)}
-            {data.location ? ` · ${data.location}` : ""}
-          </div>
-        </div>
-      </button>
+  onSelect,
+}: {
+  hit: PersonSearchHit;
+  query: string;
+  onSelect: () => void;
+}) {
+  const { member, medCount, upcomingEventCount, matchedCareField } = hit;
+  const roleLabel = member.isChild
+    ? "Child"
+    : member.role === "admin"
+      ? "Admin"
+      : "Adult";
+
+  const summaryParts: string[] = [roleLabel];
+  if (member.isChild) {
+    summaryParts.push(
+      medCount === 0
+        ? "No active meds"
+        : `${medCount} med${medCount === 1 ? "" : "s"}`
     );
   }
-  if (kind === "task") {
-    return (
-      <button
-        type="button"
-        onClick={onOpenTask ? () => onOpenTask(data) : undefined}
-        disabled={!onOpenTask}
-        style={{
-          ...searchRowStyle,
-          cursor: onOpenTask ? "pointer" : "default",
-        }}
-      >
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 9,
-            background: "#E4F1EC",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <CheckSquare size={14} color="#1F6F5C" />
+  if (upcomingEventCount > 0) {
+    summaryParts.push(
+      `${upcomingEventCount} upcoming event${upcomingEventCount === 1 ? "" : "s"}`
+    );
+  }
+
+  return (
+    <button type="button" onClick={onSelect} style={searchRowStyle}>
+      <AvatarDot id={member.id} size={32} />
+      <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+          <HighlightedText text={member.name} query={query} />
         </div>
-        <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+        <div style={{ fontSize: 11.5, color: "var(--text-faint)" }}>
+          {summaryParts.join(" · ")}
+        </div>
+        {matchedCareField && (
           <div
             style={{
-              fontSize: 13.5,
-              fontWeight: 600,
-              textDecoration: data.completed ? "line-through" : "none",
-              color: data.completed ? "#A69C8E" : "#2B2622",
+              fontSize: 11.5,
+              color: "var(--text-secondary)",
+              marginTop: 2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
             }}
           >
-            {highlightMatch(data.title, query)}
+            <span style={{ fontWeight: 600 }}>{matchedCareField.label}: </span>
+            <HighlightedText text={matchedCareField.value} query={query} />
           </div>
-          <div style={{ fontSize: 11.5, color: "#A69C8E" }}>
-            {data.dueDate ? relativeDay(data.dueDate) : "No due date"}
-          </div>
-        </div>
-      </button>
-    );
-  }
+        )}
+      </div>
+      <ChevronRight size={16} color="var(--text-faint)" />
+    </button>
+  );
+}
+
+function MedResultRow({
+  hit,
+  query,
+  onSelect,
+}: {
+  hit: MedSearchHit;
+  query: string;
+  onSelect: () => void;
+}) {
+  const { med, kid, isCurrent, nextDose: nd } = hit;
+  const nextLabel = nd ? nextDoseLabel(nd) : null;
+
   return (
-    <div style={searchRowStyle}>
-      <AvatarDot id={data.author} size={30} />
+    <button type="button" onClick={onSelect} style={searchRowStyle}>
+      <div
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 9,
+          background: isCurrent ? "var(--accent-soft)" : "var(--bg-subtle-alt)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <Pill
+          size={15}
+          color={isCurrent ? "var(--accent)" : "var(--text-faint)"}
+        />
+      </div>
       <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-        <div style={{ fontSize: 13, color: "#2B2622" }}>
-          {highlightMatch(data.content, query)}
+        <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+          <HighlightedText text={med.name} query={query} />{" "}
+          <span style={{ fontWeight: 500, color: "var(--text-secondary)" }}>
+            · <HighlightedText text={med.dose} query={query} />
+          </span>
         </div>
-        <div
-          suppressHydrationWarning
-          style={{ fontSize: 11.5, color: "#A69C8E" }}
-        >
-          {memberById(data.author).name} · {formatRelativeTime(data.createdAt)}
+        <div style={{ fontSize: 11.5, color: "var(--text-faint)" }}>
+          <HighlightedText text={kid.name} query={query} /> ·{" "}
+          {medWhenLabel(med)}
+          {!isCurrent
+            ? " · Ended"
+            : nextLabel
+              ? ` · Next ${nextLabel}`
+              : ""}
+        </div>
+        {med.instructions && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginTop: 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <HighlightedText text={med.instructions} query={query} />
+          </div>
+        )}
+      </div>
+      <ChevronRight size={16} color="var(--text-faint)" />
+    </button>
+  );
+}
+
+function EventResultRow({
+  hit,
+  query,
+  memberName,
+  onSelect,
+}: {
+  hit: EventSearchHit;
+  query: string;
+  memberName: (id: string) => string;
+  onSelect: () => void;
+}) {
+  const data = hit.event;
+  const meta = CATEGORY_META[data.category] || CATEGORY_META.Other;
+  const Icon = meta.icon;
+  const participantNames = (data.participants || []).map(memberName);
+
+  return (
+    <button type="button" onClick={onSelect} style={searchRowStyle}>
+      <div
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 9,
+          background: meta.bg,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <Icon size={15} color={meta.color} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+          <HighlightedText text={data.title} query={query} />
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--text-faint)" }}>
+          {data.recurrence ? "🔁 " : ""}
+          {relativeDay(data.occurrenceDate || data.date)}
+          {!data.allDay && data.startTime ? ` · ${fmtTime(data.startTime)}` : ""}
+          {data.location ? (
+            <>
+              {" · "}
+              <HighlightedText text={data.location} query={query} />
+            </>
+          ) : null}
+          {participantNames.length > 0 ? (
+            <>
+              {" · "}
+              <HighlightedText
+                text={participantNames.join(", ")}
+                query={query}
+              />
+            </>
+          ) : null}
         </div>
       </div>
-    </div>
+      <ChevronRight size={16} color="var(--text-faint)" />
+    </button>
+  );
+}
+
+function TaskResultRow({
+  hit,
+  query,
+  memberName,
+  onSelect,
+}: {
+  hit: TaskSearchHit;
+  query: string;
+  memberName: (id: string) => string;
+  onSelect: () => void;
+}) {
+  const data = hit.task;
+  const assignee = data.assignedTo ? memberName(data.assignedTo) : null;
+
+  return (
+    <button type="button" onClick={onSelect} style={searchRowStyle}>
+      <div
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 9,
+          background: "var(--success-soft)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <CheckSquare size={14} color="var(--success)" />
+      </div>
+      <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+        <div
+          style={{
+            fontSize: 13.5,
+            fontWeight: 600,
+            textDecoration: data.completed ? "line-through" : "none",
+            color: data.completed ? "var(--text-faint)" : "var(--text-primary)",
+          }}
+        >
+          <HighlightedText text={data.title} query={query} />
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--text-faint)" }}>
+          {data.recurrence ? "🔁 " : ""}
+          {data.dueDate ? relativeDay(data.dueDate) : "No due date"}
+          {assignee ? (
+            <>
+              {" · "}
+              <HighlightedText text={assignee} query={query} />
+            </>
+          ) : null}
+          {data.completed ? " · Done" : ""}
+        </div>
+      </div>
+      <ChevronRight size={16} color="var(--text-faint)" />
+    </button>
+  );
+}
+
+function PostResultRow({
+  hit,
+  query,
+  authorName,
+  onSelect,
+}: {
+  hit: PostSearchHit;
+  query: string;
+  authorName: string;
+  onSelect: () => void;
+}) {
+  const { post, matchedComment } = hit;
+  return (
+    <button type="button" onClick={onSelect} style={searchRowStyle}>
+      <AvatarDot id={post.author} size={30} />
+      <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+        <div
+          style={{
+            fontSize: 13,
+            color: "var(--text-primary)",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          <HighlightedText
+            text={post.content || `${post.type} post`}
+            query={query}
+          />
+        </div>
+        {matchedComment && (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "var(--text-secondary)",
+              marginTop: 2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>
+              <HighlightedText text={matchedComment.byName} query={query} />:{" "}
+            </span>
+            <HighlightedText text={matchedComment.text} query={query} />
+          </div>
+        )}
+        <div
+          suppressHydrationWarning
+          style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 1 }}
+        >
+          <HighlightedText text={authorName} query={query} /> · {post.type} ·{" "}
+          {formatRelativeTime(post.createdAt)}
+        </div>
+      </div>
+      <ChevronRight size={16} color="var(--text-faint)" />
+    </button>
   );
 }

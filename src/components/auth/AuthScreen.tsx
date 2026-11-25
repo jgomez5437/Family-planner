@@ -148,15 +148,14 @@ export function AuthScreen({
     <div
       style={{
         minHeight: "100vh",
-        background:
-          "radial-gradient(circle at top left, #FFE8D4 0%, #FFF9F0 48%, #F8EFE0 100%)",
+        background: "var(--bg-auth-gradient)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding:
           "calc(28px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom))",
         fontFamily: "'Inter', system-ui, sans-serif",
-        color: "#2B2622",
+        color: "var(--text-primary)",
       }}
     >
       <div style={{ width: "100%", maxWidth: 440 }}>
@@ -185,12 +184,12 @@ export function AuthScreen({
               fontSize: 28,
               fontWeight: 800,
               lineHeight: 1.1,
-              color: "#2B2622",
+              color: "var(--text-primary)",
             }}
           >
             Family Planner
           </div>
-          <div style={{ fontSize: 13.5, color: "#8A7F70", marginTop: 4 }}>
+          <div style={{ fontSize: 13.5, color: "var(--text-muted)", marginTop: 4 }}>
             Schedules, tasks, medications, and updates — all in one private place.
           </div>
         </div>
@@ -198,8 +197,8 @@ export function AuthScreen({
         {/* Auth Card */}
         <div
           style={{
-            background: "#fff",
-            border: "1px solid #F1E8D9",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
             borderRadius: 22,
             boxShadow: CARD_SHADOW,
             padding: 22,
@@ -210,7 +209,7 @@ export function AuthScreen({
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
-              background: "#F5EFE3",
+              background: "var(--bg-subtle-alt)",
               borderRadius: 14,
               padding: 4,
               marginBottom: 18,
@@ -233,10 +232,10 @@ export function AuthScreen({
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 6,
-                background: tab === "login" ? "#fff" : "transparent",
-                color: tab === "login" ? "#2B2622" : "#7D7366",
+                background: tab === "login" ? "var(--bg-surface)" : "transparent",
+                color: tab === "login" ? "var(--text-primary)" : "var(--text-muted)",
                 boxShadow:
-                  tab === "login" ? "0 1px 4px rgba(43,38,34,0.08)" : "none",
+                  tab === "login" ? "0 1px 4px rgba(0,0,0,0.14)" : "none",
               }}
             >
               <LogIn size={15} /> Sign In
@@ -258,10 +257,10 @@ export function AuthScreen({
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 6,
-                background: tab === "register" ? "#fff" : "transparent",
-                color: tab === "register" ? "#2B2622" : "#7D7366",
+                background: tab === "register" ? "var(--bg-surface)" : "transparent",
+                color: tab === "register" ? "var(--text-primary)" : "var(--text-muted)",
                 boxShadow:
-                  tab === "register" ? "0 1px 4px rgba(43,38,34,0.08)" : "none",
+                  tab === "register" ? "0 1px 4px rgba(0,0,0,0.14)" : "none",
               }}
             >
               <UserPlus size={15} /> Create Account
@@ -272,9 +271,9 @@ export function AuthScreen({
             <div
               role="alert"
               style={{
-                background: "#FCE9DF",
-                border: "1px solid #F2C4AF",
-                color: "#B23A1D",
+                background: "var(--accent-soft)",
+                border: "1px solid var(--accent-border)",
+                color: "var(--danger)",
                 borderRadius: 12,
                 padding: "10px 12px",
                 fontSize: 13,
@@ -318,7 +317,7 @@ export function AuthScreen({
                   ...btnStyle,
                   width: "100%",
                   marginTop: 18,
-                  background: "#E8622C",
+                  background: "var(--accent)",
                   color: "#fff",
                   display: "flex",
                   alignItems: "center",
@@ -337,7 +336,7 @@ export function AuthScreen({
                   textAlign: "center",
                   marginTop: 14,
                   fontSize: 12.5,
-                  color: "#8A7F70",
+                  color: "var(--text-muted)",
                 }}
               >
                 New here?{" "}
@@ -350,7 +349,7 @@ export function AuthScreen({
                   style={{
                     background: "none",
                     border: "none",
-                    color: "#E8622C",
+                    color: "var(--accent)",
                     fontWeight: 700,
                     cursor: "pointer",
                     padding: 0,
@@ -365,8 +364,8 @@ export function AuthScreen({
               {inviteLinkActive && familyMode === "join" && inviteCode.trim() && (
                 <div
                   style={{
-                    background: "#E4F1EC",
-                    border: "1px solid #C2E0D5",
+                    background: "var(--success-soft)",
+                    border: "1px solid var(--success-border)",
                     borderRadius: 14,
                     padding: "11px 13px",
                     marginBottom: 14,
@@ -377,7 +376,7 @@ export function AuthScreen({
                 >
                   <CheckCircle2
                     size={18}
-                    color="#155C4A"
+                    color="var(--success-ink)"
                     style={{ flexShrink: 0, marginTop: 1 }}
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -385,7 +384,7 @@ export function AuthScreen({
                       style={{
                         fontSize: 13,
                         fontWeight: 700,
-                        color: "#155C4A",
+                        color: "var(--success-ink)",
                         lineHeight: 1.3,
                       }}
                     >
@@ -396,7 +395,7 @@ export function AuthScreen({
                     <div
                       style={{
                         fontSize: 11.5,
-                        color: "#2B6B5A",
+                        color: "var(--success)",
                         marginTop: 3,
                         lineHeight: 1.35,
                       }}
@@ -414,7 +413,7 @@ export function AuthScreen({
                     style={{
                       background: "none",
                       border: "none",
-                      color: "#155C4A",
+                      color: "var(--success-ink)",
                       fontSize: 11.5,
                       fontWeight: 700,
                       textDecoration: "underline",
@@ -434,8 +433,8 @@ export function AuthScreen({
                   display: "flex",
                   alignItems: "center",
                   gap: 12,
-                  background: "#FFF9F0",
-                  border: "1px solid #F1E8D9",
+                  background: "var(--bg-app)",
+                  border: "1px solid var(--border-subtle)",
                   borderRadius: 14,
                   padding: "10px 12px",
                   marginBottom: 14,
@@ -453,7 +452,7 @@ export function AuthScreen({
                   <div style={{ fontSize: 14, fontWeight: 700 }}>
                     {name.trim() || "Your Profile"}
                   </div>
-                  <div style={{ fontSize: 12, color: "#8A7F70" }}>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                     {familyMode === "create"
                       ? familyName.trim() || "Starting a new family"
                       : inviteLinkActive && invitedFamilyName
@@ -526,8 +525,8 @@ export function AuthScreen({
                       background: p.color,
                       border:
                         paletteIdx === idx
-                          ? "3px solid #2B2622"
-                          : "2px solid #fff",
+                          ? "3px solid var(--text-primary)"
+                          : "2px solid var(--bg-surface)",
                       boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
                       cursor: "pointer",
                     }}
@@ -554,10 +553,18 @@ export function AuthScreen({
                       onClick={() => setFamilyMode("create")}
                       style={{
                         border: `1.5px solid ${
-                          familyMode === "create" ? "#E8622C" : "#EFE4D2"
+                          familyMode === "create"
+                            ? "var(--accent)"
+                            : "var(--border-default)"
                         }`,
-                        background: familyMode === "create" ? "#FCE9DF" : "#fff",
-                        color: familyMode === "create" ? "#B24A1D" : "#6B6259",
+                        background:
+                          familyMode === "create"
+                            ? "var(--accent-soft)"
+                            : "var(--bg-surface)",
+                        color:
+                          familyMode === "create"
+                            ? "var(--accent-ink)"
+                            : "var(--text-secondary)",
                         borderRadius: 12,
                         padding: "9px 10px",
                         fontSize: 12.5,
@@ -576,10 +583,18 @@ export function AuthScreen({
                       onClick={() => setFamilyMode("join")}
                       style={{
                         border: `1.5px solid ${
-                          familyMode === "join" ? "#E8622C" : "#EFE4D2"
+                          familyMode === "join"
+                            ? "var(--accent)"
+                            : "var(--border-default)"
                         }`,
-                        background: familyMode === "join" ? "#FCE9DF" : "#fff",
-                        color: familyMode === "join" ? "#B24A1D" : "#6B6259",
+                        background:
+                          familyMode === "join"
+                            ? "var(--accent-soft)"
+                            : "var(--bg-surface)",
+                        color:
+                          familyMode === "join"
+                            ? "var(--accent-ink)"
+                            : "var(--text-secondary)",
                         borderRadius: 12,
                         padding: "9px 10px",
                         fontSize: 12.5,
@@ -629,7 +644,7 @@ export function AuthScreen({
                       <div
                         style={{
                           fontSize: 11.5,
-                          color: "#8A7F70",
+                          color: "var(--text-muted)",
                           marginTop: 5,
                         }}
                       >
@@ -648,7 +663,7 @@ export function AuthScreen({
                   ...btnStyle,
                   width: "100%",
                   marginTop: 18,
-                  background: "#E8622C",
+                  background: "var(--accent)",
                   color: "#fff",
                   display: "flex",
                   alignItems: "center",
@@ -681,6 +696,6 @@ const labelStyle: React.CSSProperties = {
   display: "block",
   fontSize: 12,
   fontWeight: 700,
-  color: "#6B6259",
+  color: "var(--text-secondary)",
   marginBottom: 6,
 };

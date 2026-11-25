@@ -46,6 +46,8 @@ import {
 } from "@/lib/notifications";
 import { useMembers } from "@/components/MembersContext";
 import { usePwa } from "@/components/pwa/PwaContext";
+import { useTheme } from "@/components/ThemeContext";
+import type { ThemePreference } from "@/lib/theme";
 import type { Member, MemberId, NotificationCategory } from "@/types/family";
 import { AvatarPicker, AvatarPreview } from "@/components/ui/AvatarPicker";
 import { AvatarDot, FieldLabel } from "@/components/ui/Primitives";
@@ -94,6 +96,11 @@ export function SettingsScreen({
   const { members, memberById } = useMembers();
   const { isStandalone, isInstalled, isIos, canInstallNative, triggerInstall } =
     usePwa();
+  const {
+    preference: appearance,
+    resolvedTheme,
+    setPreference: setAppearance,
+  } = useTheme();
   const me = memberById(currentUserId);
 
   const [screen, setScreen] = useState<SettingsSubScreen>(initialScreen);
@@ -155,7 +162,6 @@ export function SettingsScreen({
   const [browserPermission, setBrowserPermission] = useState<
     NotificationPermission | "unsupported"
   >(() => getBrowserNotificationPermission());
-  const [appearance, setAppearance] = useState("system");
 
   useEffect(() => {
     function syncPermission() {
@@ -321,7 +327,8 @@ export function SettingsScreen({
       style={{
         position: "fixed",
         inset: 0,
-        background: "#FFF9F0",
+        background: "var(--bg-app)",
+        color: "var(--text-primary)",
         zIndex: 150,
         display: "flex",
         flexDirection: "column",
@@ -330,7 +337,7 @@ export function SettingsScreen({
       <div
         style={{
           padding: "calc(14px + env(safe-area-inset-top)) 16px 14px",
-          borderBottom: "1px solid #EFE4D2",
+          borderBottom: "1px solid var(--border-default)",
           display: "flex",
           alignItems: "center",
           gap: 10,
@@ -409,11 +416,11 @@ export function SettingsScreen({
               onClick={() => setScreen("notifications")}
             />
             <SettingsRow
-              icon={Sun}
+              icon={resolvedTheme === "dark" ? Moon : Sun}
               label="Appearance"
               sub={
                 appearance === "system"
-                  ? "System"
+                  ? `System (${resolvedTheme === "dark" ? "Dark" : "Light"})`
                   : appearance === "light"
                     ? "Light"
                     : "Dark"
@@ -437,9 +444,9 @@ export function SettingsScreen({
                 ...btnStyle,
                 width: "100%",
                 marginTop: 18,
-                background: "#fff",
-                border: "1.5px solid #F3D9D2",
-                color: "#C4402A",
+                background: "var(--bg-surface)",
+                border: "1.5px solid var(--danger-border)",
+                color: "var(--danger)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -469,7 +476,7 @@ export function SettingsScreen({
                 disabled={!canSaveName}
                 style={{
                   ...btnStyle,
-                  background: "#E8622C",
+                  background: "var(--accent)",
                   color: "#fff",
                   opacity: canSaveName ? 1 : 0.45,
                   cursor: canSaveName ? "pointer" : "default",
@@ -484,7 +491,7 @@ export function SettingsScreen({
                 justifyContent: "space-between",
                 gap: 12,
                 fontSize: 11.5,
-                color: "#A69C8E",
+                color: "var(--text-faint)",
                 margin: "6px 2px 20px",
                 lineHeight: 1.4,
               }}
@@ -496,8 +503,8 @@ export function SettingsScreen({
             <FieldLabel>Invite Family Members</FieldLabel>
             <div
               style={{
-                background: "#fff",
-                border: "1px solid #F1E8D9",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
                 boxShadow: CARD_SHADOW,
                 borderRadius: 14,
                 padding: 14,
@@ -507,7 +514,7 @@ export function SettingsScreen({
               <div
                 style={{
                   fontSize: 12.5,
-                  color: "#6B6259",
+                  color: "var(--text-secondary)",
                   lineHeight: 1.4,
                   marginBottom: 12,
                 }}
@@ -529,7 +536,7 @@ export function SettingsScreen({
                   onClick={handleSendInviteLink}
                   style={{
                     border: "none",
-                    background: "#E8622C",
+                    background: "var(--accent)",
                     color: "#fff",
                     borderRadius: 11,
                     padding: "10px 12px",
@@ -549,9 +556,9 @@ export function SettingsScreen({
                   type="button"
                   onClick={copyInviteLink}
                   style={{
-                    border: "1.5px solid #EFE4D2",
-                    background: copiedLink ? "#E4F1EC" : "#FFF9F0",
-                    color: copiedLink ? "#155C4A" : "#2B2622",
+                    border: "1.5px solid var(--border-default)",
+                    background: copiedLink ? "var(--success-soft)" : "var(--bg-app)",
+                    color: copiedLink ? "var(--success-ink)" : "var(--text-primary)",
                     borderRadius: 11,
                     padding: "10px 12px",
                     fontSize: 13,
@@ -574,15 +581,15 @@ export function SettingsScreen({
                     marginTop: 10,
                     padding: 10,
                     borderRadius: 11,
-                    background: "#FFF9F0",
-                    border: "1px solid #EFE4D2",
+                    background: "var(--bg-app)",
+                    border: "1px solid var(--border-default)",
                   }}
                 >
                   <div
                     style={{
                       fontSize: 11,
                       fontWeight: 700,
-                      color: "#8A7F70",
+                      color: "var(--text-muted)",
                       marginBottom: 8,
                       textTransform: "uppercase",
                       letterSpacing: 0.5,
@@ -603,9 +610,9 @@ export function SettingsScreen({
                       )}`}
                       style={{
                         textDecoration: "none",
-                        border: "1px solid #EFE4D2",
-                        background: "#fff",
-                        color: "#2B2622",
+                        border: "1px solid var(--border-default)",
+                        background: "var(--bg-surface)",
+                        color: "var(--text-primary)",
                         borderRadius: 9,
                         padding: "8px 6px",
                         fontSize: 12,
@@ -616,7 +623,7 @@ export function SettingsScreen({
                         gap: 5,
                       }}
                     >
-                      <MessageSquare size={13} color="#1F6F5C" /> Text
+                      <MessageSquare size={13} color="var(--success)" /> Text
                     </a>
                     <a
                       href={`https://wa.me/?text=${encodeURIComponent(
@@ -626,9 +633,9 @@ export function SettingsScreen({
                       rel="noopener noreferrer"
                       style={{
                         textDecoration: "none",
-                        border: "1px solid #EFE4D2",
-                        background: "#fff",
-                        color: "#2B2622",
+                        border: "1px solid var(--border-default)",
+                        background: "var(--bg-surface)",
+                        color: "var(--text-primary)",
                         borderRadius: 9,
                         padding: "8px 6px",
                         fontSize: 12,
@@ -649,9 +656,9 @@ export function SettingsScreen({
                       )}`}
                       style={{
                         textDecoration: "none",
-                        border: "1px solid #EFE4D2",
-                        background: "#fff",
-                        color: "#2B2622",
+                        border: "1px solid var(--border-default)",
+                        background: "var(--bg-surface)",
+                        color: "var(--text-primary)",
                         borderRadius: 9,
                         padding: "8px 6px",
                         fontSize: 12,
@@ -662,7 +669,7 @@ export function SettingsScreen({
                         gap: 5,
                       }}
                     >
-                      <Mail size={13} color="#E8622C" /> Email
+                      <Mail size={13} color="var(--accent)" /> Email
                     </a>
                   </div>
                 </div>
@@ -670,7 +677,7 @@ export function SettingsScreen({
 
               <div
                 style={{
-                  borderTop: "1px solid #F3ECE0",
+                  borderTop: "1px solid var(--border-divider)",
                   marginTop: 12,
                   paddingTop: 12,
                 }}
@@ -679,7 +686,7 @@ export function SettingsScreen({
                   style={{
                     fontSize: 11,
                     fontWeight: 700,
-                    color: "#8A7F70",
+                    color: "var(--text-muted)",
                     marginBottom: 6,
                     textTransform: "uppercase",
                     letterSpacing: 0.5,
@@ -701,7 +708,7 @@ export function SettingsScreen({
                       fontSize: 17,
                       fontWeight: 800,
                       letterSpacing: 1.5,
-                      color: "#2B2622",
+                      color: "var(--text-primary)",
                     }}
                   >
                     {inviteCode}
@@ -711,9 +718,9 @@ export function SettingsScreen({
                       type="button"
                       onClick={copyInviteCode}
                       style={{
-                        border: "1.5px solid #EFE4D2",
-                        background: copiedCode ? "#E4F1EC" : "#FFF9F0",
-                        color: copiedCode ? "#155C4A" : "#2B2622",
+                        border: "1.5px solid var(--border-default)",
+                        background: copiedCode ? "var(--success-soft)" : "var(--bg-app)",
+                        color: copiedCode ? "var(--success-ink)" : "var(--text-primary)",
                         borderRadius: 10,
                         padding: "7px 11px",
                         fontSize: 12,
@@ -734,9 +741,9 @@ export function SettingsScreen({
                       title="Generate a new invite code"
                       aria-label="Generate a new invite code"
                       style={{
-                        border: "1.5px solid #EFE4D2",
-                        background: "#fff",
-                        color: "#6B6259",
+                        border: "1.5px solid var(--border-default)",
+                        background: "var(--bg-surface)",
+                        color: "var(--text-secondary)",
                         borderRadius: 10,
                         padding: "7px 9px",
                         cursor: "pointer",
@@ -755,8 +762,8 @@ export function SettingsScreen({
             <FieldLabel>Members ({members.length})</FieldLabel>
             <div
               style={{
-                background: "#fff",
-                border: "1px solid #F1E8D9",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
                 boxShadow: CARD_SHADOW,
                 borderRadius: 14,
                 padding: "4px 14px",
@@ -772,7 +779,7 @@ export function SettingsScreen({
                     gap: 10,
                     padding: "11px 0",
                     borderBottom:
-                      i === members.length - 1 ? "none" : "1px solid #F3ECE0",
+                      i === members.length - 1 ? "none" : "1px solid var(--border-divider)",
                   }}
                 >
                   <AvatarDot id={m.id} size={32} />
@@ -793,8 +800,8 @@ export function SettingsScreen({
                           style={{
                             fontSize: 10,
                             fontWeight: 700,
-                            color: "#1F6F5C",
-                            background: "#E4F1EC",
+                            color: "var(--success-ink)",
+                            background: "var(--success-soft)",
                             borderRadius: 999,
                             padding: "2px 7px",
                           }}
@@ -806,8 +813,8 @@ export function SettingsScreen({
                         style={{
                           fontSize: 10,
                           fontWeight: 700,
-                          color: m.isChild ? "#3E6FD9" : "#8A7F70",
-                          background: m.isChild ? "#E6ECFC" : "#F5EFE3",
+                          color: m.isChild ? "#5E8AF0" : "var(--text-muted)",
+                          background: m.isChild ? "var(--info-soft)" : "var(--bg-subtle-alt)",
                           borderRadius: 999,
                           padding: "2px 7px",
                         }}
@@ -823,8 +830,8 @@ export function SettingsScreen({
                           style={{
                             fontSize: 10,
                             fontWeight: 700,
-                            color: "#9E6B1E",
-                            background: "#FBF1DC",
+                            color: "#C9972B",
+                            background: "var(--bg-warning-soft)",
                             borderRadius: 999,
                             padding: "2px 7px",
                           }}
@@ -834,7 +841,7 @@ export function SettingsScreen({
                       )}
                     </div>
                     {m.email && (
-                      <div style={{ fontSize: 11.5, color: "#948C80", marginTop: 1 }}>
+                      <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 1 }}>
                         {m.email}
                       </div>
                     )}
@@ -854,7 +861,7 @@ export function SettingsScreen({
                       aria-label={`Edit ${m.name}`}
                       style={iconBtnStyle}
                     >
-                      <Pencil size={14} color="#6B6259" />
+                      <Pencil size={14} color="var(--text-secondary)" />
                     </button>
                   )}
                 </div>
@@ -866,7 +873,7 @@ export function SettingsScreen({
               style={{
                 ...btnStyle,
                 width: "100%",
-                background: "#E8622C",
+                background: "var(--accent)",
                 color: "#fff",
                 display: "flex",
                 alignItems: "center",
@@ -879,7 +886,7 @@ export function SettingsScreen({
             <div
               style={{
                 fontSize: 11.5,
-                color: "#A69C8E",
+                color: "var(--text-faint)",
                 textAlign: "center",
                 marginTop: 8,
               }}
@@ -931,8 +938,8 @@ export function SettingsScreen({
                 </FieldLabel>
                 <div
                   style={{
-                    background: "#fff",
-                    border: "1px solid #F1E8D9",
+                    background: "var(--bg-surface)",
+                    border: "1px solid var(--border-subtle)",
                     boxShadow: CARD_SHADOW,
                     borderRadius: 14,
                     padding: "4px 14px",
@@ -951,7 +958,7 @@ export function SettingsScreen({
                           borderBottom:
                             idx === arr.length - 1
                               ? "none"
-                              : "1px solid #F3ECE0",
+                              : "1px solid var(--border-divider)",
                           opacity: 0.72,
                         }}
                       >
@@ -962,7 +969,7 @@ export function SettingsScreen({
                           <div
                             style={{
                               fontSize: 11.5,
-                              color: "#948C80",
+                              color: "var(--text-muted)",
                               marginTop: 2,
                             }}
                           >
@@ -973,8 +980,8 @@ export function SettingsScreen({
                           style={{
                             fontSize: 10,
                             fontWeight: 700,
-                            color: "#8A7F70",
-                            background: "#F5EFE3",
+                            color: "var(--text-muted)",
+                            background: "var(--bg-subtle-alt)",
                             borderRadius: 999,
                             padding: "3px 8px",
                             flexShrink: 0,
@@ -1001,8 +1008,8 @@ export function SettingsScreen({
                 display: "flex",
                 alignItems: "center",
                 gap: 12,
-                background: "#fff",
-                border: "1px solid #F1E8D9",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
                 boxShadow: CARD_SHADOW,
                 borderRadius: 14,
                 padding: 14,
@@ -1031,7 +1038,7 @@ export function SettingsScreen({
                 <div style={{ fontSize: 15, fontWeight: 700 }}>
                   {accountName || me.name}
                 </div>
-                <div style={{ fontSize: 12, color: "#8A7F70" }}>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                   {accountEmail || "No email"}
                 </div>
               </div>
@@ -1054,7 +1061,7 @@ export function SettingsScreen({
 
             <FieldLabel style={{ marginTop: 12 }}>
               New Password{" "}
-              <span style={{ fontWeight: 400, color: "#A69C8E" }}>
+              <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>
                 (leave blank to keep current)
               </span>
             </FieldLabel>
@@ -1102,8 +1109,8 @@ export function SettingsScreen({
                     background: p.color,
                     border:
                       accountPaletteIdx === idx
-                        ? "3px solid #2B2622"
-                        : "2px solid #fff",
+                        ? "3px solid var(--text-primary)"
+                        : "2px solid var(--bg-surface)",
                     boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
                     cursor: "pointer",
                   }}
@@ -1119,7 +1126,9 @@ export function SettingsScreen({
                   fontSize: 13,
                   fontWeight: 600,
                   color:
-                    accountMessage.tone === "ok" ? "#1F6F5C" : "#C4402A",
+                    accountMessage.tone === "ok"
+                      ? "var(--success)"
+                      : "var(--danger)",
                 }}
               >
                 {accountMessage.text}
@@ -1133,7 +1142,7 @@ export function SettingsScreen({
                 ...btnStyle,
                 width: "100%",
                 marginTop: 18,
-                background: "#E8622C",
+                background: "var(--accent)",
                 color: "#fff",
                 opacity: accountSaving || accountAvatarProcessing ? 0.65 : 1,
               }}
@@ -1152,9 +1161,9 @@ export function SettingsScreen({
                 ...btnStyle,
                 width: "100%",
                 marginTop: 10,
-                background: "#fff",
-                border: "1.5px solid #F3D9D2",
-                color: "#C4402A",
+                background: "var(--bg-surface)",
+                border: "1.5px solid var(--danger-border)",
+                color: "var(--danger)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1168,21 +1177,46 @@ export function SettingsScreen({
 
         {screen === "appearance" && (
           <div style={{ maxWidth: 480, margin: "0 auto" }}>
-            {[
-              { id: "light", label: "Light", icon: Sun },
-              { id: "dark", label: "Dark", icon: Moon },
-              { id: "system", label: "System", icon: Monitor },
-            ].map((opt) => (
+            {(
+              [
+                {
+                  id: "light",
+                  label: "Light",
+                  sub: "Warm cream canvas",
+                  icon: Sun,
+                },
+                {
+                  id: "dark",
+                  label: "Dark",
+                  sub: "Low-glare dark canvas",
+                  icon: Moon,
+                },
+                {
+                  id: "system",
+                  label: "System",
+                  sub: `Follows device (${resolvedTheme === "dark" ? "Dark" : "Light"})`,
+                  icon: Monitor,
+                },
+              ] as Array<{
+                id: ThemePreference;
+                label: string;
+                sub: string;
+                icon: LucideIcon;
+              }>
+            ).map((opt) => (
               <button
                 key={opt.id}
+                type="button"
+                aria-pressed={appearance === opt.id}
                 onClick={() => setAppearance(opt.id)}
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
                   width: "100%",
-                  background: "#fff",
-                  border: `1.5px solid ${appearance === opt.id ? "#E8622C" : "#EFE4D2"}`,
+                  background: "var(--bg-surface)",
+                  color: "var(--text-primary)",
+                  border: `1.5px solid ${appearance === opt.id ? "var(--accent)" : "var(--border-default)"}`,
                   borderRadius: 12,
                   padding: "12px 14px",
                   marginBottom: 8,
@@ -1191,19 +1225,23 @@ export function SettingsScreen({
               >
                 <opt.icon
                   size={16}
-                  color={appearance === opt.id ? "#E8622C" : "#6B6259"}
+                  color={
+                    appearance === opt.id
+                      ? "var(--accent)"
+                      : "var(--text-secondary)"
+                  }
                 />
-                <span
-                  style={{
-                    fontSize: 13.5,
-                    fontWeight: 600,
-                    flex: 1,
-                    textAlign: "left",
-                  }}
-                >
-                  {opt.label}
-                </span>
-                {appearance === opt.id && <Check size={16} color="#E8622C" />}
+                <div style={{ flex: 1, textAlign: "left" }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                    {opt.label}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+                    {opt.sub}
+                  </div>
+                </div>
+                {appearance === opt.id && (
+                  <Check size={16} color="var(--accent)" />
+                )}
               </button>
             ))}
           </div>
@@ -1213,8 +1251,8 @@ export function SettingsScreen({
           <div style={{ maxWidth: 480, margin: "0 auto" }}>
             <div
               style={{
-                background: "#fff",
-                border: "1px solid #F1E8D9",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
                 boxShadow: CARD_SHADOW,
                 borderRadius: 16,
                 padding: 18,
@@ -1249,7 +1287,7 @@ export function SettingsScreen({
                 <div
                   style={{
                     fontSize: 12.5,
-                    color: "#6B6259",
+                    color: "var(--text-secondary)",
                     marginTop: 3,
                     lineHeight: 1.4,
                   }}
@@ -1263,14 +1301,14 @@ export function SettingsScreen({
             {isInstalled ? (
               <div
                 style={{
-                  background: "#E4F1EC",
-                  border: "1px solid #C6E3D7",
+                  background: "var(--success-soft)",
+                  border: "1px solid var(--success-border)",
                   borderRadius: 14,
                   padding: "14px 16px",
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
-                  color: "#155C4A",
+                  color: "var(--success-ink)",
                   fontSize: 13.5,
                   fontWeight: 600,
                   marginBottom: 16,
@@ -1290,7 +1328,7 @@ export function SettingsScreen({
                 style={{
                   ...btnStyle,
                   width: "100%",
-                  background: "#E8622C",
+                  background: "var(--accent)",
                   color: "#fff",
                   display: "flex",
                   alignItems: "center",
@@ -1306,8 +1344,8 @@ export function SettingsScreen({
 
             <div
               style={{
-                background: "#fff",
-                border: `1.5px solid ${isIos ? "#E8622C" : "#F1E8D9"}`,
+                background: "var(--bg-surface)",
+                border: `1.5px solid ${isIos ? "var(--accent)" : "var(--border-subtle)"}`,
                 boxShadow: CARD_SHADOW,
                 borderRadius: 14,
                 padding: 15,
@@ -1318,7 +1356,7 @@ export function SettingsScreen({
                 style={{
                   fontSize: 12,
                   fontWeight: 700,
-                  color: isIos ? "#B24A1D" : "#8A7F70",
+                  color: isIos ? "var(--accent-ink)" : "var(--text-muted)",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                   marginBottom: 10,
@@ -1335,7 +1373,7 @@ export function SettingsScreen({
                   gap: 9,
                   fontSize: 13.5,
                   lineHeight: 1.45,
-                  color: "#2B2622",
+                  color: "var(--text-primary)",
                 }}
               >
                 <li>
@@ -1360,7 +1398,7 @@ export function SettingsScreen({
               <div
                 style={{
                   fontSize: 11.5,
-                  color: "#8A7F70",
+                  color: "var(--text-muted)",
                   marginTop: 10,
                   lineHeight: 1.4,
                 }}
@@ -1373,8 +1411,8 @@ export function SettingsScreen({
 
             <div
               style={{
-                background: "#fff",
-                border: `1.5px solid ${!isIos ? "#E8622C" : "#F1E8D9"}`,
+                background: "var(--bg-surface)",
+                border: `1.5px solid ${!isIos ? "var(--accent)" : "var(--border-subtle)"}`,
                 boxShadow: CARD_SHADOW,
                 borderRadius: 14,
                 padding: 15,
@@ -1384,7 +1422,7 @@ export function SettingsScreen({
                 style={{
                   fontSize: 12,
                   fontWeight: 700,
-                  color: !isIos ? "#B24A1D" : "#8A7F70",
+                  color: !isIos ? "var(--accent-ink)" : "var(--text-muted)",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                   marginBottom: 10,
@@ -1401,7 +1439,7 @@ export function SettingsScreen({
                   gap: 9,
                   fontSize: 13.5,
                   lineHeight: 1.45,
-                  color: "#2B2622",
+                  color: "var(--text-primary)",
                 }}
               >
                 <li>
@@ -1469,8 +1507,9 @@ function SettingsRow({
         alignItems: "center",
         gap: 12,
         width: "100%",
-        background: "#fff",
-        border: "1px solid #F1E8D9",
+        background: "var(--bg-surface)",
+        color: "var(--text-primary)",
+        border: "1px solid var(--border-subtle)",
         boxShadow: CARD_SHADOW,
         borderRadius: 14,
         padding: "13px 14px",
@@ -1483,14 +1522,14 @@ function SettingsRow({
           width: 34,
           height: 34,
           borderRadius: 10,
-          background: "#FCE9DF",
+          background: "var(--accent-soft)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
         }}
       >
-        <Icon size={16} color="#E8622C" />
+        <Icon size={16} color="var(--accent)" />
       </div>
       <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
@@ -1498,7 +1537,7 @@ function SettingsRow({
           <div
             style={{
               fontSize: 11.5,
-              color: "#A69C8E",
+              color: "var(--text-faint)",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -1508,7 +1547,7 @@ function SettingsRow({
           </div>
         )}
       </div>
-      <ChevronRightIcon size={16} color="#C9BEAC" />
+      <ChevronRightIcon size={16} color="var(--border-muted)" />
     </button>
   );
 }
@@ -1533,8 +1572,8 @@ function ToggleRow({
         alignItems: "center",
         justifyContent: "space-between",
         gap: 12,
-        background: "#fff",
-        border: "1px solid #F1E8D9",
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border-subtle)",
         boxShadow: CARD_SHADOW,
         borderRadius: 14,
         padding: "13px 14px",
@@ -1548,7 +1587,7 @@ function ToggleRow({
           <div
             style={{
               fontSize: 11.5,
-              color: "#8A7F70",
+              color: "var(--text-muted)",
               marginTop: 2,
               lineHeight: 1.35,
             }}
@@ -1570,7 +1609,7 @@ function ToggleRow({
           borderRadius: 999,
           border: "none",
           cursor: disabled ? "default" : "pointer",
-          background: checked ? "#E8622C" : "#E4D9C6",
+          background: checked ? "var(--accent)" : "var(--border-strong)",
           position: "relative",
           transition: "background 0.15s",
           flexShrink: 0,
@@ -1598,8 +1637,8 @@ const installBadgeStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 4,
-  background: "#FCE9DF",
-  color: "#B24A1D",
+  background: "var(--accent-soft)",
+  color: "var(--accent-ink)",
   borderRadius: 6,
   padding: "1px 7px",
   fontSize: 12.5,

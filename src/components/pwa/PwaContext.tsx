@@ -227,8 +227,9 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 250,
-            background: "#2B2622",
-            color: "#FFF9F0",
+            background: "var(--toast-bg)",
+            color: "var(--toast-ink)",
+            border: "1px solid var(--toast-border)",
             padding: "7px 14px",
             borderRadius: 999,
             fontSize: 12,
@@ -236,7 +237,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
             display: "inline-flex",
             alignItems: "center",
             gap: 7,
-            boxShadow: "0 8px 24px rgba(43,38,34,0.28)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.32)",
             whiteSpace: "nowrap",
             maxWidth: "calc(100vw - 24px)",
           }}
@@ -283,8 +284,8 @@ export function PwaInstallBanner() {
     <div
       className="no-print"
       style={{
-        background: "#FFFDF9",
-        border: "1px solid #F1E8D9",
+        background: "var(--bg-surface-warm)",
+        border: "1px solid var(--border-subtle)",
         boxShadow: CARD_SHADOW,
         borderRadius: 16,
         padding: "12px 14px",
@@ -311,13 +312,13 @@ export function PwaInstallBanner() {
             fontFamily: "'Baloo 2', sans-serif",
             fontSize: 15,
             fontWeight: 700,
-            color: "#2B2622",
+            color: "var(--text-primary)",
             lineHeight: 1.2,
           }}
         >
           Install Family Planner
         </div>
-        <div style={{ fontSize: 12, color: "#6B6259", marginTop: 2 }}>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
           {canInstallNative
             ? "Add to your Home Screen for full-screen app access."
             : isIos
@@ -330,7 +331,7 @@ export function PwaInstallBanner() {
         onClick={() => void triggerInstall()}
         style={{
           border: "none",
-          background: "#E8622C",
+          background: "var(--accent)",
           color: "#fff",
           borderRadius: 10,
           padding: "8px 12px",
@@ -353,7 +354,7 @@ export function PwaInstallBanner() {
         style={{
           background: "transparent",
           border: "none",
-          color: "#948C80",
+          color: "var(--text-muted)",
           cursor: "pointer",
           padding: 4,
           display: "flex",
@@ -390,7 +391,7 @@ function InstallGuideModal({
           style={{
             width: 36,
             height: 4,
-            background: "#E4D9C6",
+            background: "var(--border-strong)",
             borderRadius: 4,
             margin: "0 auto 14px",
           }}
@@ -422,7 +423,7 @@ function InstallGuideModal({
               >
                 Install Family Planner
               </div>
-              <div style={{ fontSize: 12, color: "#8A7F70" }}>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                 Use it like a native app on your phone
               </div>
             </div>
@@ -440,14 +441,14 @@ function InstallGuideModal({
         {isInstalled ? (
           <div
             style={{
-              background: "#E4F1EC",
-              border: "1px solid #C6E3D7",
+              background: "var(--success-soft)",
+              border: "1px solid var(--success-border)",
               borderRadius: 14,
               padding: "14px 16px",
               display: "flex",
               alignItems: "center",
               gap: 10,
-              color: "#155C4A",
+              color: "var(--success-ink)",
               fontSize: 13.5,
               fontWeight: 600,
               marginBottom: 14,
@@ -469,7 +470,7 @@ function InstallGuideModal({
                 style={{
                   ...btnStyle,
                   width: "100%",
-                  background: "#E8622C",
+                  background: "var(--accent)",
                   color: "#fff",
                   display: "flex",
                   alignItems: "center",
@@ -485,8 +486,8 @@ function InstallGuideModal({
 
             <div
               style={{
-                background: "#fff",
-                border: "1px solid #F1E8D9",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
                 borderRadius: 14,
                 padding: 14,
                 marginBottom: 12,
@@ -496,7 +497,7 @@ function InstallGuideModal({
                 style={{
                   fontSize: 12,
                   fontWeight: 700,
-                  color: "#8A7F70",
+                  color: "var(--text-muted)",
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                   marginBottom: 10,
@@ -518,7 +519,7 @@ function InstallGuideModal({
                       gap: 10,
                       fontSize: 13.5,
                       lineHeight: 1.45,
-                      color: "#2B2622",
+                      color: "var(--text-primary)",
                     }}
                   >
                     <li>
@@ -543,12 +544,12 @@ function InstallGuideModal({
                   <div
                     style={{
                       fontSize: 11.5,
-                      color: "#8A7F70",
+                      color: "var(--text-muted)",
                       marginTop: 10,
                       lineHeight: 1.4,
                     }}
                   >
-                    Opened this from Messages or WhatsApp? Tap{" "}
+                    Opened from Messages or WhatsApp? Tap{" "}
                     <strong>Open in Safari</strong> first if you don&apos;t see
                     Add to Home Screen.
                   </div>
@@ -563,7 +564,7 @@ function InstallGuideModal({
                     gap: 10,
                     fontSize: 13.5,
                     lineHeight: 1.45,
-                    color: "#2B2622",
+                    color: "var(--text-primary)",
                   }}
                 >
                   <li>
@@ -596,8 +597,8 @@ function InstallGuideModal({
           style={{
             ...btnStyle,
             width: "100%",
-            background: "#F5EFE3",
-            color: "#2B2622",
+            background: "var(--bg-subtle-alt)",
+            color: "var(--text-primary)",
           }}
         >
           Got it
@@ -611,8 +612,8 @@ const inlineBadgeStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 4,
-  background: "#FCE9DF",
-  color: "#B24A1D",
+  background: "var(--accent-soft)",
+  color: "var(--accent-ink)",
   borderRadius: 6,
   padding: "1px 7px",
   fontSize: 12.5,
