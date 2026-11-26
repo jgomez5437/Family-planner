@@ -1085,26 +1085,37 @@ function drawCueStick(
   ctx.restore();
 }
 
-function TinyBallDot({ id, pocketed }: { id: number; pocketed: boolean }) {
+function TinyBallDot({
+  id,
+  pocketed,
+  size = 10,
+}: {
+  id: number;
+  pocketed: boolean;
+  size?: number;
+}) {
   const visual = POOL_BALL_VISUALS[id] || { color: "#18181B", stripe: false };
   return (
     <span
       title={`#${id}${pocketed ? " (pocketed)" : ""}`}
       style={{
-        width: 6.5,
-        height: 6.5,
+        width: size,
+        height: size,
         borderRadius: "50%",
         display: "inline-block",
         position: "relative",
         overflow: "hidden",
         background: pocketed
-          ? "rgba(255,255,255,0.12)"
+          ? "rgba(255,255,255,0.1)"
           : visual.stripe
             ? "#FAF7F0"
             : visual.color,
         border: pocketed
           ? "1px solid rgba(255,255,255,0.14)"
-          : "1px solid rgba(255,255,255,0.35)",
+          : "1px solid rgba(255,255,255,0.38)",
+        boxShadow: pocketed
+          ? "none"
+          : "inset -1.5px -1.5px 2.5px rgba(0,0,0,0.35), inset 1px 1px 1.5px rgba(255,255,255,0.35)",
         opacity: pocketed ? 0.35 : 1,
         flexShrink: 0,
       }}
@@ -1116,8 +1127,8 @@ function TinyBallDot({ id, pocketed }: { id: number; pocketed: boolean }) {
             position: "absolute",
             left: 0,
             right: 0,
-            top: 1.4,
-            bottom: 1.4,
+            top: "22%",
+            bottom: "22%",
             background: visual.color,
           }}
         />
@@ -2032,7 +2043,40 @@ export function PoolBoard({
   const powerColor =
     pullPower < 0.4 ? "#4ADE80" : pullPower < 0.75 ? "#FACC15" : "#F87171";
 
-  const renderPlayerHud = (player: typeof p1, alignRight: boolean) => {
+  const isStackedHud = stageSize.w < 640;
+
+  const hudIconBtnStyle = (opts?: {
+    activeDanger?: boolean;
+    dimmed?: boolean;
+  }): React.CSSProperties => ({
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    background: opts?.activeDanger
+      ? "rgba(240, 113, 96, 0.25)"
+      : opts?.dimmed
+        ? "rgba(255, 255, 255, 0.05)"
+        : "rgba(255, 255, 255, 0.09)",
+    border: opts?.activeDanger
+      ? "1px solid rgba(240, 113, 96, 0.6)"
+      : "1px solid rgba(255, 255, 255, 0.13)",
+    color: opts?.activeDanger
+      ? "#FCA396"
+      : opts?.dimmed
+        ? "rgba(244,239,231,0.45)"
+        : "#F4EFE7",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    flexShrink: 0,
+  });
+
+  const renderPlayerHud = (
+    player: typeof p1,
+    alignRight: boolean,
+    stacked: boolean
+  ) => {
     const group: BallGroup | null = state.groups[player.id] ?? null;
     const isTurn = !isAnimating && isActive && game.currentTurnId === player.id;
     const groupIds =
@@ -2043,6 +2087,14 @@ export function PoolBoard({
           : [];
     const clearedGroup =
       group !== null && getRemainingBallsForGroup(hudBalls, group).length === 0;
+    const groupLabel =
+      group === null
+        ? "Open"
+        : clearedGroup
+          ? "8-Ball"
+          : group === "solids"
+            ? "Solids"
+            : "Stripes";
 
     return (
       <div
@@ -2051,11 +2103,25 @@ export function PoolBoard({
           display: "flex",
           alignItems: "center",
           flexDirection: alignRight ? "row-reverse" : "row",
-          gap: 5,
+          gap: 8,
           minWidth: 0,
           flex: 1,
-          opacity: isActive && !isAnimating && !isTurn ? 0.65 : 1,
-          transition: "opacity 0.2s",
+          padding: stacked ? "6px 9px" : "4px 8px",
+          borderRadius: 12,
+          background: stacked
+            ? isTurn
+              ? "rgba(255, 255, 255, 0.085)"
+              : "rgba(255, 255, 255, 0.035)"
+            : isTurn
+              ? "rgba(255, 255, 255, 0.06)"
+              : "transparent",
+          border: stacked
+            ? isTurn
+              ? "1px solid rgba(244, 180, 110, 0.35)"
+              : "1px solid rgba(255, 255, 255, 0.07)"
+            : "1px solid transparent",
+          opacity: isActive && !isAnimating && !isTurn ? 0.68 : 1,
+          transition: "opacity 0.2s, background 0.2s, border-color 0.2s",
         }}
       >
         <div
@@ -2065,50 +2131,79 @@ export function PoolBoard({
             flexShrink: 0,
           }}
         >
-          <AvatarDot id={player.id} size={20} />
+          <AvatarDot id={player.id} size={stacked ? 28 : 26} />
         </div>
         <div
           style={{
             minWidth: 0,
+            flex: 1,
             textAlign: alignRight ? "right" : "left",
           }}
         >
           <div
             style={{
-              fontSize: 10.5,
-              fontWeight: 700,
-              color: "#F4EFE7",
-              lineHeight: 1.1,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              maxWidth: 68,
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: alignRight ? "flex-end" : "flex-start",
+              flexDirection: alignRight ? "row-reverse" : "row",
+              gap: 5,
+              minWidth: 0,
             }}
           >
-            {player.id === currentUser && !isPassAndPlay ? "You" : player.name}
+            <span
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                color: "#F4EFE7",
+                lineHeight: 1.15,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {player.id === currentUser && !isPassAndPlay
+                ? "You"
+                : player.name}
+            </span>
+            {group !== null && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: "rgba(244,239,231,0.5)",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                {groupLabel}
+              </span>
+            )}
           </div>
           <div
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: alignRight ? "flex-end" : "flex-start",
-              gap: 1.5,
-              marginTop: 2,
+              gap: 3,
+              marginTop: 4,
+              minHeight: stacked ? 11 : 10,
             }}
           >
             {group === null ? (
               <span
                 style={{
-                  fontSize: 9,
-                  fontWeight: 600,
-                  color: "rgba(244,239,231,0.5)",
+                  fontSize: 10,
+                  fontWeight: 500,
+                  color: "rgba(244,239,231,0.42)",
+                  lineHeight: 1,
                 }}
               >
-                Open
+                Open table
               </span>
             ) : clearedGroup ? (
               <TinyBallDot
                 id={8}
+                size={stacked ? 11 : 10}
                 pocketed={Boolean(hudBalls.find((b) => b.id === 8)?.pocketed)}
               />
             ) : (
@@ -2116,6 +2211,7 @@ export function PoolBoard({
                 <TinyBallDot
                   key={id}
                   id={id}
+                  size={stacked ? 10.5 : 9.5}
                   pocketed={Boolean(
                     hudBalls.find((b) => b.id === id)?.pocketed
                   )}
@@ -2127,6 +2223,92 @@ export function PoolBoard({
       </div>
     );
   };
+
+  const renderUtilityButtons = () => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        gap: 6,
+        flexShrink: 0,
+      }}
+    >
+      <button
+        type="button"
+        onClick={toggleMuted}
+        aria-label={muted ? "Unmute table audio" : "Mute table audio"}
+        title={muted ? "Unmute table audio" : "Mute table audio"}
+        style={hudIconBtnStyle({ dimmed: muted })}
+      >
+        {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+      </button>
+      {state.lastShot && !isAnimating && (
+        <button
+          type="button"
+          onClick={() => {
+            if (!mutedRef.current) primePoolAudio();
+            if (state.lastShot) {
+              startShotAnimation(
+                state.lastShot.preBalls,
+                state.lastShot.move
+              );
+            }
+          }}
+          aria-label="Replay last shot"
+          title="Replay last shot"
+          style={hudIconBtnStyle()}
+        >
+          <Play size={14} />
+        </button>
+      )}
+      {isActive && isParticipant && (
+        <button
+          type="button"
+          onClick={() => setConfirmForfeit((v) => !v)}
+          aria-label="Forfeit match"
+          title="Forfeit match"
+          style={hudIconBtnStyle({ activeDanger: confirmForfeit })}
+        >
+          <Flag size={14} />
+        </button>
+      )}
+    </div>
+  );
+
+  const backButton = (
+    <button
+      type="button"
+      onClick={onBack}
+      aria-label="Back to Games"
+      title="Back to Games"
+      style={hudIconBtnStyle()}
+    >
+      <ChevronLeft size={19} />
+    </button>
+  );
+
+  const statusPill = (
+    <span
+      style={{
+        fontSize: isStackedHud ? 12 : 11.5,
+        fontWeight: 800,
+        padding: isStackedHud ? "5px 12px" : "4px 11px",
+        borderRadius: 999,
+        background: centerPillBg,
+        color: centerPillColor,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        maxWidth: "100%",
+        justifySelf: "center",
+        flexShrink: isStackedHud ? 1 : 0,
+        letterSpacing: "0.01em",
+      }}
+    >
+      {centerPillText}
+    </span>
+  );
 
   return (
     <div
@@ -2144,157 +2326,73 @@ export function PoolBoard({
         overscrollBehavior: "none",
       }}
     >
-      {/* Slim ~42px Top HUD Strip */}
+      {/* Roomier Top HUD Header (2-row on phones, 1-row on landscape/desktop) */}
       <div
         style={{
-          padding: "calc(6px + env(safe-area-inset-top)) 7px 6px",
-          minHeight: 42,
+          padding: isStackedHud
+            ? "calc(10px + env(safe-area-inset-top)) 12px 10px"
+            : "calc(8px + env(safe-area-inset-top)) 14px 8px",
           background: "rgba(22, 18, 15, 0.96)",
-          borderBottom: "1px solid rgba(255, 232, 200, 0.1)",
+          borderBottom: "1px solid rgba(255, 232, 200, 0.12)",
+          boxShadow: "0 4px 16px rgba(0, 0, 0, 0.35)",
           display: "flex",
-          alignItems: "center",
-          gap: 4,
+          flexDirection: isStackedHud ? "column" : "row",
+          alignItems: isStackedHud ? "stretch" : "center",
+          gap: isStackedHud ? 8 : 10,
           flexShrink: 0,
           zIndex: 10,
         }}
       >
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to Games"
-          title="Back to Games"
-          style={{
-            width: 27,
-            height: 27,
-            borderRadius: 8,
-            background: "rgba(255, 255, 255, 0.09)",
-            border: "1px solid rgba(255, 255, 255, 0.12)",
-            color: "#F4EFE7",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-        >
-          <ChevronLeft size={16} />
-        </button>
-
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 4,
-          }}
-        >
-          {renderPlayerHud(p1, false)}
-          <span
-            style={{
-              fontSize: 9.5,
-              fontWeight: 800,
-              padding: "3px 6px",
-              borderRadius: 999,
-              background: centerPillBg,
-              color: centerPillColor,
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
-          >
-            {centerPillText}
-          </span>
-          {renderPlayerHud(p2, true)}
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 3,
-            flexShrink: 0,
-          }}
-        >
-          <button
-            type="button"
-            onClick={toggleMuted}
-            aria-label={muted ? "Unmute table audio" : "Mute table audio"}
-            title={muted ? "Unmute table audio" : "Mute table audio"}
-            style={{
-              width: 27,
-              height: 27,
-              borderRadius: 8,
-              background: muted
-                ? "rgba(255, 255, 255, 0.05)"
-                : "rgba(255, 255, 255, 0.09)",
-              border: "1px solid rgba(255, 255, 255, 0.12)",
-              color: muted ? "rgba(244,239,231,0.45)" : "#F4EFE7",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-            }}
-          >
-            {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
-          </button>
-          {state.lastShot && !isAnimating && (
-            <button
-              type="button"
-              onClick={() => {
-                if (!mutedRef.current) primePoolAudio();
-                if (state.lastShot) {
-                  startShotAnimation(
-                    state.lastShot.preBalls,
-                    state.lastShot.move
-                  );
-                }
-              }}
-              aria-label="Replay last shot"
-              title="Replay last shot"
+        {isStackedHud ? (
+          <>
+            <div
               style={{
-                width: 27,
-                height: 27,
-                borderRadius: 8,
-                background: "rgba(255, 255, 255, 0.09)",
-                border: "1px solid rgba(255, 255, 255, 0.12)",
-                color: "#F4EFE7",
+                display: "grid",
+                gridTemplateColumns: "auto minmax(0, 1fr) auto",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center" }}>
+                {backButton}
+              </div>
+              {statusPill}
+              {renderUtilityButtons()}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "stretch",
+                gap: 8,
+                minWidth: 0,
+              }}
+            >
+              {renderPlayerHud(p1, false, true)}
+              {renderPlayerHud(p2, true, true)}
+            </div>
+          </>
+        ) : (
+          <>
+            {backButton}
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                cursor: "pointer",
+                gap: 10,
+                maxWidth: 720,
+                margin: "0 auto",
               }}
             >
-              <Play size={12.5} />
-            </button>
-          )}
-          {isActive && isParticipant && (
-            <button
-              type="button"
-              onClick={() => setConfirmForfeit((v) => !v)}
-              aria-label="Forfeit match"
-              title="Forfeit match"
-              style={{
-                width: 27,
-                height: 27,
-                borderRadius: 8,
-                background: confirmForfeit
-                  ? "rgba(240, 113, 96, 0.25)"
-                  : "rgba(255, 255, 255, 0.09)",
-                border: confirmForfeit
-                  ? "1px solid rgba(240, 113, 96, 0.6)"
-                  : "1px solid rgba(255, 255, 255, 0.12)",
-                color: confirmForfeit ? "#FCA396" : "rgba(244,239,231,0.7)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-              }}
-            >
-              <Flag size={12.5} />
-            </button>
-          )}
-        </div>
+              {renderPlayerHud(p1, false, false)}
+              {statusPill}
+              {renderPlayerHud(p2, true, false)}
+            </div>
+            {renderUtilityButtons()}
+          </>
+        )}
       </div>
 
       {/* Full-Screen Pool Table Stage (Zero Scroll) */}
