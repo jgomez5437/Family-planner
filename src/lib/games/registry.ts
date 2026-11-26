@@ -5,14 +5,19 @@ import type {
   MemberId,
 } from "@/types/family";
 import { ticTacToeGame } from "./ticTacToe";
+import { poolGame } from "./pool";
 import type { GameDefinition } from "./types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const GAME_DEFINITIONS: GameDefinition<any, any>[] = [ticTacToeGame];
+export const GAME_DEFINITIONS: GameDefinition<any, any>[] = [
+  ticTacToeGame,
+  poolGame,
+];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const GAME_DEFINITION_BY_ID: Record<GameTypeId, GameDefinition<any, any>> = {
   tic_tac_toe: ticTacToeGame,
+  pool: poolGame,
 };
 
 export function getGameDefinition(

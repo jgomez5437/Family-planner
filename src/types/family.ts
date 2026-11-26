@@ -214,7 +214,7 @@ export interface FamilyNotification {
   createdAt: string; // ISO 8601 timestamp
 }
 
-export type GameTypeId = "tic_tac_toe";
+export type GameTypeId = "tic_tac_toe" | "pool";
 
 export type GameMode = "remote" | "pass_and_play";
 

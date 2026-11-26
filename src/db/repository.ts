@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getReadyDb } from "./index";
 import {
   activities,
@@ -3516,7 +3516,8 @@ export async function makeGameMoveRecord(
           eq(games.id, gameId),
           eq(games.familyId, familyId),
           eq(games.status, "active"),
-          eq(games.currentTurnId, movingPlayerId)
+          eq(games.currentTurnId, movingPlayerId),
+          sql`jsonb_array_length(${games.moves}) = ${(existing.moves || []).length}`
         )
       )
       .returning({ id: games.id });

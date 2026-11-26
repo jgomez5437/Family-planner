@@ -1822,7 +1822,9 @@ export default function FamilyApp({
               currentUser
             );
           }
-          fireToast("It's a draw! 🤝");
+          if (saved.gameType !== "pool") {
+            fireToast("It's a draw! 🤝");
+          }
         } else if (saved.winnerId) {
           if (saved.mode === "remote" && saved.outcome === "win") {
             pushActivity(
@@ -1831,11 +1833,13 @@ export default function FamilyApp({
               saved.winnerId
             );
           }
-          const winnerName =
-            saved.mode === "remote" && saved.winnerId === currentUser
-              ? "You"
-              : memberById(saved.winnerId).name;
-          fireToast(`${winnerName} won! 🎉`);
+          if (saved.gameType !== "pool") {
+            const winnerName =
+              saved.mode === "remote" && saved.winnerId === currentUser
+                ? "You"
+                : memberById(saved.winnerId).name;
+            fireToast(`${winnerName} won! 🎉`);
+          }
         }
       }
     } catch {
