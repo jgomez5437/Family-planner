@@ -85,7 +85,7 @@ export function isPoolState(
 export const poolGame: GameDefinition<PoolState, PoolMove> = {
   id: "pool",
   name: "8-Ball Pool",
-  shortDescription: "Classic 15-ball rack with cue stick & power meter.",
+  shortDescription: "Classic 15-ball rack with realistic 3D roll & cue pullback.",
   rulesSummary:
     "Sink your group (Solids 1–7 or Stripes 9–15), then pocket the 8-ball to win!",
   emoji: "🎱",

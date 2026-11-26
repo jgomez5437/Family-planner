@@ -8,22 +8,36 @@ import {
   Play,
   RotateCcw,
   Trophy,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import {
   BALL_RADIUS,
   computeAimPreview,
+  CORNER_MOUTH,
   findFreeSpot,
+  getBallQuat,
   HEAD_STRING_X,
   isCueBallPlacementValid,
+  nlerpQuat,
   POCKETS,
   POOL_BALL_VISUALS,
+  rotateVecByQuat,
+  SIDE_MOUTH_HALF,
   simulatePoolShot,
   TABLE_HEIGHT,
   TABLE_WIDTH,
   type PoolBall,
   type PoolFrameBall,
+  type PoolSoundEvent,
 } from "@/lib/games/poolPhysics";
+import {
+  loadPoolMuted,
+  playPoolSound,
+  primePoolAudio,
+  savePoolMuted,
+} from "@/lib/games/poolAudio";
 import {
   createInitialPoolState,
   getBallGroup,
@@ -111,131 +125,456 @@ function rayDistanceToBounds(
   return Math.max(0, Number.isFinite(t) ? t : 0);
 }
 
-function drawBall(
+/* ---- True 3D Rolling Pool Ball Renderer ---- */
+
+const CUE_MEASLES_AXES: readonly [number, number, number][] = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+];
+
+const STRIPE_CAP_LATITUDE = 0.56;
+const STRIPE_CAP_RADIUS = Math.sqrt(
+  1 - STRIPE_CAP_LATITUDE * STRIPE_CAP_LATITUDE
+);
+
+function toScreenVec(
+  v: [number, number, number],
+  vertical: boolean
+): [number, number, number] {
+  return vertical ? [v[1], -v[0], v[2]] : v;
+}
+
+/**
+ * Draws the exact orthographic 3D projection of a spherical cap { p · n >= h }
+ * onto a clipped 2D disc of radius r. Handles full visibility, partial limb
+ * wrap-around, and edge-on tilts continuously with zero seams.
+ */
+function drawSphericalCap(
   ctx: CanvasRenderingContext2D,
-  ball: PoolFrameBall,
+  cx: number,
+  cy: number,
+  r: number,
+  nx: number,
+  ny: number,
+  nz: number
+) {
+  const h = STRIPE_CAP_LATITUDE;
+  const rc = STRIPE_CAP_RADIUS;
+  if (nz <= -rc + 1e-4) return;
+
+  const pLen = Math.hypot(nx, ny);
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (pLen > 1e-5) {
+    ctx.rotate(Math.atan2(ny, nx));
+  }
+
+  ctx.beginPath();
+  if (nz >= rc - 1e-4) {
+    // Cap lies entirely inside the visible front hemisphere
+    ctx.ellipse(
+      h * pLen * r,
+      0,
+      Math.max(0.15, rc * nz * r),
+      rc * r,
+      0,
+      0,
+      Math.PI * 2
+    );
+  } else {
+    // Cap wraps over the silhouette rim: outer circular arc + front ellipse arc
+    const uRim = Math.max(-1, Math.min(1, h / pLen));
+    const thetaRim = Math.acos(uRim);
+    const cosT0 = Math.max(-1, Math.min(1, -(h * nz) / (rc * pLen)));
+    const t0 = Math.acos(cosT0);
+    const uCenter = h * pLen;
+    const uAmp = rc * nz;
+
+    ctx.arc(0, 0, r + 0.5, -thetaRim, thetaRim, false);
+    const steps = 16;
+    for (let i = 0; i <= steps; i++) {
+      const t = t0 - (2 * t0 * i) / steps;
+      const u = uCenter - uAmp * Math.cos(t);
+      const v = rc * Math.sin(t);
+      ctx.lineTo(u * r, v * r);
+    }
+    ctx.closePath();
+  }
+
+  ctx.fillStyle = "#FAF7F0";
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBall3D(
+  ctx: CanvasRenderingContext2D,
+  ball: PoolBall | PoolFrameBall,
   vertical: boolean
 ) {
   if (ball.pocketed) return;
+  const drop =
+    "dropProgress" in ball && typeof ball.dropProgress === "number"
+      ? Math.max(0, Math.min(1, ball.dropProgress))
+      : 0;
   const { lx: cx, ly: cy } = tableToLocal(ball.x, ball.y, vertical);
-  const r = BALL_RADIUS;
+  const r = BALL_RADIUS * (1 - 0.56 * drop);
+  if (r < 1.5) return;
+
   const visual = POOL_BALL_VISUALS[ball.id] || {
     color: "#FAF7F0",
     stripe: false,
   };
+  const q = getBallQuat(ball);
 
-  // Soft drop shadow
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx + 2.4, cy + 3.0, r * 1.02, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
-  ctx.fill();
-  ctx.restore();
+  // Directional overhead billiard lamp offset from table center
+  const txOff = (ball.x - TABLE_WIDTH / 2) / (TABLE_WIDTH / 2);
+  const tyOff = (ball.y - TABLE_HEIGHT / 2) / (TABLE_HEIGHT / 2);
+  const dxL = vertical ? tyOff : txOff;
+  const dyL = vertical ? -txOff : tyOff;
 
-  // Ball sphere clipped
+  // 1. Directional cast shadow + tight contact ambient-occlusion ring
+  if (drop < 0.85) {
+    const shadowAlpha = 1 - drop / 0.85;
+    const shX = cx + dxL * 3.8 + 1.0;
+    const shY = cy + dyL * 3.8 + 1.4;
+    ctx.save();
+    const castGrad = ctx.createRadialGradient(
+      shX,
+      shY,
+      r * 0.25,
+      shX,
+      shY,
+      r * 1.18
+    );
+    castGrad.addColorStop(0, `rgba(0, 0, 0, ${0.42 * shadowAlpha})`);
+    castGrad.addColorStop(0.72, `rgba(0, 0, 0, ${0.26 * shadowAlpha})`);
+    castGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.beginPath();
+    ctx.arc(shX, shY, r * 1.18, 0, Math.PI * 2);
+    ctx.fillStyle = castGrad;
+    ctx.fill();
+
+    // Crisp contact shadow right under sphere base
+    ctx.beginPath();
+    ctx.arc(cx, cy + 0.6, r * 1.01, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0, 0, 0, ${0.24 * shadowAlpha})`;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 2. Clipped 3D Sphere Body
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
 
+  // Base resin color
+  ctx.fillStyle = ball.id === 0 ? "#FBF8F1" : visual.color;
+  ctx.fillRect(cx - r - 1, cy - r - 1, r * 2 + 2, r * 2 + 2);
+
   if (ball.id === 0) {
-    ctx.fillStyle = "#FAF7F0";
-    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-    ctx.beginPath();
-    ctx.arc(cx + r * 0.28, cy + r * 0.22, r * 0.14, 0, Math.PI * 2);
-    ctx.fillStyle = "#DC2626";
-    ctx.fill();
-  } else if (visual.stripe) {
-    ctx.fillStyle = "#FAF7F0";
-    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-    ctx.fillStyle = visual.color;
-    ctx.fillRect(cx - r, cy - r * 0.54, r * 2, r * 1.08);
+    // Pro-cup cue ball: 6 crimson measles dots on ±X, ±Y, ±Z axes
+    for (let i = 0; i < CUE_MEASLES_AXES.length; i++) {
+      const axis = CUE_MEASLES_AXES[i];
+      const [sx, sy, sz] = toScreenVec(
+        rotateVecByQuat(q, axis[0], axis[1], axis[2]),
+        vertical
+      );
+      if (sz <= 0.05) continue;
+      const dotR = r * 0.145;
+      const px = cx + sx * r;
+      const py = cy + sy * r;
+      const phi = Math.atan2(sy, sx);
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, sz * 3.8);
+      ctx.beginPath();
+      ctx.ellipse(px, py, Math.max(0.35, dotR * sz), dotR, phi, 0, Math.PI * 2);
+      ctx.fillStyle = "#C81E2B";
+      ctx.fill();
+      ctx.restore();
+    }
   } else {
-    ctx.fillStyle = visual.color;
-    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    // Striped balls (9–15): two curved 3D white polar caps around local ±Y
+    if (visual.stripe) {
+      const [px, py, pz] = toScreenVec(rotateVecByQuat(q, 0, 1, 0), vertical);
+      drawSphericalCap(ctx, cx, cy, r, px, py, pz);
+      drawSphericalCap(ctx, cx, cy, r, -px, -py, -pz);
+    }
+
+    // Dual opposite 3D-foreshortened white number medallions at local ±Z
+    for (const sign of [1, -1] as const) {
+      const N = toScreenVec(rotateVecByQuat(q, 0, 0, sign), vertical);
+      if (N[2] <= 0.1) continue;
+      const U = toScreenVec(rotateVecByQuat(q, sign, 0, 0), vertical);
+      const V = toScreenVec(rotateVecByQuat(q, 0, 1, 0), vertical);
+
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (N[2] - 0.1) * 4.5);
+      ctx.transform(U[0], U[1], V[0], V[1], cx + N[0] * r, cy + N[1] * r);
+
+      const medR = r * 0.45;
+      ctx.beginPath();
+      ctx.arc(0, 0, medR, 0, Math.PI * 2);
+      ctx.fillStyle = "#FAF7F0";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.16)";
+      ctx.lineWidth = 0.65;
+      ctx.stroke();
+
+      ctx.fillStyle = "#141417";
+      ctx.font = `800 ${Math.max(6, Math.round(r * 0.66))}px Inter, system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(ball.id), 0, 0.4);
+
+      if (ball.id === 6 || ball.id === 9) {
+        ctx.fillRect(-r * 0.17, r * 0.27, r * 0.34, 1.15);
+      }
+      ctx.restore();
+    }
   }
 
-  // 3D shading gradient
+  // 3. Overhead Lamp Spherical Curvature Shading
+  const litX = cx - dxL * r * 0.16 - r * 0.22;
+  const litY = cy - dyL * r * 0.16 - r * 0.24;
   const shadeGrad = ctx.createRadialGradient(
-    cx - r * 0.34,
-    cy - r * 0.34,
-    r * 0.12,
+    litX,
+    litY,
+    r * 0.08,
     cx,
     cy,
-    r * 1.08
+    r * 1.06
   );
-  shadeGrad.addColorStop(0, "rgba(255, 255, 255, 0.42)");
-  shadeGrad.addColorStop(0.38, "rgba(255, 255, 255, 0.05)");
-  shadeGrad.addColorStop(0.75, "rgba(0, 0, 0, 0.16)");
-  shadeGrad.addColorStop(1, "rgba(0, 0, 0, 0.46)");
+  shadeGrad.addColorStop(0, "rgba(255, 255, 255, 0.28)");
+  shadeGrad.addColorStop(0.35, "rgba(255, 255, 255, 0.02)");
+  shadeGrad.addColorStop(0.72, "rgba(0, 0, 0, 0.18)");
+  shadeGrad.addColorStop(1, "rgba(0, 0, 0, 0.48)");
   ctx.fillStyle = shadeGrad;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  ctx.fillRect(cx - r - 1, cy - r - 1, r * 2 + 2, r * 2 + 2);
 
-  // Number medallion
-  if (ball.id > 0) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.47, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255, 252, 245, 0.94)";
-    ctx.fill();
-
-    ctx.fillStyle = "#18181B";
-    ctx.font = `800 ${Math.round(r * 0.72)}px Inter, system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(String(ball.id), cx, cy + 0.5);
+  // Subtle emerald felt bounce glow along bottom rim
+  if (drop < 0.4) {
+    const bounceGrad = ctx.createRadialGradient(
+      cx + dxL * r * 0.2,
+      cy + r * 0.85,
+      r * 0.1,
+      cx,
+      cy + r * 0.65,
+      r * 0.72
+    );
+    bounceGrad.addColorStop(0, "rgba(42, 188, 128, 0.18)");
+    bounceGrad.addColorStop(1, "rgba(42, 188, 128, 0)");
+    ctx.fillStyle = bounceGrad;
+    ctx.fillRect(cx - r - 1, cy - r - 1, r * 2 + 2, r * 2 + 2);
   }
 
-  // Gloss specular highlight
+  // Phenolic gloss specular highlight + tiny crisp lamp glint
+  const specX = cx - dxL * r * 0.14 - r * 0.28;
+  const specY = cy - dyL * r * 0.14 - r * 0.30;
   ctx.beginPath();
-  ctx.ellipse(
-    cx - r * 0.32,
-    cy - r * 0.36,
-    r * 0.24,
-    r * 0.14,
-    -Math.PI / 5,
-    0,
-    Math.PI * 2
-  );
-  ctx.fillStyle = "rgba(255, 255, 255, 0.56)";
+  ctx.ellipse(specX, specY, r * 0.24, r * 0.14, -Math.PI / 5, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255, 255, 255, ${0.46 * (1 - drop * 0.7)})`;
   ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(specX - r * 0.04, specY - r * 0.03, r * 0.08, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255, 255, 255, ${0.78 * (1 - drop * 0.7)})`;
+  ctx.fill();
+
+  // Darken smoothly as ball sinks into pocket well
+  if (drop > 0.01) {
+    ctx.fillStyle = `rgba(5, 4, 3, ${drop * 0.84})`;
+    ctx.fillRect(cx - r - 1, cy - r - 1, r * 2 + 2, r * 2 + 2);
+  }
 
   ctx.restore();
 }
 
-function drawPoolTable(
+/* ---- Offscreen-Cached High-Detail Tournament Pool Table ---- */
+
+let cachedClothPatternCanvas: HTMLCanvasElement | null = null;
+const cachedTableCanvases = new Map<string, HTMLCanvasElement>();
+
+function getClothPatternCanvas(): HTMLCanvasElement | null {
+  if (typeof document === "undefined") return null;
+  if (cachedClothPatternCanvas) return cachedClothPatternCanvas;
+
+  const tile = document.createElement("canvas");
+  tile.width = 48;
+  tile.height = 48;
+  const tctx = tile.getContext("2d");
+  if (!tctx) return null;
+
+  // Deterministic subtle woven Simonis wool-baize micro-grain
+  let seed = 1337;
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  for (let y = 0; y < 48; y += 2) {
+    for (let x = 0; x < 48; x += 2) {
+      const v = rand();
+      if (v > 0.54) {
+        tctx.fillStyle = `rgba(255, 255, 255, ${(v - 0.54) * 0.055})`;
+        tctx.fillRect(x, y, 2, 1);
+      } else if (v < 0.44) {
+        tctx.fillStyle = `rgba(0, 0, 0, ${(0.44 - v) * 0.07})`;
+        tctx.fillRect(x, y, 1, 2);
+      }
+    }
+  }
+  cachedClothPatternCanvas = tile;
+  return tile;
+}
+
+function drawBeveledCushionSegment(
+  ctx: CanvasRenderingContext2D,
+  polyTable: readonly [number, number][],
+  noseA: readonly [number, number],
+  noseB: readonly [number, number],
+  shadowOffsetTable: readonly [number, number],
+  vertical: boolean
+) {
+  const pts = polyTable.map(([tx, ty]) => tableToLocal(tx, ty, vertical));
+  const nA = tableToLocal(noseA[0], noseA[1], vertical);
+  const nB = tableToLocal(noseB[0], noseB[1], vertical);
+  const shA = tableToLocal(
+    noseA[0] + shadowOffsetTable[0],
+    noseA[1] + shadowOffsetTable[1],
+    vertical
+  );
+  const shB = tableToLocal(
+    noseB[0] + shadowOffsetTable[0],
+    noseB[1] + shadowOffsetTable[1],
+    vertical
+  );
+
+  // 1. Soft cushion overhang shadow cast onto the emerald cloth
+  ctx.save();
+  const shGrad = ctx.createLinearGradient(nA.lx, nA.ly, shA.lx, shA.ly);
+  shGrad.addColorStop(0, "rgba(0, 0, 0, 0.36)");
+  shGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.beginPath();
+  ctx.moveTo(nA.lx, nA.ly);
+  ctx.lineTo(nB.lx, nB.ly);
+  ctx.lineTo(shB.lx, shB.ly);
+  ctx.lineTo(shA.lx, shA.ly);
+  ctx.closePath();
+  ctx.fillStyle = shGrad;
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Beveled rubber cushion body with gradient from wood rail to nose
+  const backMidX = (pts[2].lx + pts[3].lx) * 0.5;
+  const backMidY = (pts[2].ly + pts[3].ly) * 0.5;
+  const noseMidX = (nA.lx + nB.lx) * 0.5;
+  const noseMidY = (nA.ly + nB.ly) * 0.5;
+
+  ctx.save();
+  const cushGrad = ctx.createLinearGradient(
+    backMidX,
+    backMidY,
+    noseMidX,
+    noseMidY
+  );
+  cushGrad.addColorStop(0, "#0A4630");
+  cushGrad.addColorStop(0.55, "#116647");
+  cushGrad.addColorStop(0.88, "#1A865E");
+  cushGrad.addColorStop(1, "#0E563B");
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0].lx, pts[0].ly);
+  for (let i = 1; i < pts.length; i++) {
+    ctx.lineTo(pts[i].lx, pts[i].ly);
+  }
+  ctx.closePath();
+  ctx.fillStyle = cushGrad;
+  ctx.fill();
+
+  // Crisp top nose highlight along the playable rail edge
+  ctx.beginPath();
+  ctx.moveTo(nA.lx, nA.ly);
+  ctx.lineTo(nB.lx, nB.ly);
+  ctx.strokeStyle = "rgba(176, 255, 224, 0.24)";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  // Subtle dark border along jaw facings
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.28)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function renderPoolTableScene(
   ctx: CanvasRenderingContext2D,
   vertical: boolean,
   highlightKitchen: boolean
 ) {
   const cw = vertical ? V_TABLE_W : H_TABLE_W;
   const ch = vertical ? V_TABLE_H : H_TABLE_H;
+  const feltX = RAIL;
+  const feltY = RAIL;
+  const feltW = cw - RAIL * 2;
+  const feltH = ch - RAIL * 2;
 
-  // 1. Outer Walnut Wood Frame
+  // 1. Outer Grained Walnut Wood Cabinet Frame
   const woodGrad = ctx.createLinearGradient(0, 0, cw, ch);
-  woodGrad.addColorStop(0, "#6E3B1E");
-  woodGrad.addColorStop(0.35, "#4E2712");
-  woodGrad.addColorStop(0.7, "#5E3117");
-  woodGrad.addColorStop(1, "#3A1C0C");
+  woodGrad.addColorStop(0, "#754020");
+  woodGrad.addColorStop(0.3, "#532A14");
+  woodGrad.addColorStop(0.68, "#633419");
+  woodGrad.addColorStop(1, "#3A1C0B");
 
   ctx.save();
   ctx.beginPath();
   ctx.roundRect(0, 0, cw, ch, 26);
   ctx.fillStyle = woodGrad;
   ctx.fill();
+  ctx.clip();
 
-  ctx.strokeStyle = "rgba(255, 224, 178, 0.2)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.restore();
+  // Subtle longitudinal walnut grain streaks
+  ctx.strokeStyle = "rgba(25, 10, 4, 0.16)";
+  ctx.lineWidth = 1.6;
+  for (let i = 6; i < Math.max(cw, ch); i += 11) {
+    ctx.beginPath();
+    if (!vertical) {
+      ctx.moveTo(0, i % ch);
+      ctx.bezierCurveTo(
+        cw * 0.33,
+        (i % ch) + ((i % 3) - 1) * 4,
+        cw * 0.66,
+        (i % ch) - ((i % 3) - 1) * 3,
+        cw,
+        i % ch
+      );
+    } else {
+      ctx.moveTo(i % cw, 0);
+      ctx.bezierCurveTo(
+        (i % cw) + ((i % 3) - 1) * 4,
+        ch * 0.33,
+        (i % cw) - ((i % 3) - 1) * 3,
+        ch * 0.66,
+        i % cw,
+        ch
+      );
+    }
+    ctx.stroke();
+  }
 
-  // Brass corner accent plates
-  const plateSize = 44;
+  // Brushed brass corner castings + mid-rail side pocket plates
+  const plateSize = 46;
   const brassGrad = ctx.createLinearGradient(0, 0, cw, ch);
-  brassGrad.addColorStop(0, "#D9AD5B");
-  brassGrad.addColorStop(0.5, "#A6772E");
-  brassGrad.addColorStop(1, "#D2A34F");
+  brassGrad.addColorStop(0, "#E3B866");
+  brassGrad.addColorStop(0.45, "#B07F31");
+  brassGrad.addColorStop(0.75, "#D9AC57");
+  brassGrad.addColorStop(1, "#8D6222");
   ctx.fillStyle = brassGrad;
-  const corners = [
+
+  const corners: [number, number, number, number, number, number][] = [
     [0, 0, 26, 0, 0, 0],
     [cw - plateSize, 0, 0, 26, 0, 0],
     [0, ch - plateSize, 0, 0, 0, 26],
@@ -247,20 +586,62 @@ function drawPoolTable(
     ctx.fill();
   }
 
-  // 2. Inner Rail Cushion Frame
-  const feltX = RAIL;
-  const feltY = RAIL;
-  const feltW = cw - RAIL * 2;
-  const feltH = ch - RAIL * 2;
+  // Matching brass side-pocket plates
+  if (!vertical) {
+    ctx.fillRect(cw / 2 - 26, 0, 52, 22);
+    ctx.fillRect(cw / 2 - 26, ch - 22, 52, 22);
+  } else {
+    ctx.fillRect(0, ch / 2 - 26, 22, 52);
+    ctx.fillRect(cw - 22, ch / 2 - 26, 22, 52);
+  }
 
-  ctx.save();
+  // Subtle brass corner rivets
+  const rivets: [number, number][] = [
+    [13, 35],
+    [35, 13],
+    [cw - 13, 35],
+    [cw - 35, 13],
+    [13, ch - 35],
+    [35, ch - 13],
+    [cw - 13, ch - 35],
+    [cw - 35, ch - 13],
+  ];
+  for (const [rx, ry] of rivets) {
+    ctx.beginPath();
+    ctx.arc(rx, ry, 2.2, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(70, 42, 12, 0.55)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(rx - 0.5, ry - 0.5, 1.1, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 240, 200, 0.55)";
+    ctx.fill();
+  }
+
+  // Outer warm bevel edge
   ctx.beginPath();
-  ctx.roundRect(feltX - 11, feltY - 11, feltW + 22, feltH + 22, 10);
-  ctx.fillStyle = "#0B4A33";
-  ctx.fill();
+  ctx.roundRect(1, 1, cw - 2, ch - 2, 25);
+  ctx.strokeStyle = "rgba(255, 224, 178, 0.24)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
   ctx.restore();
 
-  // 3. Tournament Emerald Felt Surface
+  // 2. Dark Recessed Cushion Backing Channel (for pocket throats)
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(feltX - 14, feltY - 14, feltW + 28, feltH + 28, 12);
+  ctx.fillStyle = "#093927";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+
+  // 3. Tournament Emerald Simonis Wool Baize Surface
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(feltX - 13, feltY - 13, feltW + 26, feltH + 26);
+  ctx.clip();
+
   const feltGrad = ctx.createRadialGradient(
     cw / 2,
     ch / 2,
@@ -269,19 +650,39 @@ function drawPoolTable(
     ch / 2,
     Math.max(feltW, feltH) * 0.72
   );
-  feltGrad.addColorStop(0, "#1C8C61");
-  feltGrad.addColorStop(0.62, "#14724E");
-  feltGrad.addColorStop(1, "#0E573B");
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(feltX, feltY, feltW, feltH);
+  feltGrad.addColorStop(0, "#1E9567");
+  feltGrad.addColorStop(0.58, "#157852");
+  feltGrad.addColorStop(1, "#0E583C");
   ctx.fillStyle = feltGrad;
-  ctx.fill();
+  ctx.fillRect(feltX - 13, feltY - 13, feltW + 26, feltH + 26);
 
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.36)";
-  ctx.lineWidth = 10;
-  ctx.strokeRect(feltX - 2, feltY - 2, feltW + 4, feltH + 4);
+  // Dual overhead billiard-lamp warm illumination pools (at 30% & 70% table length)
+  for (const frac of [0.3, 0.7]) {
+    const lamp = tableToLocal(TABLE_WIDTH * frac, TABLE_HEIGHT / 2, vertical);
+    const poolGrad = ctx.createRadialGradient(
+      lamp.lx,
+      lamp.ly,
+      10,
+      lamp.lx,
+      lamp.ly,
+      250
+    );
+    poolGrad.addColorStop(0, "rgba(180, 255, 220, 0.10)");
+    poolGrad.addColorStop(0.55, "rgba(160, 255, 210, 0.03)");
+    poolGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = poolGrad;
+    ctx.fillRect(feltX, feltY, feltW, feltH);
+  }
+
+  // Subtle woven wool micro-texture overlay
+  const clothTile = getClothPatternCanvas();
+  if (clothTile) {
+    const pattern = ctx.createPattern(clothTile, "repeat");
+    if (pattern) {
+      ctx.fillStyle = pattern;
+      ctx.fillRect(feltX, feltY, feltW, feltH);
+    }
+  }
 
   if (highlightKitchen) {
     ctx.fillStyle = "rgba(255, 248, 220, 0.09)";
@@ -298,40 +699,134 @@ function drawPoolTable(
   }
 
   // Head string (baulk line)
-  const hs1 = tableToLocal(HEAD_STRING_X, 6, vertical);
-  const hs2 = tableToLocal(HEAD_STRING_X, TABLE_HEIGHT - 6, vertical);
+  const hs1 = tableToLocal(HEAD_STRING_X, 5, vertical);
+  const hs2 = tableToLocal(HEAD_STRING_X, TABLE_HEIGHT - 5, vertical);
   ctx.beginPath();
   ctx.moveTo(hs1.lx, hs1.ly);
   ctx.lineTo(hs2.lx, hs2.ly);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
-  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.24)";
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Head & Foot spots
+  // Head & Foot spot markers (with dark center dot like real tournament stickers)
   const spots = [
     tableToLocal(225, 250, vertical),
     tableToLocal(750, 250, vertical),
   ];
-  ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
   for (const s of spots) {
     ctx.beginPath();
-    ctx.arc(s.lx, s.ly, 4, 0, Math.PI * 2);
+    ctx.arc(s.lx, s.ly, 4.4, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.36)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(s.lx, s.ly, 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(10, 45, 30, 0.55)";
     ctx.fill();
   }
   ctx.restore();
 
-  // 4. Ivory Diamond Sights
+  // 4. Six Beveled Cushion Rails with Angled Pocket Jaws
+  const C = 13;
+  const JC = 11; // Corner jaw flare
+  const JS = 6; // Side jaw flare
+  const SH = 9; // Cushion shadow reach onto cloth
+
+  // Top-left & top-right
+  drawBeveledCushionSegment(
+    ctx,
+    [
+      [CORNER_MOUTH, 0],
+      [500 - SIDE_MOUTH_HALF, 0],
+      [500 - SIDE_MOUTH_HALF + JS, -C],
+      [CORNER_MOUTH - JC, -C],
+    ],
+    [CORNER_MOUTH, 0],
+    [500 - SIDE_MOUTH_HALF, 0],
+    [0, SH],
+    vertical
+  );
+  drawBeveledCushionSegment(
+    ctx,
+    [
+      [500 + SIDE_MOUTH_HALF, 0],
+      [TABLE_WIDTH - CORNER_MOUTH, 0],
+      [TABLE_WIDTH - CORNER_MOUTH + JC, -C],
+      [500 + SIDE_MOUTH_HALF - JS, -C],
+    ],
+    [500 + SIDE_MOUTH_HALF, 0],
+    [TABLE_WIDTH - CORNER_MOUTH, 0],
+    [0, SH],
+    vertical
+  );
+
+  // Bottom-left & bottom-right
+  drawBeveledCushionSegment(
+    ctx,
+    [
+      [CORNER_MOUTH, TABLE_HEIGHT],
+      [500 - SIDE_MOUTH_HALF, TABLE_HEIGHT],
+      [500 - SIDE_MOUTH_HALF + JS, TABLE_HEIGHT + C],
+      [CORNER_MOUTH - JC, TABLE_HEIGHT + C],
+    ],
+    [CORNER_MOUTH, TABLE_HEIGHT],
+    [500 - SIDE_MOUTH_HALF, TABLE_HEIGHT],
+    [0, -SH],
+    vertical
+  );
+  drawBeveledCushionSegment(
+    ctx,
+    [
+      [500 + SIDE_MOUTH_HALF, TABLE_HEIGHT],
+      [TABLE_WIDTH - CORNER_MOUTH, TABLE_HEIGHT],
+      [TABLE_WIDTH - CORNER_MOUTH + JC, TABLE_HEIGHT + C],
+      [500 + SIDE_MOUTH_HALF - JS, TABLE_HEIGHT + C],
+    ],
+    [500 + SIDE_MOUTH_HALF, TABLE_HEIGHT],
+    [TABLE_WIDTH - CORNER_MOUTH, TABLE_HEIGHT],
+    [0, -SH],
+    vertical
+  );
+
+  // Left & Right end cushions
+  drawBeveledCushionSegment(
+    ctx,
+    [
+      [0, CORNER_MOUTH],
+      [0, TABLE_HEIGHT - CORNER_MOUTH],
+      [-C, TABLE_HEIGHT - CORNER_MOUTH + JC],
+      [-C, CORNER_MOUTH - JC],
+    ],
+    [0, CORNER_MOUTH],
+    [0, TABLE_HEIGHT - CORNER_MOUTH],
+    [SH, 0],
+    vertical
+  );
+  drawBeveledCushionSegment(
+    ctx,
+    [
+      [TABLE_WIDTH, CORNER_MOUTH],
+      [TABLE_WIDTH, TABLE_HEIGHT - CORNER_MOUTH],
+      [TABLE_WIDTH + C, TABLE_HEIGHT - CORNER_MOUTH + JC],
+      [TABLE_WIDTH + C, CORNER_MOUTH - JC],
+    ],
+    [TABLE_WIDTH, CORNER_MOUTH],
+    [TABLE_WIDTH, TABLE_HEIGHT - CORNER_MOUTH],
+    [-SH, 0],
+    vertical
+  );
+
+  // 5. Inlaid Mother-of-Pearl / Ivory Diamond Sights
   const diamondCoords: { cx: number; cy: number }[] = [];
   for (const frac of [1 / 8, 2 / 8, 3 / 8, 5 / 8, 6 / 8, 7 / 8]) {
     const tx = TABLE_WIDTH * frac;
     const top = tableToLocal(tx, 0, vertical);
     const bot = tableToLocal(tx, TABLE_HEIGHT, vertical);
     if (!vertical) {
-      diamondCoords.push({ cx: top.lx, cy: RAIL / 2 - 2 });
-      diamondCoords.push({ cx: bot.lx, cy: ch - RAIL / 2 + 2 });
+      diamondCoords.push({ cx: top.lx, cy: RAIL / 2 - 4 });
+      diamondCoords.push({ cx: bot.lx, cy: ch - RAIL / 2 + 4 });
     } else {
-      diamondCoords.push({ cx: RAIL / 2 - 2, cy: top.ly });
-      diamondCoords.push({ cx: cw - RAIL / 2 + 2, cy: bot.ly });
+      diamondCoords.push({ cx: RAIL / 2 - 4, cy: top.ly });
+      diamondCoords.push({ cx: cw - RAIL / 2 + 4, cy: bot.ly });
     }
   }
   for (const frac of [1 / 4, 2 / 4, 3 / 4]) {
@@ -339,31 +834,39 @@ function drawPoolTable(
     const left = tableToLocal(0, ty, vertical);
     const right = tableToLocal(TABLE_WIDTH, ty, vertical);
     if (!vertical) {
-      diamondCoords.push({ cx: RAIL / 2 - 2, cy: left.ly });
-      diamondCoords.push({ cx: cw - RAIL / 2 + 2, cy: right.ly });
+      diamondCoords.push({ cx: RAIL / 2 - 4, cy: left.ly });
+      diamondCoords.push({ cx: cw - RAIL / 2 + 4, cy: right.ly });
     } else {
-      diamondCoords.push({ cx: left.lx, cy: ch - RAIL / 2 + 2 });
-      diamondCoords.push({ cx: right.lx, cy: RAIL / 2 - 2 });
+      diamondCoords.push({ cx: left.lx, cy: ch - RAIL / 2 + 4 });
+      diamondCoords.push({ cx: right.lx, cy: RAIL / 2 - 4 });
     }
   }
 
-  ctx.fillStyle = "#F4E6C8";
   for (const d of diamondCoords) {
     ctx.save();
     ctx.translate(d.cx, d.cy);
     ctx.rotate(Math.PI / 4);
-    ctx.fillRect(-3.1, -3.1, 6.2, 6.2);
+    ctx.fillStyle = "rgba(35, 16, 6, 0.55)";
+    ctx.fillRect(-3.8, -3.8, 7.6, 7.6);
+    ctx.fillStyle = "#F5E7C9";
+    ctx.fillRect(-3.0, -3.0, 6.0, 6.0);
     ctx.restore();
   }
 
-  // 5. Six Pockets
+  // 6. Six Recessed Pockets with Stitched Leather Collars
   for (const p of POCKETS) {
     const { lx: cx, ly: cy } = tableToLocal(p.x, p.y, vertical);
-    ctx.beginPath();
-    ctx.arc(cx, cy, p.visualRadius + 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#1E120A";
-    ctx.fill();
 
+    // Outer stitched dark leather collar
+    ctx.beginPath();
+    ctx.arc(cx, cy, p.visualRadius + 5, 0, Math.PI * 2);
+    ctx.fillStyle = "#22140B";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 224, 178, 0.14)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // Deep recessed pocket well
     const holeGrad = ctx.createRadialGradient(
       cx,
       cy,
@@ -372,14 +875,54 @@ function drawPoolTable(
       cy,
       p.visualRadius
     );
-    holeGrad.addColorStop(0, "#050505");
-    holeGrad.addColorStop(0.75, "#0D0B09");
-    holeGrad.addColorStop(1, "#211914");
+    holeGrad.addColorStop(0, "#020202");
+    holeGrad.addColorStop(0.72, "#090706");
+    holeGrad.addColorStop(1, "#221811");
     ctx.beginPath();
     ctx.arc(cx, cy, p.visualRadius, 0, Math.PI * 2);
     ctx.fillStyle = holeGrad;
     ctx.fill();
   }
+}
+
+function drawPoolTable(
+  ctx: CanvasRenderingContext2D,
+  vertical: boolean,
+  highlightKitchen: boolean,
+  dpr: number
+) {
+  const cw = vertical ? V_TABLE_W : H_TABLE_W;
+  const ch = vertical ? V_TABLE_H : H_TABLE_H;
+  if (typeof document === "undefined") {
+    renderPoolTableScene(ctx, vertical, highlightKitchen);
+    return;
+  }
+
+  const cacheScale = Math.min(2, Math.max(1, Math.round(dpr * 2) / 2));
+  const key = `${vertical ? "v" : "h"}-${highlightKitchen ? "k" : "n"}-${cacheScale}`;
+  let cached = cachedTableCanvases.get(key);
+
+  if (!cached) {
+    cached = document.createElement("canvas");
+    cached.width = Math.round(cw * cacheScale);
+    cached.height = Math.round(ch * cacheScale);
+    const offCtx = cached.getContext("2d");
+    if (offCtx) {
+      offCtx.scale(cacheScale, cacheScale);
+      renderPoolTableScene(offCtx, vertical, highlightKitchen);
+      // Keep cache tiny (at most 6 entries across orientations & states)
+      if (cachedTableCanvases.size >= 6) {
+        const firstKey = cachedTableCanvases.keys().next().value;
+        if (firstKey) cachedTableCanvases.delete(firstKey);
+      }
+      cachedTableCanvases.set(key, cached);
+    } else {
+      renderPoolTableScene(ctx, vertical, highlightKitchen);
+      return;
+    }
+  }
+
+  ctx.drawImage(cached, 0, 0, cw, ch);
 }
 
 function drawCueStick(
@@ -514,8 +1057,8 @@ function TinyBallDot({ id, pocketed }: { id: number; pocketed: boolean }) {
     <span
       title={`#${id}${pocketed ? " (pocketed)" : ""}`}
       style={{
-        width: 7,
-        height: 7,
+        width: 6.5,
+        height: 6.5,
         borderRadius: "50%",
         display: "inline-block",
         position: "relative",
@@ -539,8 +1082,8 @@ function TinyBallDot({ id, pocketed }: { id: number; pocketed: boolean }) {
             position: "absolute",
             left: 0,
             right: 0,
-            top: 1.5,
-            bottom: 1.5,
+            top: 1.4,
+            bottom: 1.4,
             background: visual.color,
           }}
         />
@@ -644,7 +1187,7 @@ export function PoolBoard({
     [stageSize.w, stageSize.h]
   );
 
-  // Interactive aiming, Ball-in-Hand, cue pullback & animation state
+  // Interactive aiming, Ball-in-Hand, cue pullback, audio & animation state
   const [aimAngle, setAimAngle] = useState<number>(0);
   const [pullPower, setPullPower] = useState<number>(0);
   const [isPullingStick, setIsPullingStick] = useState<boolean>(false);
@@ -658,10 +1201,30 @@ export function PoolBoard({
   const [isAnimating, setIsAnimating] = useState<boolean>(false);
   const [confirmForfeit, setConfirmForfeit] = useState<boolean>(false);
   const [shotToast, setShotToast] = useState<string | null>(null);
+  const [muted, setMuted] = useState<boolean>(false);
+  const mutedRef = useRef<boolean>(false);
+
+  // Hydrate persisted mute preference on mount (client-only)
+  useEffect(() => {
+    const saved = loadPoolMuted();
+    setMuted(saved);
+    mutedRef.current = saved;
+  }, []);
+
+  const toggleMuted = useCallback(() => {
+    setMuted((prev) => {
+      const next = !prev;
+      mutedRef.current = next;
+      savePoolMuted(next);
+      if (!next) primePoolAudio();
+      return next;
+    });
+  }, []);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFramesRef = useRef<PoolFrameBall[][]>([]);
-  const animFrameIdxRef = useRef<number>(0);
+  const animSoundEventsRef = useRef<PoolSoundEvent[]>([]);
+  const animNextSoundIdxRef = useRef<number>(0);
   const animStrikeStartRef = useRef<number>(0);
   const animShotMetaRef = useRef<{
     angle: number;
@@ -792,7 +1355,8 @@ export function PoolBoard({
         recordFrames: true,
       });
       animFramesRef.current = sim.frames;
-      animFrameIdxRef.current = 0;
+      animSoundEventsRef.current = sim.soundEvents;
+      animNextSoundIdxRef.current = 0;
       animStrikeStartRef.current = performance.now();
       animShotMetaRef.current = {
         angle: move.angle,
@@ -859,10 +1423,10 @@ export function PoolBoard({
     ctx.translate(vp.originX, vp.originY);
     ctx.scale(vp.scale, vp.scale);
 
-    drawPoolTable(ctx, vp.vertical, canPlaceCue && state.isBreakShot);
+    drawPoolTable(ctx, vp.vertical, canPlaceCue && state.isBreakShot, dpr);
 
     for (const b of effectiveBalls) {
-      drawBall(ctx, b, vp.vertical);
+      drawBall3D(ctx, b, vp.vertical);
     }
 
     const cue = effectiveBalls.find((b) => b.id === 0);
@@ -986,7 +1550,7 @@ export function PoolBoard({
     isTargetLegal,
   ]);
 
-  // Isolated 60fps Shot Animation Loop
+  // Isolated Sub-Frame Interpolated 60–120Hz Shot Animation Loop + Synced Audio
   useEffect(() => {
     if (!isAnimating) return;
     const canvas = canvasRef.current;
@@ -1003,13 +1567,10 @@ export function PoolBoard({
     }
 
     const STRIKE_MS = 90;
-    let lastFrameTime = performance.now();
-    let frameAccumulator = 0;
+    const FRAME_MS = 1000 / 60;
 
     const tick = (now: number) => {
       const elapsed = now - animStrikeStartRef.current;
-      const dt = Math.min(50, now - lastFrameTime);
-      lastFrameTime = now;
 
       ctx.save();
       ctx.scale(dpr, dpr);
@@ -1017,14 +1578,14 @@ export function PoolBoard({
       ctx.translate(vp.originX, vp.originY);
       ctx.scale(vp.scale, vp.scale);
 
-      drawPoolTable(ctx, vp.vertical, false);
+      drawPoolTable(ctx, vp.vertical, false, dpr);
 
       const frames = animFramesRef.current;
       const meta = animShotMetaRef.current;
 
       if (elapsed < STRIKE_MS && meta && frames[0]) {
         for (const b of frames[0]) {
-          drawBall(ctx, b, vp.vertical);
+          drawBall3D(ctx, b, vp.vertical);
         }
         const t = Math.min(1, elapsed / STRIKE_MS);
         const eased = 1 - (1 - t) * (1 - t);
@@ -1049,23 +1610,85 @@ export function PoolBoard({
         return;
       }
 
-      frameAccumulator += dt;
-      while (frameAccumulator >= 16.666) {
-        frameAccumulator -= 16.666;
-        if (animFrameIdxRef.current < frames.length - 1) {
-          animFrameIdxRef.current += 1;
+      const maxIdx = Math.max(0, frames.length - 1);
+      const rollMs = Math.max(0, elapsed - STRIKE_MS);
+      const frameFloat = rollMs / FRAME_MS;
+      const idx = Math.min(maxIdx, Math.floor(frameFloat));
+      const nextIdx = Math.min(maxIdx, idx + 1);
+      const alpha =
+        idx >= maxIdx ? 0 : Math.max(0, Math.min(1, frameFloat - idx));
+
+      // Fire synchronized Web Audio impact sounds up to the current physics frame
+      const events = animSoundEventsRef.current;
+      while (
+        animNextSoundIdxRef.current < events.length &&
+        events[animNextSoundIdxRef.current].frame <= idx
+      ) {
+        const ev = events[animNextSoundIdxRef.current];
+        playPoolSound(ev.kind, ev.intensity, mutedRef.current);
+        animNextSoundIdxRef.current += 1;
+      }
+
+      const frameA = frames[idx] || frames[maxIdx];
+      const frameB = frames[nextIdx] || frameA;
+      if (frameA && frameB) {
+        const droppingBalls: PoolFrameBall[] = [];
+        const clothBalls: PoolFrameBall[] = [];
+
+        for (let i = 0; i < frameA.length; i++) {
+          const a = frameA[i];
+          const b = frameB[i] || a;
+          if (a.pocketed && b.pocketed) continue;
+
+          if (!a.pocketed && b.pocketed) {
+            if (a.dropProgress !== undefined) {
+              droppingBalls.push({
+                id: a.id,
+                x: a.x + (b.x - a.x) * alpha,
+                y: a.y + (b.y - a.y) * alpha,
+                pocketed: false,
+                q: nlerpQuat(a.q, b.q, alpha),
+                dropProgress: a.dropProgress + (1 - a.dropProgress) * alpha,
+              });
+            }
+            continue;
+          }
+
+          const hasDrop =
+            a.dropProgress !== undefined || b.dropProgress !== undefined;
+          const interpBall: PoolFrameBall = {
+            id: a.id,
+            x: a.x + (b.x - a.x) * alpha,
+            y: a.y + (b.y - a.y) * alpha,
+            pocketed: false,
+            q: alpha > 0.001 ? nlerpQuat(a.q, b.q, alpha) : a.q,
+            dropProgress: hasDrop
+              ? (a.dropProgress ?? 0) +
+                ((b.dropProgress ?? 0) - (a.dropProgress ?? 0)) * alpha
+              : undefined,
+          };
+
+          if (hasDrop) droppingBalls.push(interpBall);
+          else clothBalls.push(interpBall);
+        }
+
+        // Draw sinking balls first so active cloth balls always render cleanly above them
+        for (const b of droppingBalls) {
+          drawBall3D(ctx, b, vp.vertical);
+        }
+        for (const b of clothBalls) {
+          drawBall3D(ctx, b, vp.vertical);
         }
       }
 
-      const frame = frames[animFrameIdxRef.current] || frames[frames.length - 1];
-      if (frame) {
-        for (const b of frame) {
-          drawBall(ctx, b, vp.vertical);
-        }
-      }
       ctx.restore();
 
-      if (animFrameIdxRef.current >= frames.length - 1) {
+      if (frameFloat >= maxIdx) {
+        while (animNextSoundIdxRef.current < events.length) {
+          const ev = events[animNextSoundIdxRef.current];
+          playPoolSound(ev.kind, ev.intensity, mutedRef.current);
+          animNextSoundIdxRef.current += 1;
+        }
         animRafRef.current = null;
         setIsAnimating(false);
         return;
@@ -1106,6 +1729,7 @@ export function PoolBoard({
   }
 
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!mutedRef.current) primePoolAudio();
     if (!canShootNow) return;
     const cue = effectiveBalls.find((b) => b.id === 0);
     if (!cue || cue.pocketed) return;
@@ -1386,7 +2010,7 @@ export function PoolBoard({
             flexShrink: 0,
           }}
         >
-          <AvatarDot id={player.id} size={22} />
+          <AvatarDot id={player.id} size={20} />
         </div>
         <div
           style={{
@@ -1396,14 +2020,14 @@ export function PoolBoard({
         >
           <div
             style={{
-              fontSize: 11,
+              fontSize: 10.5,
               fontWeight: 700,
               color: "#F4EFE7",
               lineHeight: 1.1,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
-              maxWidth: 72,
+              maxWidth: 68,
             }}
           >
             {player.id === currentUser && !isPassAndPlay ? "You" : player.name}
@@ -1465,16 +2089,16 @@ export function PoolBoard({
         overscrollBehavior: "none",
       }}
     >
-      {/* Slim ~44px Top HUD Strip */}
+      {/* Slim ~42px Top HUD Strip */}
       <div
         style={{
-          padding: "calc(6px + env(safe-area-inset-top)) 8px 6px",
+          padding: "calc(6px + env(safe-area-inset-top)) 7px 6px",
           minHeight: 42,
           background: "rgba(22, 18, 15, 0.96)",
           borderBottom: "1px solid rgba(255, 232, 200, 0.1)",
           display: "flex",
           alignItems: "center",
-          gap: 5,
+          gap: 4,
           flexShrink: 0,
           zIndex: 10,
         }}
@@ -1485,9 +2109,9 @@ export function PoolBoard({
           aria-label="Back to Games"
           title="Back to Games"
           style={{
-            width: 29,
-            height: 29,
-            borderRadius: 9,
+            width: 27,
+            height: 27,
+            borderRadius: 8,
             background: "rgba(255, 255, 255, 0.09)",
             border: "1px solid rgba(255, 255, 255, 0.12)",
             color: "#F4EFE7",
@@ -1498,7 +2122,7 @@ export function PoolBoard({
             flexShrink: 0,
           }}
         >
-          <ChevronLeft size={17} />
+          <ChevronLeft size={16} />
         </button>
 
         <div
@@ -1516,7 +2140,7 @@ export function PoolBoard({
             style={{
               fontSize: 9.5,
               fontWeight: 800,
-              padding: "3px 7px",
+              padding: "3px 6px",
               borderRadius: 999,
               background: centerPillBg,
               color: centerPillColor,
@@ -1533,14 +2157,37 @@ export function PoolBoard({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 4,
+            gap: 3,
             flexShrink: 0,
           }}
         >
+          <button
+            type="button"
+            onClick={toggleMuted}
+            aria-label={muted ? "Unmute table audio" : "Mute table audio"}
+            title={muted ? "Unmute table audio" : "Mute table audio"}
+            style={{
+              width: 27,
+              height: 27,
+              borderRadius: 8,
+              background: muted
+                ? "rgba(255, 255, 255, 0.05)"
+                : "rgba(255, 255, 255, 0.09)",
+              border: "1px solid rgba(255, 255, 255, 0.12)",
+              color: muted ? "rgba(244,239,231,0.45)" : "#F4EFE7",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+          </button>
           {state.lastShot && !isAnimating && (
             <button
               type="button"
               onClick={() => {
+                if (!mutedRef.current) primePoolAudio();
                 if (state.lastShot) {
                   startShotAnimation(
                     state.lastShot.preBalls,
@@ -1551,9 +2198,9 @@ export function PoolBoard({
               aria-label="Replay last shot"
               title="Replay last shot"
               style={{
-                width: 29,
-                height: 29,
-                borderRadius: 9,
+                width: 27,
+                height: 27,
+                borderRadius: 8,
                 background: "rgba(255, 255, 255, 0.09)",
                 border: "1px solid rgba(255, 255, 255, 0.12)",
                 color: "#F4EFE7",
@@ -1563,7 +2210,7 @@ export function PoolBoard({
                 cursor: "pointer",
               }}
             >
-              <Play size={13} />
+              <Play size={12.5} />
             </button>
           )}
           {isActive && isParticipant && (
@@ -1573,9 +2220,9 @@ export function PoolBoard({
               aria-label="Forfeit match"
               title="Forfeit match"
               style={{
-                width: 29,
-                height: 29,
-                borderRadius: 9,
+                width: 27,
+                height: 27,
+                borderRadius: 8,
                 background: confirmForfeit
                   ? "rgba(240, 113, 96, 0.25)"
                   : "rgba(255, 255, 255, 0.09)",
@@ -1589,7 +2236,7 @@ export function PoolBoard({
                 cursor: "pointer",
               }}
             >
-              <Flag size={13} />
+              <Flag size={12.5} />
             </button>
           )}
         </div>
@@ -2074,6 +2721,7 @@ export function PoolBoard({
                     <button
                       type="button"
                       onClick={() => {
+                        if (!mutedRef.current) primePoolAudio();
                         if (state.lastShot) {
                           startShotAnimation(
                             state.lastShot.preBalls,
