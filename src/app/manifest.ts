@@ -48,15 +48,9 @@ export default function manifest(): MetadataRoute.Manifest {
         icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
       {
-        name: "Tasks",
-        short_name: "Tasks",
-        url: "/?tab=tasks",
-        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
-      },
-      {
-        name: "Events",
-        short_name: "Events",
-        url: "/?tab=events",
+        name: "Plan",
+        short_name: "Plan",
+        url: "/?tab=plan",
         icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
       {

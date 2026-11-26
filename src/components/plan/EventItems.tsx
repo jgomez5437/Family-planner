@@ -13,9 +13,7 @@ import {
   countdownLabel,
   fmtTime,
   formatRelativeTime,
-  parseLocalDate,
   relativeDay,
-  todayISO,
 } from "@/lib/dates";
 import { humanizeHistoryNote, recurrenceLabel } from "@/lib/recurrence";
 import type {
@@ -28,114 +26,9 @@ import {
   AvatarDot,
   AvatarStack,
   CategoryBadge,
-  EmptyState,
   FieldLabel,
   ModalShell,
-  SectionLabel,
 } from "@/components/ui/Primitives";
-import type { ComposerKind } from "@/components/layout/QuickAddSheet";
-
-export function EventsTab({
-  events,
-  currentUser,
-  openHistory,
-  openComposer,
-  onUpdateTime,
-  onDelete,
-}: {
-  events: FamilyEvent[];
-  currentUser: MemberId;
-  openHistory: (e: FamilyEvent) => void;
-  openComposer?: (type: ComposerKind) => void;
-  onUpdateTime: (
-    id: string,
-    field: string,
-    value: string,
-    reason: string,
-    scope: "instance" | "series"
-  ) => void;
-  onDelete: (id: string, scope: "instance" | "series") => void;
-}) {
-  const [editing, setEditing] = useState<FamilyEvent | null>(null);
-  const groups: Record<string, FamilyEvent[]> = {
-    Today: [],
-    Tomorrow: [],
-    "This Week": [],
-    "Next Week": [],
-    Later: [],
-  };
-  const today = parseLocalDate(todayISO(0));
-  events.forEach((e) => {
-    const diff = Math.round(
-      (parseLocalDate(e.date).getTime() - today.getTime()) / 86400000
-    );
-    if (diff < 0) return;
-    if (diff === 0) groups.Today.push(e);
-    else if (diff === 1) groups.Tomorrow.push(e);
-    else if (diff <= 7) groups["This Week"].push(e);
-    else if (diff <= 14) groups["Next Week"].push(e);
-    else groups.Later.push(e);
-  });
-
-  const isEmpty = events.filter((e) => e.date >= todayISO(0)).length === 0;
-
-  return (
-    <div>
-      <div
-        style={{
-          fontFamily: "'Baloo 2', sans-serif",
-          fontSize: 22,
-          fontWeight: 700,
-          marginBottom: 4,
-        }}
-      >
-        Upcoming
-      </div>
-      <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
-        Appointments and important dates, at a glance.
-      </div>
-      {Object.entries(groups).map(([label, list]) =>
-        list.length === 0 ? null : (
-          <div key={label} style={{ marginBottom: 18 }}>
-            <SectionLabel text={label} />
-            {list.map((e) => (
-              <AppointmentCard
-                key={e.id}
-                event={e}
-                onEdit={() => setEditing(e)}
-                onHistory={() => openHistory(e)}
-              />
-            ))}
-          </div>
-        )
-      )}
-      {isEmpty && (
-        <EmptyState
-          text="Nothing upcoming yet."
-          sub="Add an appointment or important date."
-          actionLabel={openComposer ? "Add Appointment" : undefined}
-          onAction={openComposer ? () => openComposer("appointment") : undefined}
-        />
-      )}
-
-      {editing && (
-        <EventEditModal
-          event={editing}
-          canDelete={editing.createdBy === currentUser}
-          onClose={() => setEditing(null)}
-          onSave={(field, value, reason, scope) => {
-            onUpdateTime(editing.id, field, value, reason, scope);
-            setEditing(null);
-          }}
-          onDelete={(scope) => {
-            onDelete(editing.id, scope);
-            setEditing(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
 
 export function AppointmentCard({
   event,
@@ -175,9 +68,23 @@ export function AppointmentCard({
       >
         <div>
           <div style={{ fontWeight: 700, fontSize: 15.5 }}>{event.title}</div>
-          <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 4 }}>
+          <div
+            style={{
+              fontSize: 12.5,
+              color: "var(--text-secondary)",
+              marginTop: 4,
+            }}
+          >
             {relativeDay(event.date)}
-            {!event.allDay && ` · ${fmtTime(event.startTime)}`}
+            {event.allDay
+              ? " · All day"
+              : event.startTime
+                ? ` · ${
+                    event.endTime
+                      ? `${fmtTime(event.startTime)} – ${fmtTime(event.endTime)}`
+                      : fmtTime(event.startTime)
+                  }`
+                : ""}
           </div>
         </div>
         <div
@@ -209,7 +116,11 @@ export function AppointmentCard({
                 ev.stopPropagation();
                 onHistory();
               }}
-              style={{ color: "var(--border-muted)", padding: 2, display: "flex" }}
+              style={{
+                color: "var(--border-muted)",
+                padding: 2,
+                display: "flex",
+              }}
               title="View history"
             >
               <History size={15} />
@@ -241,7 +152,13 @@ export function AppointmentCard({
       >
         <CategoryBadge category={event.category} />
         <AvatarStack ids={event.participants} />
-        <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: "auto" }}>
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--text-faint)",
+            marginLeft: "auto",
+          }}
+        >
           Added by {memberById(event.createdBy).name}
         </span>
       </div>
@@ -392,7 +309,13 @@ export function EventEditModal({
 
   return (
     <ModalShell onClose={onClose} title={event.title}>
-      <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 14 }}>
+      <div
+        style={{
+          fontSize: 12.5,
+          color: "var(--text-secondary)",
+          marginBottom: 14,
+        }}
+      >
         {event.notes || event.description || "No notes"}
       </div>
       <div
@@ -438,7 +361,9 @@ export function EventEditModal({
         <>
           <FieldLabel style={{ marginTop: 12 }}>
             Why the change?{" "}
-            <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
+            <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>
+              (optional)
+            </span>
           </FieldLabel>
           <input
             placeholder="e.g. Coach moved practice back an hour"
@@ -449,8 +374,8 @@ export function EventEditModal({
         </>
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
-        {canDelete && (
-          confirmDelete ? (
+        {canDelete &&
+          (confirmDelete ? (
             <>
               <button
                 onClick={() => setConfirmDelete(false)}
@@ -487,12 +412,16 @@ export function EventEditModal({
             >
               Delete
             </button>
-          )
-        )}
+          ))}
         {!confirmDelete && (
           <button
             onClick={requestSave}
-            style={{ ...btnStyle, flex: 1, background: "var(--accent)", color: "#fff" }}
+            style={{
+              ...btnStyle,
+              flex: 1,
+              background: "var(--accent)",
+              color: "#fff",
+            }}
           >
             Save changes
           </button>
@@ -644,7 +573,13 @@ export function EventDetailModal({
         )}
       </div>
 
-      <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 4 }}>
+      <div
+        style={{
+          fontSize: 13,
+          color: "var(--text-secondary)",
+          marginBottom: 4,
+        }}
+      >
         {relativeDay(event.occurrenceDate || event.date)}
         {!event.allDay &&
           event.startTime &&
@@ -748,7 +683,9 @@ export function EventDetailModal({
                     style={{
                       fontSize: 13,
                       textDecoration: t.completed ? "line-through" : "none",
-                      color: t.completed ? "var(--text-faint)" : "var(--text-primary)",
+                      color: t.completed
+                        ? "var(--text-faint)"
+                        : "var(--text-primary)",
                       flex: 1,
                       background: "none",
                       border: "none",
@@ -765,7 +702,9 @@ export function EventDetailModal({
                     style={{
                       fontSize: 13,
                       textDecoration: t.completed ? "line-through" : "none",
-                      color: t.completed ? "var(--text-faint)" : "var(--text-primary)",
+                      color: t.completed
+                        ? "var(--text-faint)"
+                        : "var(--text-primary)",
                       flex: 1,
                     }}
                   >

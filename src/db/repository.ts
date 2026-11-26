@@ -863,7 +863,9 @@ export async function getFamilyState(
           title: n.title,
           body: n.body,
           target: {
-            tab: (n.targetTab || "wall") as AppTabId,
+            tab: (n.targetTab === "tasks" || n.targetTab === "events"
+              ? "plan"
+              : n.targetTab || "wall") as AppTabId,
             entityId: n.targetEntityId || null,
           },
           read: n.read,
@@ -2825,7 +2827,9 @@ export async function getNotificationsForMember(
         title: n.title,
         body: n.body,
         target: {
-          tab: (n.targetTab || "wall") as AppTabId,
+          tab: (n.targetTab === "tasks" || n.targetTab === "events"
+            ? "plan"
+            : n.targetTab || "wall") as AppTabId,
           entityId: n.targetEntityId || null,
         },
         read: n.read,

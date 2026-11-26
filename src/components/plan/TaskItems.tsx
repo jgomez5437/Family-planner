@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { CheckCircle2, Circle, Trash2 } from "lucide-react";
 import {
   btnStyle,
-  CARD_SHADOW,
   inputStyle,
   pillStyle,
   TASK_CATEGORIES,
@@ -25,253 +24,18 @@ import type {
 } from "@/types/family";
 import {
   AvatarDot,
-  EmptyState,
   FieldLabel,
   LocalClock,
   ModalShell,
-  SectionLabel,
 } from "@/components/ui/Primitives";
-import type { ComposerKind } from "@/components/layout/QuickAddSheet";
-
-export function TasksTab({
-  tasks,
-  toggleTask,
-  currentUser,
-  openComposer,
-  onOpenLinkedEvent,
-  onEditTask,
-  onDeleteTask,
-}: {
-  tasks: FamilyTask[];
-  toggleTask: (id: string) => void;
-  currentUser: MemberId;
-  openComposer?: (type: ComposerKind) => void;
-  onOpenLinkedEvent?: (task: FamilyTask) => void;
-  onEditTask?: (task: FamilyTask) => void;
-  onDeleteTask?: (id: string, scope: "instance" | "series") => void;
-}) {
-  const [filter, setFilter] = useState("All");
-  const [recurringDeleteTarget, setRecurringDeleteTarget] =
-    useState<FamilyTask | null>(null);
-
-  const filtered = tasks.filter((t) => {
-    if (filter === "My Tasks") return t.assignedTo === currentUser;
-    if (filter === "Family Tasks")
-      return !!t.assignedTo && t.assignedTo !== currentUser;
-    if (filter === "Unassigned") return !t.assignedTo;
-    if (filter === "Today") return !t.completed && t.dueDate === todayISO(0);
-    if (filter === "Upcoming") return !t.completed && t.dueDate > todayISO(0);
-    if (filter === "Overdue")
-      return !t.completed && t.dueDate && t.dueDate < todayISO(0);
-    if (filter === "Completed") return t.completed;
-    return true;
-  });
-
-  const grouped: Record<string, FamilyTask[]> = {};
-  filtered.forEach((t) => {
-    const key = t.completed ? "Completed" : t.dueDate || "No due date";
-    grouped[key] = grouped[key] || [];
-    grouped[key].push(t);
-  });
-
-  return (
-    <div>
-      <div
-        style={{
-          fontFamily: "'Baloo 2', sans-serif",
-          fontSize: 22,
-          fontWeight: 700,
-          marginBottom: 14,
-        }}
-      >
-        Tasks
-      </div>
-      <div
-        style={{
-          display: "flex",
-          gap: 6,
-          overflowX: "auto",
-          marginBottom: 16,
-          paddingBottom: 4,
-        }}
-      >
-        {[
-          "All",
-          "My Tasks",
-          "Family Tasks",
-          "Today",
-          "Upcoming",
-          "Overdue",
-          "Unassigned",
-          "Completed",
-        ].map((c) => (
-          <button
-            key={c}
-            onClick={() => setFilter(c)}
-            style={{
-              flexShrink: 0,
-              border: `1.5px solid ${filter === c ? "var(--success)" : "var(--border-default)"}`,
-              background: filter === c ? "var(--success-soft)" : "var(--bg-surface)",
-              color: filter === c ? "var(--success-ink)" : "var(--text-secondary)",
-              borderRadius: 999,
-              padding: "5px 12px",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-
-      {Object.keys(grouped).length === 0 && (
-        <EmptyState
-          text="No tasks yet."
-          sub="Add your family's first task."
-          actionLabel={openComposer ? "Add Task" : undefined}
-          onAction={openComposer ? () => openComposer("task") : undefined}
-        />
-      )}
-      {Object.entries(grouped).map(([key, list]) => (
-        <div key={key} style={{ marginBottom: 16 }}>
-          <SectionLabel
-            text={
-              key === "Completed"
-                ? "Completed"
-                : key === "No due date"
-                  ? key
-                  : relativeDay(key)
-            }
-          />
-          <div
-            style={{
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border-subtle)",
-              boxShadow: CARD_SHADOW,
-              borderRadius: 14,
-              padding: "4px 14px",
-            }}
-          >
-            {list.map((t) => {
-              const canDelete = Boolean(
-                onDeleteTask && t.createdBy === currentUser
-              );
-              const isRecurring = Boolean(t.recurrence && t.id.includes("::"));
-              return (
-                <TaskRow
-                  key={t.id}
-                  task={t}
-                  onToggle={() => toggleTask(t.id)}
-                  onOpen={onEditTask ? () => onEditTask(t) : undefined}
-                  onOpenLinkedEvent={onOpenLinkedEvent}
-                  canDelete={canDelete}
-                  isRecurring={isRecurring}
-                  onDelete={
-                    canDelete && onDeleteTask
-                      ? () => {
-                          if (isRecurring) {
-                            setRecurringDeleteTarget(t);
-                          } else {
-                            onDeleteTask(t.id, "series");
-                          }
-                        }
-                      : undefined
-                  }
-                />
-              );
-            })}
-          </div>
-        </div>
-      ))}
-
-      {recurringDeleteTarget && onDeleteTask && (
-        <ModalShell
-          onClose={() => setRecurringDeleteTarget(null)}
-          title="Delete Task"
-        >
-          <div
-            style={{
-              fontSize: 13,
-              color: "var(--text-secondary)",
-              marginBottom: 16,
-              lineHeight: 1.5,
-            }}
-          >
-            &quot;{recurringDeleteTarget.title}&quot; repeats{" "}
-            {recurrenceLabel(
-              recurringDeleteTarget.recurrence,
-              recurringDeleteTarget.dueDate
-            )?.toLowerCase()}
-            .
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button
-              onClick={() => {
-                onDeleteTask(recurringDeleteTarget.id, "instance");
-                setRecurringDeleteTarget(null);
-              }}
-              style={{
-                ...btnStyle,
-                background: "var(--bg-surface)",
-                border: "1.5px solid var(--border-default)",
-                color: "var(--text-primary)",
-                textAlign: "left",
-              }}
-            >
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>
-                This occurrence only
-              </div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--text-muted)",
-                  fontWeight: 400,
-                  marginTop: 1,
-                }}
-              >
-                Removes just this date; the series continues.
-              </div>
-            </button>
-            <button
-              onClick={() => {
-                onDeleteTask(recurringDeleteTarget.id, "series");
-                setRecurringDeleteTarget(null);
-              }}
-              style={{
-                ...btnStyle,
-                background: "var(--bg-surface)",
-                border: "1.5px solid var(--danger-border)",
-                color: "var(--danger)",
-                textAlign: "left",
-              }}
-            >
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>
-                Entire series
-              </div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--text-muted)",
-                  fontWeight: 400,
-                  marginTop: 1,
-                }}
-              >
-                Removes every occurrence, past and future.
-              </div>
-            </button>
-          </div>
-        </ModalShell>
-      )}
-    </div>
-  );
-}
 
 export function TaskRow({
   task,
   onToggle,
   onOpen,
   compact,
+  showDate,
+  hideDivider,
   onOpenLinkedEvent,
   canDelete,
   isRecurring,
@@ -281,6 +45,8 @@ export function TaskRow({
   onToggle: () => void;
   onOpen?: () => void;
   compact?: boolean;
+  showDate?: boolean;
+  hideDivider?: boolean;
   onOpenLinkedEvent?: (task: FamilyTask) => void;
   canDelete?: boolean;
   isRecurring?: boolean;
@@ -288,7 +54,8 @@ export function TaskRow({
 }) {
   const { memberById } = useMembers();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const overdue = !task.completed && Boolean(task.dueDate) && task.dueDate < todayISO(0);
+  const overdue =
+    !task.completed && Boolean(task.dueDate) && task.dueDate < todayISO(0);
   return (
     <div
       style={{
@@ -296,7 +63,7 @@ export function TaskRow({
         alignItems: "center",
         gap: 10,
         padding: compact ? "7px 0" : "11px 0",
-        borderBottom: "1px solid var(--border-divider)",
+        borderBottom: hideDivider ? "none" : "1px solid var(--border-divider)",
       }}
     >
       <button
@@ -356,35 +123,71 @@ export function TaskRow({
               }}
             >
               {task.completed && task.completedBy ? (
-                <span
-                  suppressHydrationWarning
-                  style={{ fontSize: 10.5, color: "var(--success)", fontWeight: 600 }}
-                >
-                  ✓ {memberById(task.completedBy).name} completed
-                  {task.completedAt
-                    ? ` · ${formatRelativeTime(task.completedAt)}`
-                    : ""}
-                </span>
+                <>
+                  <span
+                    suppressHydrationWarning
+                    style={{
+                      fontSize: 10.5,
+                      color: "var(--success)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    ✓ {memberById(task.completedBy).name} completed
+                    {task.completedAt
+                      ? ` · ${formatRelativeTime(task.completedAt)}`
+                      : ""}
+                  </span>
+                  {showDate && task.dueDate && (
+                    <span style={{ fontSize: 10.5, color: "var(--text-faint)" }}>
+                      · Due {relativeDay(task.dueDate)}
+                    </span>
+                  )}
+                </>
               ) : (
                 <>
                   <span style={{ fontSize: 10.5, color: "var(--text-faint)" }}>
                     {task.category}
                   </span>
+                  {showDate && task.dueDate && (
+                    <span
+                      style={{
+                        fontSize: 10.5,
+                        color: overdue ? "var(--danger)" : "var(--text-muted)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      · {relativeDay(task.dueDate)}
+                    </span>
+                  )}
                   {task.dueTime && (
-                    <span style={{ fontSize: 10.5, color: "var(--text-muted)", fontWeight: 600 }}>
+                    <span
+                      style={{
+                        fontSize: 10.5,
+                        color: "var(--text-muted)",
+                        fontWeight: 600,
+                      }}
+                    >
                       · {fmtTime(task.dueTime)}
                     </span>
                   )}
                   {task.priority === "High" && (
                     <span
-                      style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)" }}
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "var(--danger)",
+                      }}
                     >
                       ● High
                     </span>
                   )}
                   {overdue && (
                     <span
-                      style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)" }}
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "var(--danger)",
+                      }}
                     >
                       Overdue
                     </span>
@@ -421,9 +224,17 @@ export function TaskRow({
         )}
       </div>
       {task.assignedTo && <AvatarDot id={task.assignedTo} size={20} />}
-      {canDelete && onDelete && (
-        confirmingDelete ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+      {canDelete &&
+        onDelete &&
+        (confirmingDelete ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              flexShrink: 0,
+            }}
+          >
             <button
               type="button"
               onClick={() => {
@@ -483,8 +294,7 @@ export function TaskRow({
           >
             <Trash2 size={15} />
           </button>
-        )
-      )}
+        ))}
     </div>
   );
 }
@@ -705,7 +515,9 @@ export function TaskEditModal({
           flexWrap: "wrap",
           marginBottom: 14,
           padding: "8px 10px",
-          background: task.completed ? "var(--success-soft)" : "var(--bg-surface-warm)",
+          background: task.completed
+            ? "var(--success-soft)"
+            : "var(--bg-surface-warm)",
           border: `1px solid ${task.completed ? "var(--success-border)" : "var(--border-default)"}`,
           borderRadius: 12,
         }}
@@ -749,7 +561,11 @@ export function TaskEditModal({
           </span>
         )}
         <span
-          style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto" }}
+          style={{
+            fontSize: 11,
+            color: "var(--text-muted)",
+            marginLeft: "auto",
+          }}
         >
           Added by {memberById(task.createdBy).name}
         </span>
@@ -937,7 +753,9 @@ export function TaskEditModal({
 
       <FieldLabel style={{ marginTop: 12 }}>
         Notes{" "}
-        <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>(optional)</span>
+        <span style={{ fontWeight: 400, color: "var(--text-faint)" }}>
+          (optional)
+        </span>
       </FieldLabel>
       <textarea
         placeholder="Anything else worth noting?"
@@ -966,8 +784,9 @@ export function TaskEditModal({
       )}
 
       <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
-        {canDelete && onDelete && (
-          confirmDelete ? (
+        {canDelete &&
+          onDelete &&
+          (confirmDelete ? (
             <>
               <button
                 type="button"
@@ -1007,13 +826,17 @@ export function TaskEditModal({
             >
               Delete
             </button>
-          )
-        )}
+          ))}
         {!confirmDelete && (
           <button
             type="button"
             onClick={requestSave}
-            style={{ ...btnStyle, flex: 1, background: "var(--accent)", color: "#fff" }}
+            style={{
+              ...btnStyle,
+              flex: 1,
+              background: "var(--accent)",
+              color: "#fff",
+            }}
           >
             Save changes
           </button>

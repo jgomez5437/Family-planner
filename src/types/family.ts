@@ -193,7 +193,7 @@ export type NotificationCategory =
   | "task"
   | "medication";
 
-export type AppTabId = "home" | "manager" | "tasks" | "events" | "wall";
+export type AppTabId = "home" | "manager" | "plan" | "wall";
 
 export interface NotificationTarget {
   tab: AppTabId;

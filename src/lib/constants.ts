@@ -10,7 +10,7 @@ import {
   MoreHorizontal,
   Home,
   Heart,
-  CheckSquare,
+  CalendarCheck2,
   MessageSquare,
   type LucideIcon,
 } from "lucide-react";
@@ -126,8 +126,7 @@ export const POST_TYPE_EMOJI: Record<string, string> = {
 export const TABS = [
   { id: "home",    label: "Home",        icon: Home },
   { id: "manager", label: "Manager",     icon: Heart },
-  { id: "tasks",   label: "Tasks",       icon: CheckSquare },
-  { id: "events",  label: "Events",      icon: Clock },
+  { id: "plan",    label: "Plan",        icon: CalendarCheck2 },
   { id: "wall",    label: "Family Wall", icon: MessageSquare },
 ];
 
