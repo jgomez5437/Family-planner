@@ -63,10 +63,35 @@ import {
 } from "@/components/layout/MemberModal";
 import { HomeTab } from "@/components/tabs/HomeTab";
 import { CaregiverSheet, ManagerTab } from "@/components/tabs/ManagerTab";
-import { TaskEditModal, TasksTab } from "@/components/tabs/TasksTab";
-import { EventDetailModal, EventsTab } from "@/components/tabs/EventsTab";
+import { PlanTab } from "@/components/tabs/PlanTab";
+import { TaskEditModal } from "@/components/plan/TaskItems";
+import { EventDetailModal } from "@/components/plan/EventItems";
 import { WallTab } from "@/components/tabs/WallTab";
 import { PwaInstallBanner } from "@/components/pwa/PwaContext";
+import type { PlanTypeFilter } from "@/lib/plan";
+
+function resolveTabTarget(
+  rawTab?: string | null,
+  rawFilter?: string | null
+): { tab: string; filter?: PlanTypeFilter } | null {
+  if (!rawTab) return null;
+  if (rawTab === "tasks") return { tab: "plan", filter: "tasks" };
+  if (rawTab === "events") return { tab: "plan", filter: "events" };
+  if (rawTab === "plan") {
+    const validFilter: PlanTypeFilter | undefined =
+      rawFilter === "all" ||
+      rawFilter === "tasks" ||
+      rawFilter === "events" ||
+      rawFilter === "appointments"
+        ? rawFilter
+        : undefined;
+    return { tab: "plan", filter: validFilter };
+  }
+  if (TABS.some((t) => t.id === rawTab)) {
+    return { tab: rawTab };
+  }
+  return null;
+}
 
 function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState(false);
@@ -94,6 +119,7 @@ export default function FamilyApp({
   const [members, setMembers] = useState<Member[]>(initialState.members);
   const [inviteCode, setInviteCode] = useState(initialState.inviteCode);
   const [tab, setTab] = useState("home");
+  const [planFilter, setPlanFilter] = useState<PlanTypeFilter>("all");
 
   const [notifications, setNotifications] = useState<FamilyNotification[]>(
     initialState.notifications || []
@@ -128,11 +154,18 @@ export default function FamilyApp({
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     const requestedTab = url.searchParams.get("tab");
+    const requestedFilter = url.searchParams.get("filter");
     const requestedEntity = url.searchParams.get("entity");
     let mutated = false;
-    if (requestedTab && TABS.some((t) => t.id === requestedTab)) {
-      setTab(requestedTab);
+    const resolved = resolveTabTarget(requestedTab, requestedFilter);
+    if (resolved) {
+      setTab(resolved.tab);
+      if (resolved.filter) setPlanFilter(resolved.filter);
       url.searchParams.delete("tab");
+      mutated = true;
+    }
+    if (requestedFilter) {
+      url.searchParams.delete("filter");
       mutated = true;
     }
     if (requestedEntity) {
@@ -366,10 +399,12 @@ export default function FamilyApp({
         }
       }
 
-      if (payload.tab && TABS.some((t) => t.id === payload.tab)) {
+      const resolved = resolveTabTarget(payload.tab);
+      if (resolved) {
         setSettingsScreen(null);
-        setTab(payload.tab);
-        if (payload.tab === "wall" && payload.entityId) {
+        setTab(resolved.tab);
+        if (resolved.filter) setPlanFilter(resolved.filter);
+        if (resolved.tab === "wall" && payload.entityId) {
           setHighlightedPostId(payload.entityId);
         }
       }
@@ -1855,12 +1890,17 @@ export default function FamilyApp({
                 onAddChild={() => setAddChildModalOpen(true)}
               />
             )}
-            {tab === "tasks" && (
-              <TasksTab
+            {tab === "plan" && (
+              <PlanTab
+                events={sortedUpcomingEvents}
                 tasks={expandedTasks}
-                toggleTask={toggleTask}
                 currentUser={currentUser}
+                typeFilter={planFilter}
+                onTypeFilterChange={setPlanFilter}
+                toggleTask={toggleTask}
+                openHistory={setHistoryModal}
                 openComposer={openComposerFor}
+                onQuickAdd={() => setQuickAddOpen(true)}
                 onEditTask={setEditingTask}
                 onDeleteTask={deleteTask}
                 onOpenLinkedEvent={(task) => {
@@ -1869,16 +1909,8 @@ export default function FamilyApp({
                   );
                   if (master) setHistoryModal(master);
                 }}
-              />
-            )}
-            {tab === "events" && (
-              <EventsTab
-                events={sortedUpcomingEvents}
-                currentUser={currentUser}
-                openHistory={setHistoryModal}
-                openComposer={openComposerFor}
-                onUpdateTime={updateEventTime}
-                onDelete={deleteEvent}
+                onUpdateEventTime={updateEventTime}
+                onDeleteEvent={deleteEvent}
               />
             )}
             {tab === "wall" && (
