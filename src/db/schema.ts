@@ -9,6 +9,7 @@ import {
 import type {
   EventHistoryEntry,
   EventOverride,
+  GameMoveEntry,
   MemberId,
   TaskOverride,
 } from "@/types/family";
@@ -214,4 +215,30 @@ export const notifications = pgTable("notifications", {
   targetEntityId: text("target_entity_id"),
   read: boolean("read").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const games = pgTable("games", {
+  id: text("id").primaryKey(),
+  familyId: text("family_id")
+    .notNull()
+    .references(() => families.id, { onDelete: "cascade" }),
+  gameType: text("game_type").notNull(),
+  mode: text("mode").notNull().default("remote"),
+  status: text("status").notNull().default("pending"),
+  challengerId: text("challenger_id")
+    .notNull()
+    .references(() => members.id, { onDelete: "cascade" }),
+  opponentId: text("opponent_id")
+    .notNull()
+    .references(() => members.id, { onDelete: "cascade" }),
+  players: jsonb("players").$type<[MemberId, MemberId]>().notNull(),
+  currentTurnId: text("current_turn_id"),
+  winnerId: text("winner_id"),
+  outcome: text("outcome"),
+  state: jsonb("state").$type<Record<string, unknown>>().notNull().default({}),
+  moves: jsonb("moves").$type<GameMoveEntry[]>().notNull().default([]),
+  rematchOfId: text("rematch_of_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
 });

@@ -67,6 +67,31 @@ async function ensureDbSchema(): Promise<void> {
         CREATE INDEX IF NOT EXISTS "notifications_family_recipient_created_idx"
         ON "notifications" ("family_id", "recipient_id", "created_at" DESC)
       `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS "games" (
+          "id" text PRIMARY KEY NOT NULL,
+          "family_id" text NOT NULL REFERENCES "families"("id") ON DELETE cascade,
+          "game_type" text NOT NULL,
+          "mode" text DEFAULT 'remote' NOT NULL,
+          "status" text DEFAULT 'pending' NOT NULL,
+          "challenger_id" text NOT NULL REFERENCES "members"("id") ON DELETE cascade,
+          "opponent_id" text NOT NULL REFERENCES "members"("id") ON DELETE cascade,
+          "players" jsonb NOT NULL,
+          "current_turn_id" text,
+          "winner_id" text,
+          "outcome" text,
+          "state" jsonb DEFAULT '{}'::jsonb NOT NULL,
+          "moves" jsonb DEFAULT '[]'::jsonb NOT NULL,
+          "rematch_of_id" text,
+          "created_at" timestamp DEFAULT now() NOT NULL,
+          "updated_at" timestamp DEFAULT now() NOT NULL,
+          "completed_at" timestamp
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS "games_family_updated_idx"
+        ON "games" ("family_id", "updated_at" DESC)
+      `;
     })().catch((err) => {
       schemaReadyPromise = null;
       throw err;

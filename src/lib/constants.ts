@@ -12,6 +12,7 @@ import {
   Heart,
   CalendarCheck2,
   MessageSquare,
+  Gamepad2,
   type LucideIcon,
 } from "lucide-react";
 import type { Member, MemberId } from "@/types/family";
@@ -128,6 +129,7 @@ export const TABS = [
   { id: "manager", label: "Manager",     icon: Heart },
   { id: "plan",    label: "Plan",        icon: CalendarCheck2 },
   { id: "wall",    label: "Family Wall", icon: MessageSquare },
+  { id: "games",   label: "Games",       icon: Gamepad2 },
 ];
 
 export const DESKTOP_BREAKPOINT = 900;
