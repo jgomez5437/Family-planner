@@ -72,8 +72,9 @@ function computeStageViewport(stageW: number, stageH: number): StageViewport {
   const vertical = safeH > safeW;
   const tw = vertical ? V_TABLE_W : H_TABLE_W;
   const th = vertical ? V_TABLE_H : H_TABLE_H;
-  const padX = 8;
-  const padY = 8;
+  // Reserve comfortable cue-stick grab & pullback apron around all four sides
+  const padX = Math.round(Math.max(42, Math.min(96, safeW * 0.115)));
+  const padY = Math.round(Math.max(44, Math.min(96, safeH * 0.105)));
   const scale = Math.min((safeW - padX * 2) / tw, (safeH - padY * 2) / th);
   const originX = (safeW - tw * scale) / 2;
   const originY = (safeH - th * scale) / 2;
@@ -926,6 +927,18 @@ function drawPoolTable(
     }
   }
 
+  // Soft ambient cabinet drop shadow grounding the inset table onto the room floor
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.72)";
+  ctx.shadowBlur = 32;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 12;
+  ctx.beginPath();
+  ctx.roundRect(2, 2, cw - 4, ch - 4, 26);
+  ctx.fillStyle = "#1B0E07";
+  ctx.fill();
+  ctx.restore();
+
   ctx.drawImage(cached, 0, 0, cw, ch);
 }
 
@@ -937,7 +950,8 @@ function drawCueStick(
   pullbackOffset: number,
   powerRatio: number,
   isPulling: boolean,
-  showPullHint: boolean
+  showPullHint: boolean,
+  availStickUnits?: number
 ) {
   ctx.save();
   ctx.translate(cueX, cueY);
@@ -1030,14 +1044,30 @@ function drawCueStick(
     : "rgba(244, 230, 200, 0.28)";
   ctx.fillRect(shaftEnd + 42, -6.5, 64, 13.0);
 
-  // Pull-back directional chevrons on the shaft to invite grabbing
+  // Pull-back directional chevrons: stay on the visible portion of the stick even near a rail
   if (showPullHint && !isPulling) {
-    ctx.strokeStyle = "rgba(255, 245, 220, 0.72)";
+    const defaultCenter = shaftEnd + 70;
+    const minCenter = tipStart + 32;
+    const maxVisibleCenter =
+      availStickUnits !== undefined
+        ? Math.max(minCenter, availStickUnits - 26)
+        : defaultCenter;
+    const chevronCenter = Math.min(defaultCenter, maxVisibleCenter);
+
+    // Subtle grab pill behind chevrons when shifted forward onto the lighter maple shaft
+    if (chevronCenter < shaftEnd + 20) {
+      ctx.fillStyle = "rgba(24, 16, 10, 0.42)";
+      ctx.beginPath();
+      ctx.roundRect(chevronCenter - 22, -5.4, 44, 10.8, 5);
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = "rgba(255, 245, 220, 0.85)";
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    for (const offset of [56, 70, 84]) {
-      const cx = shaftEnd + offset;
+    for (const rel of [-14, 0, 14]) {
+      const cx = chevronCenter + rel;
       ctx.beginPath();
       ctx.moveTo(cx - 4, -3.5);
       ctx.lineTo(cx + 1, 0);
@@ -1528,6 +1558,19 @@ export function PoolBoard({
 
       // Direct-pullback Tapered Cue Stick
       const canvasAngle = tableAngleToCanvasAngle(aimAngle, vp.vertical);
+      const cueStageX = vp.originX + startL.lx * vp.scale;
+      const cueStageY = vp.originY + startL.ly * vp.scale;
+      const availStickPx = rayDistanceToBounds(
+        cueStageX,
+        cueStageY,
+        -Math.cos(canvasAngle),
+        -Math.sin(canvasAngle),
+        4,
+        4,
+        vp.stageW - 4,
+        vp.stageH - 4
+      );
+      const availStickUnits = availStickPx / vp.scale;
       drawCueStick(
         ctx,
         startL.lx,
@@ -1536,7 +1579,8 @@ export function PoolBoard({
         pullPower * 125,
         pullPower,
         isPullingStick,
-        true
+        true,
+        availStickUnits
       );
     }
 
@@ -1765,10 +1809,11 @@ export function PoolBoard({
     const along = vx * backX + vy * backY;
     const perp = Math.abs(vx * perpX + vy * perpY);
 
+    const stickPerpTol = Math.max(54, 28 / vp.scale);
     if (
       along >= BALL_RADIUS * 0.45 &&
-      along <= STICK_LENGTH + 55 &&
-      perp <= 54
+      along <= STICK_LENGTH + 90 &&
+      perp <= stickPerpTol
     ) {
       const canvasAngle = tableAngleToCanvasAngle(aimAngle, vp.vertical);
       const backDirX = -Math.cos(canvasAngle);
@@ -1782,14 +1827,14 @@ export function PoolBoard({
         sy,
         backDirX,
         backDirY,
-        10,
-        10,
-        vp.stageW - 10,
-        vp.stageH - 10
+        6,
+        6,
+        vp.stageW - 6,
+        vp.stageH - 6
       );
       const maxPullPx = Math.max(
         28,
-        Math.min(idealPullPx, edgeRoomPx * 0.92)
+        Math.min(idealPullPx, edgeRoomPx * 0.94)
       );
 
       dragStateRef.current = {
@@ -1837,10 +1882,11 @@ export function PoolBoard({
             const vy = ty - cue.y;
             const along = vx * backX + vy * backY;
             const perp = Math.abs(vx * -backY + vy * backX);
+            const stickPerpTol = Math.max(54, 28 / vp.scale);
             const onStick =
               along >= BALL_RADIUS * 0.45 &&
-              along <= STICK_LENGTH + 55 &&
-              perp <= 54;
+              along <= STICK_LENGTH + 90 &&
+              perp <= stickPerpTol;
             const next = onStick ? "stick" : "cloth";
             setHoverZone((prev) => (prev === next ? prev : next));
           }
@@ -2260,6 +2306,8 @@ export function PoolBoard({
           width: "100%",
           position: "relative",
           overflow: "hidden",
+          background:
+            "radial-gradient(ellipse at center, #221B16 0%, #14100D 68%, #0C0A08 100%)",
           paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
@@ -2294,7 +2342,7 @@ export function PoolBoard({
           <div
             style={{
               position: "absolute",
-              top: 12,
+              top: 8,
               left: "50%",
               transform: "translateX(-50%)",
               background: "rgba(18, 15, 12, 0.88)",
@@ -2348,7 +2396,7 @@ export function PoolBoard({
           <div
             style={{
               position: "absolute",
-              bottom: "calc(14px + env(safe-area-inset-bottom))",
+              bottom: "calc(8px + env(safe-area-inset-bottom))",
               left: "50%",
               transform: "translateX(-50%)",
               background: "rgba(18, 15, 12, 0.88)",
@@ -2356,7 +2404,7 @@ export function PoolBoard({
               border: "1px solid rgba(255, 232, 200, 0.2)",
               color: "#F4EFE7",
               borderRadius: 999,
-              padding: "7px 14px",
+              padding: "6px 14px",
               fontSize: 12,
               fontWeight: 700,
               whiteSpace: "nowrap",
@@ -2376,7 +2424,7 @@ export function PoolBoard({
           <div
             style={{
               position: "absolute",
-              bottom: "calc(12px + env(safe-area-inset-bottom))",
+              bottom: "calc(8px + env(safe-area-inset-bottom))",
               left: "50%",
               transform: "translateX(-50%)",
               background: "rgba(18, 15, 12, 0.72)",
