@@ -2163,7 +2163,13 @@ export default function FamilyApp({
           {/* Content */}
           <div
             key={tab}
-            className="fade-up"
+            className={
+              tab === "games" &&
+              selectedGameId &&
+              games.some((g) => g.id === selectedGameId && g.gameType === "pool")
+                ? undefined
+                : "fade-up"
+            }
             style={{
               maxWidth: isDesktop ? 900 : 560,
               margin: "0 auto",

@@ -176,6 +176,26 @@ export function GamesTab({
 
   /* ---- FOCUSED MATCH ARENA ---- */
   if (selectedGame) {
+    if (selectedGame.gameType === "pool") {
+      return (
+        <PoolBoard
+          game={selectedGame}
+          currentUser={currentUser}
+          submitting={busyGameId === selectedGame.id}
+          onMakeMove={(move) => void handleMove(selectedGame.id, move)}
+          onRespondInvite={(decision) =>
+            void handleInviteAction(selectedGame.id, decision)
+          }
+          onForfeit={() => void handleForfeit(selectedGame.id)}
+          onRematch={() => void handleRematch(selectedGame)}
+          onBack={() => {
+            setConfirmForfeitId(null);
+            onSelectGame(null);
+          }}
+        />
+      );
+    }
+
     const def = getGameDefinition(selectedGame.gameType);
     const isParticipant = selectedGame.players.includes(currentUser);
     const isPendingForMe =
@@ -186,12 +206,7 @@ export function GamesTab({
       selectedGame.challengerId === currentUser;
 
     return (
-      <div
-        style={{
-          maxWidth: selectedGame.gameType === "pool" ? 860 : 640,
-          margin: "0 auto",
-        }}
-      >
+      <div style={{ maxWidth: 640, margin: "0 auto" }}>
         <div
           style={{
             display: "flex",
@@ -524,19 +539,6 @@ export function GamesTab({
             selectedGame.status !== "cancelled" &&
             selectedGame.gameType === "tic_tac_toe" && (
               <TicTacToeBoard
-                game={selectedGame}
-                currentUser={currentUser}
-                submitting={busyGameId === selectedGame.id}
-                onMakeMove={(move) => void handleMove(selectedGame.id, move)}
-                onRematch={() => void handleRematch(selectedGame)}
-                onBack={() => onSelectGame(null)}
-              />
-            )}
-
-          {selectedGame.status !== "declined" &&
-            selectedGame.status !== "cancelled" &&
-            selectedGame.gameType === "pool" && (
-              <PoolBoard
                 game={selectedGame}
                 currentUser={currentUser}
                 submitting={busyGameId === selectedGame.id}

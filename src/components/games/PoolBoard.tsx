@@ -2,16 +2,14 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Check,
   ChevronLeft,
-  ChevronRight,
+  Flag,
   Play,
   RotateCcw,
-  RotateCw,
-  Sparkles,
   Trophy,
-  Users,
+  X,
 } from "lucide-react";
-import { CARD_SHADOW } from "@/lib/constants";
 import {
   BALL_RADIUS,
   computeAimPreview,
@@ -38,69 +36,116 @@ import { useMembers } from "@/components/MembersContext";
 import { AvatarDot } from "@/components/ui/Primitives";
 import type { FamilyGame, MemberId } from "@/types/family";
 
-const RAIL = 46;
-const H_CANVAS_W = TABLE_WIDTH + RAIL * 2; // 1092
-const H_CANVAS_H = TABLE_HEIGHT + RAIL * 2; // 592
-const V_CANVAS_W = H_CANVAS_H; // 592
-const V_CANVAS_H = H_CANVAS_W; // 1092
+const RAIL = 44;
+const STICK_LENGTH = 340;
+const H_TABLE_W = TABLE_WIDTH + RAIL * 2; // 1088
+const H_TABLE_H = TABLE_HEIGHT + RAIL * 2; // 588
+const V_TABLE_W = H_TABLE_H; // 588
+const V_TABLE_H = H_TABLE_W; // 1088
 
-function tableToCanvas(tx: number, ty: number, vertical: boolean) {
-  if (!vertical) {
-    return { cx: RAIL + tx, cy: RAIL + ty };
-  }
-  return { cx: RAIL + ty, cy: RAIL + (TABLE_WIDTH - tx) };
+interface StageViewport {
+  stageW: number;
+  stageH: number;
+  vertical: boolean;
+  scale: number;
+  originX: number;
+  originY: number;
 }
 
-function canvasToTable(cx: number, cy: number, vertical: boolean) {
+function computeStageViewport(stageW: number, stageH: number): StageViewport {
+  const safeW = Math.max(240, stageW);
+  const safeH = Math.max(240, stageH);
+  const vertical = safeH > safeW;
+  const tw = vertical ? V_TABLE_W : H_TABLE_W;
+  const th = vertical ? V_TABLE_H : H_TABLE_H;
+  const padX = 8;
+  const padY = 8;
+  const scale = Math.min((safeW - padX * 2) / tw, (safeH - padY * 2) / th);
+  const originX = (safeW - tw * scale) / 2;
+  const originY = (safeH - th * scale) / 2;
+  return { stageW: safeW, stageH: safeH, vertical, scale, originX, originY };
+}
+
+function tableToLocal(tx: number, ty: number, vertical: boolean) {
   if (!vertical) {
-    return { tx: cx - RAIL, ty: cy - RAIL };
+    return { lx: RAIL + tx, ly: RAIL + ty };
   }
-  return { tx: TABLE_WIDTH - (cy - RAIL), ty: cx - RAIL };
+  return { lx: RAIL + ty, ly: RAIL + (TABLE_WIDTH - tx) };
+}
+
+function stageToTable(sx: number, sy: number, vp: StageViewport) {
+  const lx = (sx - vp.originX) / vp.scale;
+  const ly = (sy - vp.originY) / vp.scale;
+  if (!vp.vertical) {
+    return { tx: lx - RAIL, ty: ly - RAIL };
+  }
+  return { tx: TABLE_WIDTH - (ly - RAIL), ty: lx - RAIL };
 }
 
 function tableAngleToCanvasAngle(angle: number, vertical: boolean): number {
   return vertical ? angle - Math.PI / 2 : angle;
 }
 
+function normalizeAngleDelta(delta: number): number {
+  let d = delta;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+function rayDistanceToBounds(
+  x: number,
+  y: number,
+  dx: number,
+  dy: number,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number
+): number {
+  let t = Infinity;
+  if (dx > 1e-6) t = Math.min(t, (maxX - x) / dx);
+  else if (dx < -1e-6) t = Math.min(t, (minX - x) / dx);
+  if (dy > 1e-6) t = Math.min(t, (maxY - y) / dy);
+  else if (dy < -1e-6) t = Math.min(t, (minY - y) / dy);
+  return Math.max(0, Number.isFinite(t) ? t : 0);
+}
+
 function drawBall(
   ctx: CanvasRenderingContext2D,
   ball: PoolFrameBall,
-  vertical: boolean,
-  scale = 1
+  vertical: boolean
 ) {
   if (ball.pocketed) return;
-  const { cx, cy } = tableToCanvas(ball.x, ball.y, vertical);
-  const r = BALL_RADIUS * scale;
+  const { lx: cx, ly: cy } = tableToLocal(ball.x, ball.y, vertical);
+  const r = BALL_RADIUS;
   const visual = POOL_BALL_VISUALS[ball.id] || {
     color: "#FAF7F0",
     stripe: false,
   };
 
-  // Drop shadow
+  // Soft drop shadow
   ctx.save();
   ctx.beginPath();
-  ctx.arc(cx + 2.5, cy + 3.2, r * 1.02, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.34)";
+  ctx.arc(cx + 2.4, cy + 3.0, r * 1.02, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
   ctx.fill();
   ctx.restore();
 
-  // Ball body clipped to sphere
+  // Ball sphere clipped
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
 
   if (ball.id === 0) {
-    // Cue ball
     ctx.fillStyle = "#FAF7F0";
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-    // Subtle pro-cup red dot
     ctx.beginPath();
     ctx.arc(cx + r * 0.28, cy + r * 0.22, r * 0.14, 0, Math.PI * 2);
     ctx.fillStyle = "#DC2626";
     ctx.fill();
   } else if (visual.stripe) {
-    // Ivory base + colored stripe band
     ctx.fillStyle = "#FAF7F0";
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
     ctx.fillStyle = visual.color;
@@ -110,7 +155,7 @@ function drawBall(
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
   }
 
-  // 3D spherical shading
+  // 3D shading gradient
   const shadeGrad = ctx.createRadialGradient(
     cx - r * 0.34,
     cy - r * 0.34,
@@ -126,7 +171,7 @@ function drawBall(
   ctx.fillStyle = shadeGrad;
   ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
 
-  // Number badge for object balls
+  // Number medallion
   if (ball.id > 0) {
     ctx.beginPath();
     ctx.arc(cx, cy, r * 0.47, 0, Math.PI * 2);
@@ -140,7 +185,7 @@ function drawBall(
     ctx.fillText(String(ball.id), cx, cy + 0.5);
   }
 
-  // Crisp glossy specular highlight
+  // Gloss specular highlight
   ctx.beginPath();
   ctx.ellipse(
     cx - r * 0.32,
@@ -151,7 +196,7 @@ function drawBall(
     0,
     Math.PI * 2
   );
-  ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.56)";
   ctx.fill();
 
   ctx.restore();
@@ -162,10 +207,8 @@ function drawPoolTable(
   vertical: boolean,
   highlightKitchen: boolean
 ) {
-  const cw = vertical ? V_CANVAS_W : H_CANVAS_W;
-  const ch = vertical ? V_CANVAS_H : H_CANVAS_H;
-
-  ctx.clearRect(0, 0, cw, ch);
+  const cw = vertical ? V_TABLE_W : H_TABLE_W;
+  const ch = vertical ? V_TABLE_H : H_TABLE_H;
 
   // 1. Outer Walnut Wood Frame
   const woodGrad = ctx.createLinearGradient(0, 0, cw, ch);
@@ -180,14 +223,13 @@ function drawPoolTable(
   ctx.fillStyle = woodGrad;
   ctx.fill();
 
-  // Subtle wood rim highlight
-  ctx.strokeStyle = "rgba(255, 224, 178, 0.18)";
+  ctx.strokeStyle = "rgba(255, 224, 178, 0.2)";
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.restore();
 
   // Brass corner accent plates
-  const plateSize = 46;
+  const plateSize = 44;
   const brassGrad = ctx.createLinearGradient(0, 0, cw, ch);
   brassGrad.addColorStop(0, "#D9AD5B");
   brassGrad.addColorStop(0.5, "#A6772E");
@@ -237,14 +279,12 @@ function drawPoolTable(
   ctx.fillStyle = feltGrad;
   ctx.fill();
 
-  // Soft rail shadow onto felt
   ctx.strokeStyle = "rgba(0, 0, 0, 0.36)";
   ctx.lineWidth = 10;
   ctx.strokeRect(feltX - 2, feltY - 2, feltW + 4, feltH + 4);
 
-  // Subtle kitchen highlight on opening break
   if (highlightKitchen) {
-    ctx.fillStyle = "rgba(255, 248, 220, 0.08)";
+    ctx.fillStyle = "rgba(255, 248, 220, 0.09)";
     if (!vertical) {
       ctx.fillRect(feltX, feltY, HEAD_STRING_X, feltH);
     } else {
@@ -258,52 +298,52 @@ function drawPoolTable(
   }
 
   // Head string (baulk line)
-  const hs1 = tableToCanvas(HEAD_STRING_X, 6, vertical);
-  const hs2 = tableToCanvas(HEAD_STRING_X, TABLE_HEIGHT - 6, vertical);
+  const hs1 = tableToLocal(HEAD_STRING_X, 6, vertical);
+  const hs2 = tableToLocal(HEAD_STRING_X, TABLE_HEIGHT - 6, vertical);
   ctx.beginPath();
-  ctx.moveTo(hs1.cx, hs1.cy);
-  ctx.lineTo(hs2.cx, hs2.cy);
+  ctx.moveTo(hs1.lx, hs1.ly);
+  ctx.lineTo(hs2.lx, hs2.ly);
   ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
   ctx.lineWidth = 1.6;
   ctx.stroke();
 
-  // Head spot & Foot spot
+  // Head & Foot spots
   const spots = [
-    tableToCanvas(225, 250, vertical),
-    tableToCanvas(750, 250, vertical),
+    tableToLocal(225, 250, vertical),
+    tableToLocal(750, 250, vertical),
   ];
   ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
   for (const s of spots) {
     ctx.beginPath();
-    ctx.arc(s.cx, s.cy, 4, 0, Math.PI * 2);
+    ctx.arc(s.lx, s.ly, 4, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
 
-  // 4. Ivory Diamond Sights along rails
+  // 4. Ivory Diamond Sights
   const diamondCoords: { cx: number; cy: number }[] = [];
   for (const frac of [1 / 8, 2 / 8, 3 / 8, 5 / 8, 6 / 8, 7 / 8]) {
     const tx = TABLE_WIDTH * frac;
-    const top = tableToCanvas(tx, 0, vertical);
-    const bot = tableToCanvas(tx, TABLE_HEIGHT, vertical);
+    const top = tableToLocal(tx, 0, vertical);
+    const bot = tableToLocal(tx, TABLE_HEIGHT, vertical);
     if (!vertical) {
-      diamondCoords.push({ cx: top.cx, cy: RAIL / 2 - 2 });
-      diamondCoords.push({ cx: bot.cx, cy: ch - RAIL / 2 + 2 });
+      diamondCoords.push({ cx: top.lx, cy: RAIL / 2 - 2 });
+      diamondCoords.push({ cx: bot.lx, cy: ch - RAIL / 2 + 2 });
     } else {
-      diamondCoords.push({ cx: RAIL / 2 - 2, cy: top.cy });
-      diamondCoords.push({ cx: cw - RAIL / 2 + 2, cy: bot.cy });
+      diamondCoords.push({ cx: RAIL / 2 - 2, cy: top.ly });
+      diamondCoords.push({ cx: cw - RAIL / 2 + 2, cy: bot.ly });
     }
   }
   for (const frac of [1 / 4, 2 / 4, 3 / 4]) {
     const ty = TABLE_HEIGHT * frac;
-    const left = tableToCanvas(0, ty, vertical);
-    const right = tableToCanvas(TABLE_WIDTH, ty, vertical);
+    const left = tableToLocal(0, ty, vertical);
+    const right = tableToLocal(TABLE_WIDTH, ty, vertical);
     if (!vertical) {
-      diamondCoords.push({ cx: RAIL / 2 - 2, cy: left.cy });
-      diamondCoords.push({ cx: cw - RAIL / 2 + 2, cy: right.cy });
+      diamondCoords.push({ cx: RAIL / 2 - 2, cy: left.ly });
+      diamondCoords.push({ cx: cw - RAIL / 2 + 2, cy: right.ly });
     } else {
-      diamondCoords.push({ cx: left.cx, cy: ch - RAIL / 2 + 2 });
-      diamondCoords.push({ cx: right.cx, cy: RAIL / 2 - 2 });
+      diamondCoords.push({ cx: left.lx, cy: ch - RAIL / 2 + 2 });
+      diamondCoords.push({ cx: right.lx, cy: RAIL / 2 - 2 });
     }
   }
 
@@ -312,19 +352,18 @@ function drawPoolTable(
     ctx.save();
     ctx.translate(d.cx, d.cy);
     ctx.rotate(Math.PI / 4);
-    ctx.fillRect(-3.2, -3.2, 6.4, 6.4);
+    ctx.fillRect(-3.1, -3.1, 6.2, 6.2);
     ctx.restore();
   }
 
   // 5. Six Pockets
   for (const p of POCKETS) {
-    const { cx, cy } = tableToCanvas(p.x, p.y, vertical);
-    // Outer leather collar
+    const { lx: cx, ly: cy } = tableToLocal(p.x, p.y, vertical);
     ctx.beginPath();
     ctx.arc(cx, cy, p.visualRadius + 4, 0, Math.PI * 2);
     ctx.fillStyle = "#1E120A";
     ctx.fill();
-    // Deep pocket hole
+
     const holeGrad = ctx.createRadialGradient(
       cx,
       cy,
@@ -348,17 +387,40 @@ function drawCueStick(
   cueX: number,
   cueY: number,
   canvasAngle: number,
-  pullbackOffset: number
+  pullbackOffset: number,
+  powerRatio: number,
+  isPulling: boolean,
+  showPullHint: boolean
 ) {
   ctx.save();
   ctx.translate(cueX, cueY);
-  // Cue stick sits behind the cue ball (pointing toward canvasAngle)
   ctx.rotate(canvasAngle + Math.PI);
 
   const tipStart = BALL_RADIUS + 8 + pullbackOffset;
-  const stickLen = 340;
+  const stickLen = STICK_LENGTH;
 
-  // Soft shadow beneath stick
+  // Power tension glow line between cue ball and pulled-back cue tip
+  if (isPulling && powerRatio > 0.02) {
+    const tensionColor =
+      powerRatio < 0.4
+        ? "#4ADE80"
+        : powerRatio < 0.75
+          ? "#FACC15"
+          : "#F87171";
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(BALL_RADIUS + 3, 0);
+    ctx.lineTo(tipStart - 2, 0);
+    ctx.strokeStyle = tensionColor;
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = "round";
+    ctx.shadowColor = tensionColor;
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Subtle shadow beneath stick
   ctx.save();
   ctx.translate(0, 6);
   ctx.beginPath();
@@ -367,19 +429,19 @@ function drawCueStick(
   ctx.lineTo(tipStart + stickLen, 7.2);
   ctx.lineTo(tipStart, 3.2);
   ctx.closePath();
-  ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+  ctx.fillStyle = "rgba(0, 0, 0, 0.32)";
   ctx.fill();
   ctx.restore();
 
   // Blue chalk tip
   ctx.fillStyle = "#3B82F6";
   ctx.beginPath();
-  ctx.roundRect(tipStart, -3.2, 6, 6.4, 2);
+  ctx.roundRect(tipStart, -3.3, 6, 6.6, 2);
   ctx.fill();
 
   // Ivory ferrule
   ctx.fillStyle = "#F7F3E8";
-  ctx.fillRect(tipStart + 6, -3.4, 11, 6.8);
+  ctx.fillRect(tipStart + 6, -3.5, 11, 7.0);
 
   // Tapered maple shaft
   const shaftEnd = tipStart + 185;
@@ -388,17 +450,17 @@ function drawCueStick(
   shaftGrad.addColorStop(0.5, "#E0B675");
   shaftGrad.addColorStop(1, "#B8894A");
   ctx.beginPath();
-  ctx.moveTo(tipStart + 17, -3.4);
-  ctx.lineTo(shaftEnd, -5.2);
-  ctx.lineTo(shaftEnd, 5.2);
-  ctx.lineTo(tipStart + 17, 3.4);
+  ctx.moveTo(tipStart + 17, -3.5);
+  ctx.lineTo(shaftEnd, -5.4);
+  ctx.lineTo(shaftEnd, 5.4);
+  ctx.lineTo(tipStart + 17, 3.5);
   ctx.closePath();
   ctx.fillStyle = shaftGrad;
   ctx.fill();
 
-  // Gold decorative joint ring
+  // Gold joint collar
   ctx.fillStyle = "#D4A346";
-  ctx.fillRect(shaftEnd, -5.4, 6, 10.8);
+  ctx.fillRect(shaftEnd, -5.6, 6, 11.2);
 
   // Dark rosewood butt
   const buttEnd = tipStart + stickLen;
@@ -407,59 +469,66 @@ function drawCueStick(
   buttGrad.addColorStop(0.45, "#421B10");
   buttGrad.addColorStop(1, "#260F08");
   ctx.beginPath();
-  ctx.moveTo(shaftEnd + 6, -5.2);
-  ctx.lineTo(buttEnd - 10, -7.2);
-  ctx.lineTo(buttEnd - 10, 7.2);
-  ctx.lineTo(shaftEnd + 6, 5.2);
+  ctx.moveTo(shaftEnd + 6, -5.4);
+  ctx.lineTo(buttEnd - 10, -7.4);
+  ctx.lineTo(buttEnd - 10, 7.4);
+  ctx.lineTo(shaftEnd + 6, 5.4);
   ctx.closePath();
   ctx.fillStyle = buttGrad;
   ctx.fill();
 
-  // Grip wrap accent band
-  ctx.fillStyle = "rgba(244, 230, 200, 0.25)";
-  ctx.fillRect(shaftEnd + 46, -6.2, 58, 12.4);
+  // Grip wrap highlight (glows gently when ready to grab or actively pulling)
+  ctx.fillStyle = isPulling
+    ? "rgba(252, 211, 77, 0.45)"
+    : "rgba(244, 230, 200, 0.28)";
+  ctx.fillRect(shaftEnd + 42, -6.5, 64, 13.0);
+
+  // Pull-back directional chevrons on the shaft to invite grabbing
+  if (showPullHint && !isPulling) {
+    ctx.strokeStyle = "rgba(255, 245, 220, 0.72)";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (const offset of [56, 70, 84]) {
+      const cx = shaftEnd + offset;
+      ctx.beginPath();
+      ctx.moveTo(cx - 4, -3.5);
+      ctx.lineTo(cx + 1, 0);
+      ctx.lineTo(cx - 4, 3.5);
+      ctx.stroke();
+    }
+  }
 
   // Rubber bumper
   ctx.fillStyle = "#18181B";
   ctx.beginPath();
-  ctx.roundRect(buttEnd - 10, -7.2, 10, 14.4, [0, 4, 4, 0]);
+  ctx.roundRect(buttEnd - 10, -7.4, 10, 14.8, [0, 4, 4, 0]);
   ctx.fill();
 
   ctx.restore();
 }
 
-function MiniBallBadge({
-  id,
-  pocketed,
-}: {
-  id: number;
-  pocketed: boolean;
-}) {
+function TinyBallDot({ id, pocketed }: { id: number; pocketed: boolean }) {
   const visual = POOL_BALL_VISUALS[id] || { color: "#18181B", stripe: false };
   return (
     <span
-      title={`Ball #${id}${pocketed ? " (pocketed)" : ""}`}
+      title={`#${id}${pocketed ? " (pocketed)" : ""}`}
       style={{
-        width: 18,
-        height: 18,
+        width: 9,
+        height: 9,
         borderRadius: "50%",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 9,
-        fontWeight: 800,
+        display: "inline-block",
         position: "relative",
         overflow: "hidden",
-        border: pocketed
-          ? "1px dashed var(--border-strong)"
-          : "1px solid rgba(0,0,0,0.22)",
         background: pocketed
-          ? "var(--bg-subtle)"
+          ? "rgba(255,255,255,0.12)"
           : visual.stripe
             ? "#FAF7F0"
             : visual.color,
-        color: pocketed ? "var(--text-faint)" : "#18181B",
-        opacity: pocketed ? 0.38 : 1,
+        border: pocketed
+          ? "1px solid rgba(255,255,255,0.14)"
+          : "1px solid rgba(255,255,255,0.35)",
+        opacity: pocketed ? 0.35 : 1,
         flexShrink: 0,
       }}
     >
@@ -470,28 +539,12 @@ function MiniBallBadge({
             position: "absolute",
             left: 0,
             right: 0,
-            top: 3,
-            bottom: 3,
+            top: 2,
+            bottom: 2,
             background: visual.color,
           }}
         />
       )}
-      <span
-        style={{
-          position: "relative",
-          zIndex: 1,
-          width: 11,
-          height: 11,
-          borderRadius: "50%",
-          background: pocketed ? "transparent" : "rgba(255,252,245,0.92)",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          lineHeight: 1,
-        }}
-      >
-        {id}
-      </span>
     </span>
   );
 }
@@ -501,6 +554,8 @@ export function PoolBoard({
   currentUser,
   submitting,
   onMakeMove,
+  onRespondInvite,
+  onForfeit,
   onRematch,
   onBack,
 }: {
@@ -508,6 +563,8 @@ export function PoolBoard({
   currentUser: MemberId;
   submitting: boolean;
   onMakeMove: (move: PoolMove) => void;
+  onRespondInvite: (decision: "accept" | "decline" | "cancel") => void;
+  onForfeit: () => void;
   onRematch: () => void;
   onBack: () => void;
 }) {
@@ -526,34 +583,68 @@ export function PoolBoard({
   const isPassAndPlay = game.mode === "pass_and_play";
   const isActive = game.status === "active";
   const isCompleted = game.status === "completed";
+  const isParticipant = game.players.includes(currentUser);
+  const isPendingForMe =
+    game.status === "pending" && game.opponentId === currentUser;
+  const isPendingByMe =
+    game.status === "pending" && game.challengerId === currentUser;
 
-  // Responsive orientation: vertical on mobile portrait (< 700px), horizontal on desktop
-  const [vertical, setVertical] = useState(false);
-  const userToggledOrientationRef = useRef(false);
-
+  // Lock page scroll completely while in full-screen Pool
   useEffect(() => {
-    const syncOrientation = () => {
-      if (!userToggledOrientationRef.current) {
-        setVertical(window.innerWidth < 700);
-      }
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
     };
-    syncOrientation();
-    window.addEventListener("resize", syncOrientation);
-    return () => window.removeEventListener("resize", syncOrientation);
   }, []);
 
-  // Local aiming, Ball-in-Hand, and Power Meter state
+  // Measure the exact stage container for 100% zero-scroll canvas fit
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [stageSize, setStageSize] = useState<{ w: number; h: number }>({
+    w: 390,
+    h: 740,
+  });
+
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setStageSize({ w: rect.width, h: rect.height });
+      }
+    };
+    update();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  const vp = useMemo(
+    () => computeStageViewport(stageSize.w, stageSize.h),
+    [stageSize.w, stageSize.h]
+  );
+
+  // Interactive aiming, Ball-in-Hand, cue pullback & animation state
   const [aimAngle, setAimAngle] = useState<number>(0);
   const [pullPower, setPullPower] = useState<number>(0);
-  const [isCharging, setIsCharging] = useState<boolean>(false);
+  const [isPullingStick, setIsPullingStick] = useState<boolean>(false);
   const [draftCuePos, setDraftCuePos] = useState<{
     x: number;
     y: number;
   } | null>(null);
   const [isAnimating, setIsAnimating] = useState<boolean>(false);
+  const [confirmForfeit, setConfirmForfeit] = useState<boolean>(false);
+  const [shotToast, setShotToast] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const powerTrackRef = useRef<HTMLDivElement | null>(null);
   const animFramesRef = useRef<PoolFrameBall[][]>([]);
   const animFrameIdxRef = useRef<number>(0);
   const animStrikeStartRef = useRef<number>(0);
@@ -564,9 +655,28 @@ export function PoolBoard({
   } | null>(null);
   const animRafRef = useRef<number | null>(null);
   const lastAnimatedSeqRef = useRef<number>(state.lastShot?.seq ?? 0);
-  const dragModeRef = useRef<"none" | "aim" | "place_cue">("none");
-  const powerDraggingRef = useRef<boolean>(false);
-  const powerStartYRef = useRef<number>(0);
+  const shotToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const dragStateRef = useRef<
+    | { mode: "none" }
+    | { mode: "place_cue" }
+    | {
+        mode: "aim";
+        startAimAngle: number;
+        startPtrAngle: number;
+        startSx: number;
+        startSy: number;
+        moved: boolean;
+      }
+    | {
+        mode: "pull_stick";
+        startSx: number;
+        startSy: number;
+        backDirX: number;
+        backDirY: number;
+        maxPullPx: number;
+      }
+  >({ mode: "none" });
 
   const canShootNow =
     isActive &&
@@ -576,20 +686,42 @@ export function PoolBoard({
 
   const canPlaceCue = canShootNow && state.ballInHand;
 
-  // Reset draft cue ball placement whenever shotCount changes
   useEffect(() => {
     setDraftCuePos(null);
   }, [state.shotCount, game.id]);
 
-  // Compute effective balls on table (with optional Ball-in-Hand draft cue pos)
+  // Show brief shot summary toast right when animation finishes
+  const prevAnimatingRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (prevAnimatingRef.current && !isAnimating && state.lastShot && !isCompleted) {
+      setShotToast(
+        `${memberById(state.lastShot.by).name}: ${state.lastShot.summary}`
+      );
+      if (shotToastTimerRef.current) clearTimeout(shotToastTimerRef.current);
+      shotToastTimerRef.current = setTimeout(() => setShotToast(null), 3200);
+    }
+    prevAnimatingRef.current = isAnimating;
+  }, [isAnimating, state.lastShot, isCompleted, memberById]);
+
+  useEffect(() => {
+    return () => {
+      if (shotToastTimerRef.current) clearTimeout(shotToastTimerRef.current);
+      if (animRafRef.current !== null) {
+        window.cancelAnimationFrame(animRafRef.current);
+      }
+    };
+  }, []);
+
   const effectiveBalls = useMemo<PoolBall[]>(() => {
     if (!draftCuePos) return state.balls;
     return state.balls.map((b) =>
-      b.id === 0 ? { ...b, x: draftCuePos.x, y: draftCuePos.y, pocketed: false } : b
+      b.id === 0
+        ? { ...b, x: draftCuePos.x, y: draftCuePos.y, pocketed: false }
+        : b
     );
   }, [state.balls, draftCuePos]);
 
-  // Default aim angle toward the nearest legal target ball whenever turn/shot changes
+  // Default aim angle toward nearest legal target ball on turn/shot change
   useEffect(() => {
     const cue = state.balls.find((b) => b.id === 0);
     if (!cue || cue.pocketed) return;
@@ -619,7 +751,6 @@ export function PoolBoard({
     setAimAngle(Math.atan2(nearest.y - cue.y, nearest.x - cue.x));
   }, [game.id, state.shotCount, game.currentTurnId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Animation playback helper
   const startShotAnimation = useCallback(
     (preBalls: PoolBall[], move: PoolMove) => {
       if (animRafRef.current !== null) {
@@ -628,7 +759,12 @@ export function PoolBoard({
       }
       const adjustedPre = preBalls.map((b) =>
         b.id === 0 && move.cueBallPos
-          ? { ...b, x: move.cueBallPos.x, y: move.cueBallPos.y, pocketed: false }
+          ? {
+              ...b,
+              x: move.cueBallPos.x,
+              y: move.cueBallPos.y,
+              pocketed: false,
+            }
           : { ...b }
       );
       const cue = adjustedPre.find((b) => b.id === 0) || {
@@ -648,12 +784,13 @@ export function PoolBoard({
         power: move.power,
         cueStart: { x: cue.x, y: cue.y },
       };
+      setShotToast(null);
       setIsAnimating(true);
     },
     []
   );
 
-  // Auto-animate incoming remote opponent shots when lastShot.seq advances
+  // Auto-animate incoming remote opponent shots
   useEffect(() => {
     const seq = state.lastShot?.seq ?? 0;
     if (seq < lastAnimatedSeqRef.current) {
@@ -666,16 +803,6 @@ export function PoolBoard({
     }
   }, [game.id, state.lastShot, startShotAnimation]);
 
-  // Clean up animation frame on unmount
-  useEffect(() => {
-    return () => {
-      if (animRafRef.current !== null) {
-        window.cancelAnimationFrame(animRafRef.current);
-      }
-    };
-  }, []);
-
-  // Determine if aiming at a foul target (for helpful visual feedback)
   const activeShooterId = game.currentTurnId || currentUser;
   const activeShooterGroup = state.groups[activeShooterId] ?? null;
   const activeShooterCleared =
@@ -693,7 +820,7 @@ export function PoolBoard({
     [state.isBreakShot, activeShooterGroup, activeShooterCleared]
   );
 
-  // Static Canvas Renderer (only runs when not playing a shot animation)
+  // Static Full-Stage Canvas Renderer
   useEffect(() => {
     if (isAnimating) return;
     const canvas = canvasRef.current;
@@ -701,73 +828,72 @@ export function PoolBoard({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const cw = vertical ? V_CANVAS_W : H_CANVAS_W;
-    const ch = vertical ? V_CANVAS_H : H_CANVAS_H;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-    if (
-      canvas.width !== Math.round(cw * dpr) ||
-      canvas.height !== Math.round(ch * dpr)
-    ) {
-      canvas.width = Math.round(cw * dpr);
-      canvas.height = Math.round(ch * dpr);
+    const targetW = Math.round(vp.stageW * dpr);
+    const targetH = Math.round(vp.stageH * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
     }
 
     ctx.save();
     ctx.scale(dpr, dpr);
-    drawPoolTable(ctx, vertical, canPlaceCue && state.isBreakShot);
+    ctx.clearRect(0, 0, vp.stageW, vp.stageH);
 
-    // Draw balls
+    // Transform into centered table-local coordinates
+    ctx.translate(vp.originX, vp.originY);
+    ctx.scale(vp.scale, vp.scale);
+
+    drawPoolTable(ctx, vp.vertical, canPlaceCue && state.isBreakShot);
+
     for (const b of effectiveBalls) {
-      drawBall(ctx, b, vertical);
+      drawBall(ctx, b, vp.vertical);
     }
 
     const cue = effectiveBalls.find((b) => b.id === 0);
 
-    // Ball-in-Hand highlight ring
     if (canPlaceCue && cue && !cue.pocketed) {
-      const { cx, cy } = tableToCanvas(cue.x, cue.y, vertical);
+      const { lx: cx, ly: cy } = tableToLocal(cue.x, cue.y, vp.vertical);
       ctx.save();
       ctx.beginPath();
-      ctx.arc(cx, cy, BALL_RADIUS + 7, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(255, 226, 130, 0.92)";
-      ctx.lineWidth = 2.5;
+      ctx.arc(cx, cy, BALL_RADIUS + 8, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255, 226, 130, 0.94)";
+      ctx.lineWidth = 2.6;
       ctx.setLineDash([6, 4]);
       ctx.stroke();
       ctx.restore();
     }
 
-    // Aiming guide & Cue Stick
     if (canShootNow && cue && !cue.pocketed) {
       const preview = computeAimPreview(cue, aimAngle, effectiveBalls);
-      const startC = tableToCanvas(preview.startX, preview.startY, vertical);
-      const endC = tableToCanvas(preview.endX, preview.endY, vertical);
+      const startL = tableToLocal(preview.startX, preview.startY, vp.vertical);
+      const endL = tableToLocal(preview.endX, preview.endY, vp.vertical);
       const legal = isTargetLegal(preview.targetBallId);
 
-      // Aiming dashed ray
+      // Dashed aiming ray
       ctx.save();
       ctx.beginPath();
-      ctx.moveTo(startC.cx, startC.cy);
-      ctx.lineTo(endC.cx, endC.cy);
+      ctx.moveTo(startL.lx, startL.ly);
+      ctx.lineTo(endL.lx, endL.ly);
       ctx.strokeStyle = legal
-        ? "rgba(255, 255, 255, 0.78)"
-        : "rgba(248, 113, 113, 0.88)";
-      ctx.lineWidth = 2;
+        ? "rgba(255, 255, 255, 0.8)"
+        : "rgba(248, 113, 113, 0.9)";
+      ctx.lineWidth = 2.1;
       ctx.setLineDash([7, 6]);
       ctx.stroke();
       ctx.restore();
 
-      // Ghost ball circle at impact
+      // Ghost ball at impact
       ctx.save();
       ctx.beginPath();
-      ctx.arc(endC.cx, endC.cy, BALL_RADIUS, 0, Math.PI * 2);
+      ctx.arc(endL.lx, endL.ly, BALL_RADIUS, 0, Math.PI * 2);
       ctx.strokeStyle = legal
-        ? "rgba(255, 255, 255, 0.85)"
-        : "rgba(248, 113, 113, 0.92)";
+        ? "rgba(255, 255, 255, 0.88)"
+        : "rgba(248, 113, 113, 0.94)";
       ctx.lineWidth = 2;
       ctx.fillStyle = legal
         ? "rgba(255, 255, 255, 0.14)"
-        : "rgba(248, 113, 113, 0.2)";
+        : "rgba(248, 113, 113, 0.22)";
       ctx.fill();
       ctx.stroke();
       ctx.restore();
@@ -782,34 +908,34 @@ export function PoolBoard({
           (b) => b.id === preview.targetBallId
         );
         if (targetBall) {
-          const tbStart = tableToCanvas(targetBall.x, targetBall.y, vertical);
-          const tbEnd = tableToCanvas(
-            targetBall.x + preview.targetDirX * 115,
-            targetBall.y + preview.targetDirY * 115,
-            vertical
+          const tbStart = tableToLocal(targetBall.x, targetBall.y, vp.vertical);
+          const tbEnd = tableToLocal(
+            targetBall.x + preview.targetDirX * 120,
+            targetBall.y + preview.targetDirY * 120,
+            vp.vertical
           );
           ctx.save();
           ctx.beginPath();
-          ctx.moveTo(tbStart.cx, tbStart.cy);
-          ctx.lineTo(tbEnd.cx, tbEnd.cy);
+          ctx.moveTo(tbStart.lx, tbStart.ly);
+          ctx.lineTo(tbEnd.lx, tbEnd.ly);
           ctx.strokeStyle = legal
-            ? "rgba(134, 239, 172, 0.9)"
-            : "rgba(248, 113, 113, 0.9)";
-          ctx.lineWidth = 2.6;
+            ? "rgba(134, 239, 172, 0.92)"
+            : "rgba(248, 113, 113, 0.92)";
+          ctx.lineWidth = 2.8;
           ctx.stroke();
           ctx.restore();
         }
 
         if (preview.cueDeflectX !== null && preview.cueDeflectY !== null) {
-          const cdEnd = tableToCanvas(
-            preview.endX + preview.cueDeflectX * 52,
-            preview.endY + preview.cueDeflectY * 52,
-            vertical
+          const cdEnd = tableToLocal(
+            preview.endX + preview.cueDeflectX * 54,
+            preview.endY + preview.cueDeflectY * 54,
+            vp.vertical
           );
           ctx.save();
           ctx.beginPath();
-          ctx.moveTo(endC.cx, endC.cy);
-          ctx.lineTo(cdEnd.cx, cdEnd.cy);
+          ctx.moveTo(endL.lx, endL.ly);
+          ctx.lineTo(cdEnd.lx, cdEnd.ly);
           ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
           ctx.lineWidth = 1.6;
           ctx.stroke();
@@ -817,17 +943,27 @@ export function PoolBoard({
         }
       }
 
-      // Tapered Cue Stick
-      const canvasAngle = tableAngleToCanvasAngle(aimAngle, vertical);
-      drawCueStick(ctx, startC.cx, startC.cy, canvasAngle, pullPower * 110);
+      // Direct-pullback Tapered Cue Stick
+      const canvasAngle = tableAngleToCanvasAngle(aimAngle, vp.vertical);
+      drawCueStick(
+        ctx,
+        startL.lx,
+        startL.ly,
+        canvasAngle,
+        pullPower * 125,
+        pullPower,
+        isPullingStick,
+        true
+      );
     }
 
     ctx.restore();
   }, [
-    vertical,
+    vp,
     effectiveBalls,
     aimAngle,
     pullPower,
+    isPullingStick,
     canShootNow,
     canPlaceCue,
     state.isBreakShot,
@@ -835,7 +971,7 @@ export function PoolBoard({
     isTargetLegal,
   ]);
 
-  // Dedicated 60fps Shot Playback Loop (isolated from optimistic/server state updates)
+  // Isolated 60fps Shot Animation Loop
   useEffect(() => {
     if (!isAnimating) return;
     const canvas = canvasRef.current;
@@ -843,48 +979,55 @@ export function PoolBoard({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const cw = vertical ? V_CANVAS_W : H_CANVAS_W;
-    const ch = vertical ? V_CANVAS_H : H_CANVAS_H;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-    if (
-      canvas.width !== Math.round(cw * dpr) ||
-      canvas.height !== Math.round(ch * dpr)
-    ) {
-      canvas.width = Math.round(cw * dpr);
-      canvas.height = Math.round(ch * dpr);
+    const targetW = Math.round(vp.stageW * dpr);
+    const targetH = Math.round(vp.stageH * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
     }
 
-    const STRIKE_MS = 95;
+    const STRIKE_MS = 90;
     let lastFrameTime = performance.now();
     let frameAccumulator = 0;
 
     const tick = (now: number) => {
-      const elapsedSinceStart = now - animStrikeStartRef.current;
+      const elapsed = now - animStrikeStartRef.current;
       const dt = Math.min(50, now - lastFrameTime);
       lastFrameTime = now;
 
       ctx.save();
       ctx.scale(dpr, dpr);
-      drawPoolTable(ctx, vertical, false);
+      ctx.clearRect(0, 0, vp.stageW, vp.stageH);
+      ctx.translate(vp.originX, vp.originY);
+      ctx.scale(vp.scale, vp.scale);
+
+      drawPoolTable(ctx, vp.vertical, false);
 
       const frames = animFramesRef.current;
       const meta = animShotMetaRef.current;
 
-      if (elapsedSinceStart < STRIKE_MS && meta && frames[0]) {
+      if (elapsed < STRIKE_MS && meta && frames[0]) {
         for (const b of frames[0]) {
-          drawBall(ctx, b, vertical);
+          drawBall(ctx, b, vp.vertical);
         }
-        const t = Math.min(1, elapsedSinceStart / STRIKE_MS);
+        const t = Math.min(1, elapsed / STRIKE_MS);
         const eased = 1 - (1 - t) * (1 - t);
-        const pullback = meta.power * 110 * (1 - eased) - eased * 6;
-        const cueC = tableToCanvas(meta.cueStart.x, meta.cueStart.y, vertical);
+        const pullback = meta.power * 125 * (1 - eased) - eased * 6;
+        const cueL = tableToLocal(
+          meta.cueStart.x,
+          meta.cueStart.y,
+          vp.vertical
+        );
         drawCueStick(
           ctx,
-          cueC.cx,
-          cueC.cy,
-          tableAngleToCanvasAngle(meta.angle, vertical),
-          Math.max(-5, pullback)
+          cueL.lx,
+          cueL.ly,
+          tableAngleToCanvasAngle(meta.angle, vp.vertical),
+          Math.max(-5, pullback),
+          meta.power * (1 - eased),
+          false,
+          false
         );
         ctx.restore();
         animRafRef.current = window.requestAnimationFrame(tick);
@@ -902,7 +1045,7 @@ export function PoolBoard({
       const frame = frames[animFrameIdxRef.current] || frames[frames.length - 1];
       if (frame) {
         for (const b of frame) {
-          drawBall(ctx, b, vertical);
+          drawBall(ctx, b, vp.vertical);
         }
       }
       ctx.restore();
@@ -923,54 +1066,130 @@ export function PoolBoard({
         animRafRef.current = null;
       }
     };
-  }, [isAnimating, vertical]);
+  }, [isAnimating, vp]);
 
-  // Convert pointer event to canonical table coordinates
-  function pointerToTableCoords(e: React.PointerEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    const cw = vertical ? V_CANVAS_W : H_CANVAS_W;
-    const ch = vertical ? V_CANVAS_H : H_CANVAS_H;
-    const cx = ((e.clientX - rect.left) / rect.width) * cw;
-    const cy = ((e.clientY - rect.top) / rect.height) * ch;
-    return canvasToTable(cx, cy, vertical);
-  }
-
-  function handleCanvasPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!canShootNow) return;
-    const pt = pointerToTableCoords(e);
-    if (!pt) return;
-
-    e.currentTarget.setPointerCapture(e.pointerId);
+  // Fire shot with chosen pullback power
+  function fireShot(power: number) {
+    if (!canShootNow || power < 0.04) return;
     const cue = effectiveBalls.find((b) => b.id === 0);
     if (!cue || cue.pocketed) return;
 
-    const distToCue = Math.hypot(pt.tx - cue.x, pt.ty - cue.y);
-    if (canPlaceCue && distToCue <= BALL_RADIUS * 2.4) {
-      dragModeRef.current = "place_cue";
+    const move: PoolMove = {
+      angle: Math.round(aimAngle * 10000) / 10000,
+      power: Math.round(Math.min(1, power) * 1000) / 1000,
+      cueBallPos: state.ballInHand ? { x: cue.x, y: cue.y } : null,
+    };
+
+    lastAnimatedSeqRef.current = (state.shotCount || 0) + 1;
+    startShotAnimation(effectiveBalls, move);
+    onMakeMove(move);
+  }
+
+  function pointerToStage(e: React.PointerEvent<HTMLCanvasElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return { sx: e.clientX - rect.left, sy: e.clientY - rect.top };
+  }
+
+  function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!canShootNow) return;
+    const cue = effectiveBalls.find((b) => b.id === 0);
+    if (!cue || cue.pocketed) return;
+
+    const { sx, sy } = pointerToStage(e);
+    const { tx, ty } = stageToTable(sx, sy, vp);
+    e.currentTarget.setPointerCapture(e.pointerId);
+
+    const distToCue = Math.hypot(tx - cue.x, ty - cue.y);
+
+    // 1. Ball-in-Hand cue placement
+    if (canPlaceCue && distToCue <= BALL_RADIUS * 2.1) {
+      dragStateRef.current = { mode: "place_cue" };
       return;
     }
 
-    dragModeRef.current = "aim";
-    if (distToCue > 6) {
-      setAimAngle(Math.atan2(pt.ty - cue.y, pt.tx - cue.x));
+    // 2. Grab cue stick shaft to pull back for shot power
+    const backX = -Math.cos(aimAngle);
+    const backY = -Math.sin(aimAngle);
+    const perpX = -backY;
+    const perpY = backX;
+    const vx = tx - cue.x;
+    const vy = ty - cue.y;
+    const along = vx * backX + vy * backY;
+    const perp = Math.abs(vx * perpX + vy * perpY);
+
+    if (
+      along >= BALL_RADIUS * 0.7 &&
+      along <= STICK_LENGTH + 50 &&
+      perp <= 48
+    ) {
+      const canvasAngle = tableAngleToCanvasAngle(aimAngle, vp.vertical);
+      const backDirX = -Math.cos(canvasAngle);
+      const backDirY = -Math.sin(canvasAngle);
+      const idealPullPx = Math.min(
+        180,
+        Math.max(105, Math.min(vp.stageW, vp.stageH) * 0.34)
+      );
+      const edgeRoomPx = rayDistanceToBounds(
+        sx,
+        sy,
+        backDirX,
+        backDirY,
+        14,
+        14,
+        vp.stageW - 14,
+        vp.stageH - 14
+      );
+      const maxPullPx = Math.max(
+        56,
+        Math.min(idealPullPx, Math.max(56, edgeRoomPx * 0.92))
+      );
+
+      dragStateRef.current = {
+        mode: "pull_stick",
+        startSx: sx,
+        startSy: sy,
+        backDirX,
+        backDirY,
+        maxPullPx,
+      };
+      setIsPullingStick(true);
+      setPullPower(0);
+      return;
     }
+
+    // 3. Aim rotation on table cloth
+    dragStateRef.current = {
+      mode: "aim",
+      startAimAngle: aimAngle,
+      startPtrAngle: Math.atan2(ty - cue.y, tx - cue.x),
+      startSx: sx,
+      startSy: sy,
+      moved: false,
+    };
   }
 
-  function handleCanvasPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (dragModeRef.current === "none" || !canShootNow) return;
-    const pt = pointerToTableCoords(e);
-    if (!pt) return;
+  function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    const drag = dragStateRef.current;
+    if (drag.mode === "none" || !canShootNow) return;
 
-    if (dragModeRef.current === "place_cue" && canPlaceCue) {
+    const { sx, sy } = pointerToStage(e);
+
+    if (drag.mode === "pull_stick") {
+      const pullPx =
+        (sx - drag.startSx) * drag.backDirX +
+        (sy - drag.startSy) * drag.backDirY;
+      const nextPower = Math.max(0, Math.min(1, pullPx / drag.maxPullPx));
+      setPullPower(nextPower);
+      return;
+    }
+
+    const { tx, ty } = stageToTable(sx, sy, vp);
+
+    if (drag.mode === "place_cue" && canPlaceCue) {
       const margin = BALL_RADIUS + 4;
       const maxX = state.isBreakShot ? HEAD_STRING_X : TABLE_WIDTH - margin;
-      const clampedX = Math.max(margin, Math.min(maxX, pt.tx));
-      const clampedY = Math.max(
-        margin,
-        Math.min(TABLE_HEIGHT - margin, pt.ty)
-      );
+      const clampedX = Math.max(margin, Math.min(maxX, tx));
+      const clampedY = Math.max(margin, Math.min(TABLE_HEIGHT - margin, ty));
       if (
         isCueBallPlacementValid(
           clampedX,
@@ -984,352 +1203,298 @@ export function PoolBoard({
           y: Math.round(clampedY * 100) / 100,
         });
       } else {
-        const nearestFree = findFreeSpot(
-          clampedX,
-          clampedY,
-          state.balls,
-          0,
-          state.isBreakShot
+        setDraftCuePos(
+          findFreeSpot(clampedX, clampedY, state.balls, 0, state.isBreakShot)
         );
-        setDraftCuePos(nearestFree);
       }
       return;
     }
 
-    if (dragModeRef.current === "aim") {
+    if (drag.mode === "aim") {
       const cue = effectiveBalls.find((b) => b.id === 0);
       if (!cue || cue.pocketed) return;
-      const dist = Math.hypot(pt.tx - cue.x, pt.ty - cue.y);
-      if (dist > 6) {
-        setAimAngle(Math.atan2(pt.ty - cue.y, pt.tx - cue.x));
+      if (!drag.moved && Math.hypot(sx - drag.startSx, sy - drag.startSy) > 5) {
+        drag.moved = true;
+      }
+      if (drag.moved && Math.hypot(tx - cue.x, ty - cue.y) > 8) {
+        const currPtrAngle = Math.atan2(ty - cue.y, tx - cue.x);
+        const delta = normalizeAngleDelta(currPtrAngle - drag.startPtrAngle);
+        setAimAngle(drag.startAimAngle + delta);
       }
     }
   }
 
-  function handleCanvasPointerUp() {
-    dragModeRef.current = "none";
-  }
+  function handlePointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    const drag = dragStateRef.current;
+    dragStateRef.current = { mode: "none" };
 
-  // Fire shot from Power Meter
-  function fireShot(power: number) {
-    if (!canShootNow || power < 0.04) return;
-    const cue = effectiveBalls.find((b) => b.id === 0);
-    if (!cue || cue.pocketed) return;
+    if (drag.mode === "pull_stick") {
+      const { sx, sy } = pointerToStage(e);
+      const pullPx =
+        (sx - drag.startSx) * drag.backDirX +
+        (sy - drag.startSy) * drag.backDirY;
+      const finalPower = Math.max(0, Math.min(1, pullPx / drag.maxPullPx));
+      setIsPullingStick(false);
+      setPullPower(0);
+      if (finalPower >= 0.04) {
+        fireShot(finalPower);
+      }
+      return;
+    }
 
-    const move: PoolMove = {
-      angle: Math.round(aimAngle * 10000) / 10000,
-      power: Math.round(Math.min(1, power) * 1000) / 1000,
-      cueBallPos: state.ballInHand ? { x: cue.x, y: cue.y } : null,
-    };
-
-    // Advance expected seq so optimistic/server response doesn't double-animate
-    lastAnimatedSeqRef.current = (state.shotCount || 0) + 1;
-    startShotAnimation(effectiveBalls, move);
-    onMakeMove(move);
-  }
-
-  // Spring-loaded Power Meter pointer handlers
-  function updatePowerFromPointer(clientY: number) {
-    const track = powerTrackRef.current;
-    if (!track) return 0;
-    const rect = track.getBoundingClientRect();
-    const usable = Math.max(80, rect.height - 34);
-    const delta = clientY - powerStartYRef.current;
-    // Also allow tapping/dragging directly along track from top
-    const fromTop = clientY - rect.top - 16;
-    const raw = Math.max(delta, fromTop) / usable;
-    const clamped = Math.max(0, Math.min(1, raw));
-    setPullPower(clamped);
-    return clamped;
-  }
-
-  function handlePowerPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (!canShootNow) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    powerDraggingRef.current = true;
-    powerStartYRef.current = e.clientY;
-    setIsCharging(true);
-    updatePowerFromPointer(e.clientY);
-  }
-
-  function handlePowerPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!powerDraggingRef.current) return;
-    updatePowerFromPointer(e.clientY);
-  }
-
-  function handlePowerPointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    if (!powerDraggingRef.current) return;
-    powerDraggingRef.current = false;
-    const finalPower = updatePowerFromPointer(e.clientY);
-    setIsCharging(false);
-    setPullPower(0);
-    if (finalPower >= 0.04) {
-      fireShot(finalPower);
+    if (drag.mode === "aim" && !drag.moved && canShootNow) {
+      const cue = effectiveBalls.find((b) => b.id === 0);
+      if (!cue || cue.pocketed) return;
+      const { sx, sy } = pointerToStage(e);
+      const { tx, ty } = stageToTable(sx, sy, vp);
+      if (Math.hypot(tx - cue.x, ty - cue.y) > BALL_RADIUS * 1.4) {
+        setAimAngle(Math.atan2(ty - cue.y, tx - cue.x));
+      }
     }
   }
 
-  function nudgeAim(deltaDeg: number) {
-    if (!canShootNow) return;
-    setAimAngle((prev) => prev + (deltaDeg * Math.PI) / 180);
+  function handlePointerCancel() {
+    dragStateRef.current = { mode: "none" };
+    setIsPullingStick(false);
+    setPullPower(0);
   }
 
-  // Status Banner Text
+  // HUD calculations (spoiler-free while animating)
+  const hudBalls =
+    isAnimating && animFramesRef.current[0]
+      ? animFramesRef.current[0]
+      : state.balls;
   const activeTurnMember = game.currentTurnId
     ? memberById(game.currentTurnId)
     : null;
   const winnerMember = game.winnerId ? memberById(game.winnerId) : null;
-  const showCompletedUI = isCompleted && !isAnimating;
+  const showCompletedOverlay = isCompleted && !isAnimating;
 
-  let statusText = "";
-  let statusTone: "turn" | "wait" | "win" | "foul" = "wait";
-  if (showCompletedUI) {
-    if (game.outcome === "forfeit" && winnerMember) {
-      statusText =
-        winnerMember.id === currentUser && !isPassAndPlay
-          ? "You won by forfeit!"
-          : `${winnerMember.name} won by forfeit`;
-      statusTone = "win";
-    } else if (winnerMember) {
-      statusText =
-        winnerMember.id === currentUser && !isPassAndPlay
-          ? "You sank the 8-ball and won! 🎱🎉"
-          : `${winnerMember.name} won the rack! 🎱🎉`;
-      statusTone = "win";
-    }
+  let centerPillText = "8-Ball";
+  let centerPillBg = "rgba(255,255,255,0.1)";
+  let centerPillColor = "#F4EFE7";
+
+  if (game.status === "pending") {
+    centerPillText = "Invite";
+    centerPillBg = "rgba(240, 115, 64, 0.25)";
+    centerPillColor = "#FCA580";
   } else if (isAnimating) {
-    statusText = "Balls in motion…";
-    statusTone = "wait";
+    centerPillText = "Rolling…";
+  } else if (showCompletedOverlay) {
+    centerPillText = "Final";
+    centerPillBg = "rgba(61, 168, 141, 0.26)";
+    centerPillColor = "#7FD9A8";
   } else if (isActive && activeTurnMember) {
     const isMyShot = isPassAndPlay || game.currentTurnId === currentUser;
     if (isMyShot) {
-      const who = isPassAndPlay ? `${activeTurnMember.name}'s shot` : "Your shot";
       if (state.isBreakShot) {
-        statusText = `${who} — Break! Drag cue ball behind line & pull meter`;
-        statusTone = "turn";
+        centerPillText = isPassAndPlay
+          ? `${activeTurnMember.name} · Break`
+          : "Break!";
       } else if (state.ballInHand) {
-        statusText = `${who} — Ball in Hand! Drag cue ball anywhere & shoot`;
-        statusTone = "foul";
+        centerPillText = "Ball in Hand";
+        centerPillBg = "rgba(230, 184, 79, 0.26)";
+        centerPillColor = "#FDE08A";
       } else {
-        statusText = `${who} — Aim & pull the Power Meter`;
-        statusTone = "turn";
+        centerPillText = isPassAndPlay
+          ? `${activeTurnMember.name}'s Turn`
+          : "Your Turn";
+        centerPillBg = "var(--accent)";
+        centerPillColor = "#FFFFFF";
       }
     } else {
-      statusText = `Waiting for ${activeTurnMember.name} to shoot…`;
-      statusTone = "wait";
+      centerPillText = `${activeTurnMember.name}'s Turn`;
     }
-  } else if (game.status === "pending") {
-    statusText =
-      game.opponentId === currentUser
-        ? "Accept the challenge above to rack 'em up!"
-        : `Waiting for ${memberById(game.opponentId).name} to accept…`;
   }
 
   const powerPct = Math.round(pullPower * 100);
   const powerColor =
-    pullPower < 0.4
-      ? "#1F9D6E"
-      : pullPower < 0.75
-        ? "#E09F24"
-        : "#E04F2E";
+    pullPower < 0.4 ? "#4ADE80" : pullPower < 0.75 ? "#FACC15" : "#F87171";
 
-  return (
-    <div>
-      {/* Player Matchup & Ball Group Racks */}
+  const renderPlayerHud = (player: typeof p1, alignRight: boolean) => {
+    const group: BallGroup | null = state.groups[player.id] ?? null;
+    const isTurn = !isAnimating && isActive && game.currentTurnId === player.id;
+    const groupIds =
+      group === "solids"
+        ? [1, 2, 3, 4, 5, 6, 7]
+        : group === "stripes"
+          ? [9, 10, 11, 12, 13, 14, 15]
+          : [];
+    const clearedGroup =
+      group !== null && getRemainingBallsForGroup(hudBalls, group).length === 0;
+
+    return (
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 10,
-          marginBottom: 12,
-        }}
-      >
-        {[p1, p2].map((player) => {
-          const hudBalls =
-            isAnimating && animFramesRef.current[0]
-              ? animFramesRef.current[0]
-              : state.balls;
-          const group: BallGroup | null = state.groups[player.id] ?? null;
-          const isTurn = !isAnimating && isActive && game.currentTurnId === player.id;
-          const isWinner = showCompletedUI && game.winnerId === player.id;
-          const groupIds =
-            group === "solids"
-              ? [1, 2, 3, 4, 5, 6, 7]
-              : group === "stripes"
-                ? [9, 10, 11, 12, 13, 14, 15]
-                : [];
-          const clearedGroup =
-            group !== null &&
-            getRemainingBallsForGroup(hudBalls, group).length === 0;
-
-          return (
-            <div
-              key={player.id}
-              style={{
-                background: isWinner
-                  ? "var(--success-soft)"
-                  : isTurn
-                    ? "var(--accent-soft)"
-                    : "var(--bg-subtle)",
-                border: `1.5px solid ${
-                  isWinner
-                    ? "var(--success)"
-                    : isTurn
-                      ? "var(--accent)"
-                      : "var(--border-subtle)"
-                }`,
-                borderRadius: 14,
-                padding: "9px 10px",
-                minWidth: 0,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginBottom: 6,
-                }}
-              >
-                <AvatarDot id={player.id} size={28} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      color: "var(--text-primary)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {player.id === currentUser && !isPassAndPlay
-                      ? "You"
-                      : player.name}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      color: group ? player.color : "var(--text-muted)",
-                    }}
-                  >
-                    {group === "solids"
-                      ? clearedGroup
-                        ? "On the 8-Ball 🎱"
-                        : "Solids (1–7)"
-                      : group === "stripes"
-                        ? clearedGroup
-                          ? "On the 8-Ball 🎱"
-                          : "Stripes (9–15)"
-                        : "Open Table"}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                {group === null ? (
-                  <span style={{ fontSize: 10.5, color: "var(--text-faint)" }}>
-                    Sink a ball to claim Solids or Stripes
-                  </span>
-                ) : clearedGroup ? (
-                  <MiniBallBadge
-                    id={8}
-                    pocketed={Boolean(
-                      hudBalls.find((b) => b.id === 8)?.pocketed
-                    )}
-                  />
-                ) : (
-                  groupIds.map((id) => (
-                    <MiniBallBadge
-                      key={id}
-                      id={id}
-                      pocketed={Boolean(
-                        hudBalls.find((b) => b.id === id)?.pocketed
-                      )}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Turn / Outcome Status Banner */}
-      {statusText && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 7,
-            padding: "8px 12px",
-            borderRadius: 12,
-            marginBottom: 10,
-            fontSize: 12.5,
-            fontWeight: 700,
-            textAlign: "center",
-            background:
-              statusTone === "win"
-                ? "var(--success-soft)"
-                : statusTone === "foul"
-                  ? "var(--cat-ochre-soft)"
-                  : statusTone === "turn"
-                    ? "var(--accent-soft)"
-                    : "var(--bg-subtle)",
-            color:
-              statusTone === "win"
-                ? "var(--success-ink)"
-                : statusTone === "foul"
-                  ? "var(--cat-ochre)"
-                  : statusTone === "turn"
-                    ? "var(--accent-ink)"
-                    : "var(--text-secondary)",
-            border: `1px solid ${
-              statusTone === "win"
-                ? "var(--success-border)"
-                : statusTone === "turn"
-                  ? "var(--accent-border)"
-                  : "var(--border-subtle)"
-            }`,
-          }}
-        >
-          {statusTone === "win" && <Trophy size={14} />}
-          {statusTone === "turn" && <Sparkles size={14} />}
-          {isPassAndPlay && isActive && !isAnimating && <Users size={13} />}
-          <span>{statusText}</span>
-        </div>
-      )}
-
-      {/* Last Shot Feed + Controls Toolbar */}
-      <div
+        key={player.id}
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          marginBottom: 10,
-          flexWrap: "wrap",
+          flexDirection: alignRight ? "row-reverse" : "row",
+          gap: 6,
+          minWidth: 0,
+          flex: 1,
+          opacity: isActive && !isAnimating && !isTurn ? 0.65 : 1,
+          transition: "opacity 0.2s",
         }}
       >
         <div
           style={{
-            fontSize: 11.5,
-            color: "var(--text-muted)",
-            fontWeight: 600,
-            flex: "1 1 160px",
+            borderRadius: "50%",
+            boxShadow: isTurn ? "0 0 0 2px var(--accent)" : "none",
+            flexShrink: 0,
           }}
         >
-          {isAnimating
-            ? "Watching shot unfold…"
-            : state.lastShot
-              ? `${memberById(state.lastShot.by).name}: ${state.lastShot.summary}`
-              : "Drag on the table to aim · Pull the Power Meter to strike"}
+          <AvatarDot id={player.id} size={24} />
+        </div>
+        <div
+          style={{
+            minWidth: 0,
+            textAlign: alignRight ? "right" : "left",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11.5,
+              fontWeight: 700,
+              color: "#F4EFE7",
+              lineHeight: 1.1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: 84,
+            }}
+          >
+            {player.id === currentUser && !isPassAndPlay ? "You" : player.name}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: alignRight ? "flex-end" : "flex-start",
+              gap: 2,
+              marginTop: 2,
+            }}
+          >
+            {group === null ? (
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 600,
+                  color: "rgba(244,239,231,0.5)",
+                }}
+              >
+                Open
+              </span>
+            ) : clearedGroup ? (
+              <TinyBallDot
+                id={8}
+                pocketed={Boolean(hudBalls.find((b) => b.id === 8)?.pocketed)}
+              />
+            ) : (
+              groupIds.map((id) => (
+                <TinyBallDot
+                  key={id}
+                  id={id}
+                  pocketed={Boolean(
+                    hudBalls.find((b) => b.id === id)?.pocketed
+                  )}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        width: "100vw",
+        height: "100dvh",
+        zIndex: 120,
+        background: "#12100E",
+        color: "#F4EFE7",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        overscrollBehavior: "none",
+      }}
+    >
+      {/* Slim ~44px Top HUD Strip */}
+      <div
+        style={{
+          padding: "calc(6px + env(safe-area-inset-top)) 10px 6px",
+          minHeight: 44,
+          background: "rgba(22, 18, 15, 0.96)",
+          borderBottom: "1px solid rgba(255, 232, 200, 0.1)",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          flexShrink: 0,
+          zIndex: 10,
+        }}
+      >
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to Games"
+          title="Back to Games"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 10,
+            background: "rgba(255, 255, 255, 0.09)",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            color: "#F4EFE7",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <ChevronLeft size={18} />
+        </button>
+
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
+          {renderPlayerHud(p1, false)}
+          <span
+            style={{
+              fontSize: 10.5,
+              fontWeight: 800,
+              padding: "3px 8px",
+              borderRadius: 999,
+              background: centerPillBg,
+              color: centerPillColor,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            {centerPillText}
+          </span>
+          {renderPlayerHud(p2, true)}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            flexShrink: 0,
+          }}
+        >
           {state.lastShot && !isAnimating && (
             <button
               type="button"
@@ -1341,349 +1506,577 @@ export function PoolBoard({
                   );
                 }
               }}
+              aria-label="Replay last shot"
+              title="Replay last shot"
               style={{
-                background: "var(--bg-subtle)",
-                color: "var(--text-primary)",
-                border: "1px solid var(--border-default)",
-                borderRadius: 9,
-                padding: "5px 9px",
-                fontSize: 11.5,
-                fontWeight: 700,
-                cursor: "pointer",
-                display: "inline-flex",
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                background: "rgba(255, 255, 255, 0.09)",
+                border: "1px solid rgba(255, 255, 255, 0.12)",
+                color: "#F4EFE7",
+                display: "flex",
                 alignItems: "center",
-                gap: 4,
+                justifyContent: "center",
+                cursor: "pointer",
               }}
             >
-              <Play size={11} /> Replay
+              <Play size={14} />
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => {
-              userToggledOrientationRef.current = true;
-              setVertical((v) => !v);
-            }}
-            title="Rotate table orientation"
-            style={{
-              background: "var(--bg-subtle)",
-              color: "var(--text-secondary)",
-              border: "1px solid var(--border-default)",
-              borderRadius: 9,
-              padding: "5px 9px",
-              fontSize: 11.5,
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-          >
-            <RotateCw size={11} /> {vertical ? "Horizontal" : "Vertical"}
-          </button>
+          {isActive && isParticipant && (
+            <button
+              type="button"
+              onClick={() => setConfirmForfeit((v) => !v)}
+              aria-label="Forfeit match"
+              title="Forfeit match"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                background: confirmForfeit
+                  ? "rgba(240, 113, 96, 0.25)"
+                  : "rgba(255, 255, 255, 0.09)",
+                border: confirmForfeit
+                  ? "1px solid rgba(240, 113, 96, 0.6)"
+                  : "1px solid rgba(255, 255, 255, 0.12)",
+                color: confirmForfeit ? "#FCA396" : "rgba(244,239,231,0.7)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+              }}
+            >
+              <Flag size={14} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Pool Table Canvas + Side Spring-Loaded Power Meter */}
+      {/* Full-Screen Pool Table Stage (Zero Scroll) */}
       <div
+        ref={stageRef}
         style={{
-          display: "flex",
-          alignItems: "stretch",
-          justifyContent: "center",
-          gap: 10,
-          marginBottom: 12,
+          flex: 1,
+          minHeight: 0,
+          width: "100%",
+          position: "relative",
+          overflow: "hidden",
+          paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
-        <div
+        <canvas
+          ref={canvasRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
           style={{
-            flex: 1,
-            minWidth: 0,
-            maxWidth: vertical ? 350 : 740,
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            display: "block",
+            touchAction: "none",
+            userSelect: "none",
+            cursor: isPullingStick
+              ? "grabbing"
+              : canShootNow
+                ? "crosshair"
+                : "default",
           }}
-        >
-          <canvas
-            ref={canvasRef}
-            onPointerDown={handleCanvasPointerDown}
-            onPointerMove={handleCanvasPointerMove}
-            onPointerUp={handleCanvasPointerUp}
-            onPointerCancel={handleCanvasPointerUp}
-            style={{
-              width: "100%",
-              aspectRatio: vertical
-                ? `${V_CANVAS_W} / ${V_CANVAS_H}`
-                : `${H_CANVAS_W} / ${H_CANVAS_H}`,
-              display: "block",
-              borderRadius: 18,
-              boxShadow: CARD_SHADOW,
-              touchAction: "none",
-              userSelect: "none",
-              cursor: canShootNow ? "crosshair" : "default",
-            }}
-          />
-        </div>
+        />
 
-        {/* Spring-Loaded Power Meter */}
-        <div
-          style={{
-            width: 52,
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 6,
-            opacity: canShootNow ? 1 : 0.45,
-          }}
-        >
+        {/* Live Cue-Stick Pullback Power Pill */}
+        {isPullingStick && (
           <div
             style={{
-              fontSize: 10,
-              fontWeight: 800,
-              letterSpacing: 0.4,
-              color: isCharging ? powerColor : "var(--text-muted)",
-              textTransform: "uppercase",
-              textAlign: "center",
-              lineHeight: 1.1,
+              position: "absolute",
+              top: 12,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "rgba(18, 15, 12, 0.88)",
+              backdropFilter: "blur(8px)",
+              border: `1.5px solid ${pullPower < 0.04 ? "rgba(255,255,255,0.22)" : powerColor}`,
+              borderRadius: 999,
+              padding: "6px 14px",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              pointerEvents: "none",
+              zIndex: 15,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
             }}
           >
-            {isCharging ? `${powerPct}%` : "Power"}
-          </div>
-
-          <div
-            ref={powerTrackRef}
-            role="slider"
-            aria-label="Shot power meter — pull down and release to shoot"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={powerPct}
-            onPointerDown={handlePowerPointerDown}
-            onPointerMove={handlePowerPointerMove}
-            onPointerUp={handlePowerPointerUp}
-            onPointerCancel={() => {
-              powerDraggingRef.current = false;
-              setIsCharging(false);
-              setPullPower(0);
-            }}
-            style={{
-              flex: 1,
-              minHeight: 190,
-              maxHeight: vertical ? 380 : 340,
-              width: 44,
-              borderRadius: 22,
-              background: "linear-gradient(180deg, #2D231B 0%, #1C1510 100%)",
-              border: `2px solid ${isCharging ? powerColor : "#573C29"}`,
-              boxShadow: "inset 0 2px 8px rgba(0,0,0,0.5)",
-              position: "relative",
-              overflow: "hidden",
-              touchAction: "none",
-              userSelect: "none",
-              cursor: canShootNow ? "ns-resize" : "not-allowed",
-            }}
-          >
-            {/* Tick marks */}
-            {[25, 50, 75].map((pct) => (
-              <div
-                key={pct}
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  left: 8,
-                  right: 8,
-                  top: `${pct}%`,
-                  height: 1,
-                  background: "rgba(255,255,255,0.16)",
-                  pointerEvents: "none",
-                }}
-              />
-            ))}
-
-            {/* Power Fill Bar */}
             <div
-              aria-hidden="true"
               style={{
-                position: "absolute",
-                left: 4,
-                right: 4,
-                top: 4,
-                height: `calc(${pullPower * 100}% - 4px)`,
-                borderRadius: 16,
-                background:
-                  "linear-gradient(180deg, #22C55E 0%, #EAB308 55%, #EF4444 100%)",
-                opacity: pullPower > 0.01 ? 0.9 : 0,
-                transition: isCharging ? "none" : "height 0.14s ease",
-                pointerEvents: "none",
-              }}
-            />
-
-            {/* Draggable Cue Plunger Handle */}
-            <div
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                left: 5,
-                right: 5,
-                top: `calc(${pullPower * 78}% + 6px)`,
-                height: 36,
-                borderRadius: 14,
-                background:
-                  "linear-gradient(180deg, #F5D9A6 0%, #D9A45B 45%, #5C2B16 100%)",
-                border: "1.5px solid rgba(255,255,255,0.65)",
-                boxShadow: "0 3px 8px rgba(0,0,0,0.45)",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 2,
-                transition: isCharging ? "none" : "top 0.14s ease",
-                pointerEvents: "none",
+                width: 68,
+                height: 7,
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.14)",
+                overflow: "hidden",
               }}
             >
-              <span
+              <div
                 style={{
-                  width: 14,
-                  height: 2,
-                  borderRadius: 2,
-                  background: "rgba(255,255,255,0.75)",
-                }}
-              />
-              <span
-                style={{
-                  width: 14,
-                  height: 2,
-                  borderRadius: 2,
-                  background: "rgba(255,255,255,0.75)",
+                  width: `${powerPct}%`,
+                  height: "100%",
+                  borderRadius: 999,
+                  background: powerColor,
                 }}
               />
             </div>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: pullPower < 0.04 ? "#C6BCB0" : powerColor,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {pullPower < 0.04
+                ? "Release to cancel"
+                : `${powerPct}% · Release!`}
+            </span>
           </div>
+        )}
 
+        {/* Brief Non-Intrusive Shot Summary Toast */}
+        {shotToast && !isPullingStick && !showCompletedOverlay && (
           <div
             style={{
-              fontSize: 9.5,
-              color: "var(--text-faint)",
-              textAlign: "center",
-              lineHeight: 1.2,
-              fontWeight: 600,
+              position: "absolute",
+              bottom: "calc(14px + env(safe-area-inset-bottom))",
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "rgba(18, 15, 12, 0.88)",
+              backdropFilter: "blur(8px)",
+              border: "1px solid rgba(255, 232, 200, 0.2)",
+              color: "#F4EFE7",
+              borderRadius: 999,
+              padding: "7px 14px",
+              fontSize: 12,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              maxWidth: "90vw",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              pointerEvents: "none",
+              zIndex: 12,
             }}
           >
-            {isCharging
-              ? pullPower < 0.04
-                ? "Cancel"
-                : "Release!"
-              : "Pull ↓"}
+            {shotToast}
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Fine Aim Precision Nudges */}
-      {canShootNow && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            marginBottom: showCompletedUI ? 14 : 2,
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => nudgeAim(-0.5)}
-            aria-label="Fine aim counter-clockwise"
+        {/* Subtle Turn Control Hint */}
+        {canShootNow && !isPullingStick && !shotToast && (
+          <div
             style={{
-              background: "var(--bg-subtle)",
-              color: "var(--text-primary)",
-              border: "1px solid var(--border-default)",
-              borderRadius: 10,
-              padding: "6px 12px",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 3,
+              position: "absolute",
+              bottom: "calc(12px + env(safe-area-inset-bottom))",
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "rgba(18, 15, 12, 0.72)",
+              border: "1px solid rgba(255, 255, 255, 0.12)",
+              color: "rgba(244, 239, 231, 0.86)",
+              borderRadius: 999,
+              padding: "5px 12px",
+              fontSize: 11,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              pointerEvents: "none",
+              zIndex: 11,
             }}
           >
-            <ChevronLeft size={14} /> Fine Aim
-          </button>
-          <button
-            type="button"
-            onClick={() => nudgeAim(0.5)}
-            aria-label="Fine aim clockwise"
+            {canPlaceCue
+              ? "Drag cue ball · Aim cloth · Pull stick back to shoot"
+              : "Drag cloth to aim · Pull stick back to shoot"}
+          </div>
+        )}
+
+        {/* Forfeit Confirm Floating Popover */}
+        {confirmForfeit && isActive && (
+          <div
             style={{
-              background: "var(--bg-subtle)",
-              color: "var(--text-primary)",
-              border: "1px solid var(--border-default)",
-              borderRadius: 10,
-              padding: "6px 12px",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "inline-flex",
+              position: "absolute",
+              top: 10,
+              right: 10,
+              background: "rgba(28, 23, 19, 0.96)",
+              border: "1px solid rgba(240, 113, 96, 0.45)",
+              borderRadius: 14,
+              padding: "10px 12px",
+              boxShadow: "0 10px 28px rgba(0,0,0,0.5)",
+              zIndex: 25,
+              display: "flex",
               alignItems: "center",
-              gap: 3,
+              gap: 8,
             }}
           >
-            Fine Aim <ChevronRight size={14} />
-          </button>
-        </div>
-      )}
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#F4EFE7" }}>
+              Forfeit rack?
+            </span>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => {
+                setConfirmForfeit(false);
+                onForfeit();
+              }}
+              style={{
+                background: "var(--danger)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "5px 10px",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Forfeit
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmForfeit(false)}
+              style={{
+                background: "rgba(255,255,255,0.1)",
+                color: "#F4EFE7",
+                border: "none",
+                borderRadius: 8,
+                padding: "5px 9px",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
 
-      {/* Post-game actions (revealed once final shot stops rolling) */}
-      {showCompletedUI && (
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            justifyContent: "center",
-            flexWrap: "wrap",
-            marginTop: 12,
-          }}
-        >
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={onRematch}
+        {/* Floating Pending / Declined / Cancelled Overlay */}
+        {(isPendingForMe ||
+          isPendingByMe ||
+          game.status === "declined" ||
+          game.status === "cancelled") && (
+          <div
             style={{
-              flex: "1 1 160px",
-              maxWidth: 220,
-              background: "var(--accent)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 12,
-              padding: "11px 16px",
-              fontSize: 13.5,
-              fontWeight: 700,
-              cursor: submitting ? "wait" : "pointer",
-              display: "inline-flex",
+              position: "absolute",
+              inset: 0,
+              background: "rgba(12, 10, 8, 0.48)",
+              backdropFilter: "blur(3px)",
+              display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 7,
-              boxShadow: "0 4px 12px rgba(232,98,44,0.28)",
-              opacity: submitting ? 0.7 : 1,
+              padding: 18,
+              zIndex: 20,
             }}
           >
-            <RotateCcw size={15} />
-            {isPassAndPlay ? "Rack Again" : "Send Rematch"}
-          </button>
-          <button
-            type="button"
-            onClick={onBack}
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 320,
+                background: "rgba(28, 23, 19, 0.96)",
+                border: "1px solid rgba(255, 232, 200, 0.18)",
+                borderRadius: 20,
+                padding: "20px 18px",
+                textAlign: "center",
+                boxShadow: "0 18px 44px rgba(0,0,0,0.55)",
+              }}
+            >
+              <div style={{ fontSize: 30, marginBottom: 6 }}>🎱</div>
+              <div
+                style={{
+                  fontFamily: "'Baloo 2', sans-serif",
+                  fontSize: 18,
+                  fontWeight: 700,
+                  marginBottom: 4,
+                }}
+              >
+                {isPendingForMe
+                  ? `${memberById(game.challengerId).name} challenged you!`
+                  : isPendingByMe
+                    ? `Waiting for ${memberById(game.opponentId).name}…`
+                    : game.status === "declined"
+                      ? `${memberById(game.opponentId).name} declined`
+                      : `${memberById(game.challengerId).name} cancelled`}
+              </div>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  color: "rgba(244,239,231,0.7)",
+                  marginBottom: 16,
+                  lineHeight: 1.4,
+                }}
+              >
+                {isPendingForMe
+                  ? "Accept to rack 'em up and start playing 8-Ball Pool."
+                  : isPendingByMe
+                    ? "They've been notified — your match starts as soon as they accept."
+                    : "Start a new match anytime from the Games lobby."}
+              </div>
+
+              {isPendingForMe ? (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => onRespondInvite("accept")}
+                    style={{
+                      flex: 1,
+                      background: "var(--accent)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 11,
+                      padding: "10px 12px",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <Check size={15} strokeWidth={2.8} /> Accept
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => onRespondInvite("decline")}
+                    style={{
+                      flex: 1,
+                      background: "rgba(255,255,255,0.1)",
+                      color: "#F4EFE7",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                      borderRadius: 11,
+                      padding: "10px 12px",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <X size={15} /> Decline
+                  </button>
+                </div>
+              ) : isPendingByMe ? (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    style={{
+                      flex: 1,
+                      background: "var(--accent)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 11,
+                      padding: "10px 12px",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Back to Games
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => onRespondInvite("cancel")}
+                    style={{
+                      background: "rgba(255,255,255,0.1)",
+                      color: "rgba(244,239,231,0.85)",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                      borderRadius: 11,
+                      padding: "10px 14px",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  style={{
+                    width: "100%",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 11,
+                    padding: "10px 14px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Back to Games
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Floating Victory / Post-Game Overlay (only shown once balls stop rolling) */}
+        {showCompletedOverlay && (
+          <div
             style={{
-              flex: "0 1 auto",
-              background: "var(--bg-subtle)",
-              color: "var(--text-primary)",
-              border: "1px solid var(--border-default)",
-              borderRadius: 12,
-              padding: "11px 16px",
-              fontSize: 13.5,
-              fontWeight: 700,
-              cursor: "pointer",
+              position: "absolute",
+              inset: 0,
+              background: "rgba(12, 10, 8, 0.52)",
+              backdropFilter: "blur(3px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 18,
+              zIndex: 20,
             }}
           >
-            Back to Games
-          </button>
-        </div>
-      )}
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 320,
+                background: "rgba(28, 23, 19, 0.96)",
+                border: "1px solid rgba(127, 217, 168, 0.35)",
+                borderRadius: 20,
+                padding: "20px 18px",
+                textAlign: "center",
+                boxShadow: "0 18px 44px rgba(0,0,0,0.55)",
+              }}
+            >
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 16,
+                  background: "rgba(61, 168, 141, 0.2)",
+                  color: "#7FD9A8",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 10,
+                }}
+              >
+                <Trophy size={24} />
+              </div>
+              <div
+                style={{
+                  fontFamily: "'Baloo 2', sans-serif",
+                  fontSize: 20,
+                  fontWeight: 700,
+                  marginBottom: 4,
+                }}
+              >
+                {game.outcome === "forfeit" && winnerMember
+                  ? winnerMember.id === currentUser && !isPassAndPlay
+                    ? "You won by forfeit!"
+                    : `${winnerMember.name} won by forfeit`
+                  : winnerMember
+                    ? winnerMember.id === currentUser && !isPassAndPlay
+                      ? "You won the rack! 🎱"
+                      : `${winnerMember.name} wins! 🎱`
+                    : "Match complete"}
+              </div>
+              {state.lastShot && (
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: "rgba(244,239,231,0.72)",
+                    marginBottom: 16,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {state.lastShot.summary}
+                </div>
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {isParticipant && (
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={onRematch}
+                    style={{
+                      width: "100%",
+                      background: "var(--accent)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 11,
+                      padding: "11px 14px",
+                      fontSize: 13.5,
+                      fontWeight: 700,
+                      cursor: submitting ? "wait" : "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <RotateCcw size={15} />
+                    {isPassAndPlay ? "Rack Again" : "Send Rematch"}
+                  </button>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  {state.lastShot && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (state.lastShot) {
+                          startShotAnimation(
+                            state.lastShot.preBalls,
+                            state.lastShot.move
+                          );
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        background: "rgba(255,255,255,0.1)",
+                        color: "#F4EFE7",
+                        border: "1px solid rgba(255,255,255,0.16)",
+                        borderRadius: 11,
+                        padding: "9px 12px",
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 5,
+                      }}
+                    >
+                      <Play size={13} /> Replay
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    style={{
+                      flex: 1,
+                      background: "rgba(255,255,255,0.1)",
+                      color: "#F4EFE7",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                      borderRadius: 11,
+                      padding: "9px 12px",
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Back to Games
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
