@@ -514,8 +514,8 @@ function TinyBallDot({ id, pocketed }: { id: number; pocketed: boolean }) {
     <span
       title={`#${id}${pocketed ? " (pocketed)" : ""}`}
       style={{
-        width: 9,
-        height: 9,
+        width: 7,
+        height: 7,
         borderRadius: "50%",
         display: "inline-block",
         position: "relative",
@@ -539,8 +539,8 @@ function TinyBallDot({ id, pocketed }: { id: number; pocketed: boolean }) {
             position: "absolute",
             left: 0,
             right: 0,
-            top: 2,
-            bottom: 2,
+            top: 1.5,
+            bottom: 1.5,
             background: visual.color,
           }}
         />
@@ -589,17 +589,29 @@ export function PoolBoard({
   const isPendingByMe =
     game.status === "pending" && game.challengerId === currentUser;
 
-  // Lock page scroll completely while in full-screen Pool
+  // Lock page scroll completely while in full-screen Pool + Escape to exit
   useEffect(() => {
     const prevBodyOverflow = document.body.style.overflow;
     const prevHtmlOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = "hidden";
     document.documentElement.style.overflow = "hidden";
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setConfirmForfeit((open) => {
+          if (open) return false;
+          onBack();
+          return false;
+        });
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
+      document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = prevBodyOverflow;
       document.documentElement.style.overflow = prevHtmlOverflow;
     };
-  }, []);
+  }, [onBack]);
 
   // Measure the exact stage container for 100% zero-scroll canvas fit
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -636,6 +648,9 @@ export function PoolBoard({
   const [aimAngle, setAimAngle] = useState<number>(0);
   const [pullPower, setPullPower] = useState<number>(0);
   const [isPullingStick, setIsPullingStick] = useState<boolean>(false);
+  const [hoverZone, setHoverZone] = useState<"cloth" | "stick" | "cue">(
+    "cloth"
+  );
   const [draftCuePos, setDraftCuePos] = useState<{
     x: number;
     y: number;
@@ -1118,9 +1133,9 @@ export function PoolBoard({
     const perp = Math.abs(vx * perpX + vy * perpY);
 
     if (
-      along >= BALL_RADIUS * 0.7 &&
-      along <= STICK_LENGTH + 50 &&
-      perp <= 48
+      along >= BALL_RADIUS * 0.45 &&
+      along <= STICK_LENGTH + 55 &&
+      perp <= 54
     ) {
       const canvasAngle = tableAngleToCanvasAngle(aimAngle, vp.vertical);
       const backDirX = -Math.cos(canvasAngle);
@@ -1134,14 +1149,14 @@ export function PoolBoard({
         sy,
         backDirX,
         backDirY,
-        14,
-        14,
-        vp.stageW - 14,
-        vp.stageH - 14
+        10,
+        10,
+        vp.stageW - 10,
+        vp.stageH - 10
       );
       const maxPullPx = Math.max(
-        56,
-        Math.min(idealPullPx, Math.max(56, edgeRoomPx * 0.92))
+        28,
+        Math.min(idealPullPx, edgeRoomPx * 0.92)
       );
 
       dragStateRef.current = {
@@ -1170,9 +1185,36 @@ export function PoolBoard({
 
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
     const drag = dragStateRef.current;
-    if (drag.mode === "none" || !canShootNow) return;
+    if (!canShootNow) return;
 
     const { sx, sy } = pointerToStage(e);
+
+    if (drag.mode === "none") {
+      if (e.pointerType === "mouse") {
+        const cue = effectiveBalls.find((b) => b.id === 0);
+        if (cue && !cue.pocketed) {
+          const { tx, ty } = stageToTable(sx, sy, vp);
+          const distToCue = Math.hypot(tx - cue.x, ty - cue.y);
+          if (canPlaceCue && distToCue <= BALL_RADIUS * 2.1) {
+            setHoverZone((prev) => (prev === "cue" ? prev : "cue"));
+          } else {
+            const backX = -Math.cos(aimAngle);
+            const backY = -Math.sin(aimAngle);
+            const vx = tx - cue.x;
+            const vy = ty - cue.y;
+            const along = vx * backX + vy * backY;
+            const perp = Math.abs(vx * -backY + vy * backX);
+            const onStick =
+              along >= BALL_RADIUS * 0.45 &&
+              along <= STICK_LENGTH + 55 &&
+              perp <= 54;
+            const next = onStick ? "stick" : "cloth";
+            setHoverZone((prev) => (prev === next ? prev : next));
+          }
+        }
+      }
+      return;
+    }
 
     if (drag.mode === "pull_stick") {
       const pullPx =
@@ -1330,7 +1372,7 @@ export function PoolBoard({
           display: "flex",
           alignItems: "center",
           flexDirection: alignRight ? "row-reverse" : "row",
-          gap: 6,
+          gap: 5,
           minWidth: 0,
           flex: 1,
           opacity: isActive && !isAnimating && !isTurn ? 0.65 : 1,
@@ -1344,7 +1386,7 @@ export function PoolBoard({
             flexShrink: 0,
           }}
         >
-          <AvatarDot id={player.id} size={24} />
+          <AvatarDot id={player.id} size={22} />
         </div>
         <div
           style={{
@@ -1354,14 +1396,14 @@ export function PoolBoard({
         >
           <div
             style={{
-              fontSize: 11.5,
+              fontSize: 11,
               fontWeight: 700,
               color: "#F4EFE7",
               lineHeight: 1.1,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
-              maxWidth: 84,
+              maxWidth: 72,
             }}
           >
             {player.id === currentUser && !isPassAndPlay ? "You" : player.name}
@@ -1371,14 +1413,14 @@ export function PoolBoard({
               display: "flex",
               alignItems: "center",
               justifyContent: alignRight ? "flex-end" : "flex-start",
-              gap: 2,
+              gap: 1.5,
               marginTop: 2,
             }}
           >
             {group === null ? (
               <span
                 style={{
-                  fontSize: 9.5,
+                  fontSize: 9,
                   fontWeight: 600,
                   color: "rgba(244,239,231,0.5)",
                 }}
@@ -1426,13 +1468,13 @@ export function PoolBoard({
       {/* Slim ~44px Top HUD Strip */}
       <div
         style={{
-          padding: "calc(6px + env(safe-area-inset-top)) 10px 6px",
-          minHeight: 44,
+          padding: "calc(6px + env(safe-area-inset-top)) 8px 6px",
+          minHeight: 42,
           background: "rgba(22, 18, 15, 0.96)",
           borderBottom: "1px solid rgba(255, 232, 200, 0.1)",
           display: "flex",
           alignItems: "center",
-          gap: 6,
+          gap: 5,
           flexShrink: 0,
           zIndex: 10,
         }}
@@ -1443,9 +1485,9 @@ export function PoolBoard({
           aria-label="Back to Games"
           title="Back to Games"
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: 10,
+            width: 29,
+            height: 29,
+            borderRadius: 9,
             background: "rgba(255, 255, 255, 0.09)",
             border: "1px solid rgba(255, 255, 255, 0.12)",
             color: "#F4EFE7",
@@ -1456,7 +1498,7 @@ export function PoolBoard({
             flexShrink: 0,
           }}
         >
-          <ChevronLeft size={18} />
+          <ChevronLeft size={17} />
         </button>
 
         <div
@@ -1466,15 +1508,15 @@ export function PoolBoard({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: 6,
+            gap: 4,
           }}
         >
           {renderPlayerHud(p1, false)}
           <span
             style={{
-              fontSize: 10.5,
+              fontSize: 9.5,
               fontWeight: 800,
-              padding: "3px 8px",
+              padding: "3px 7px",
               borderRadius: 999,
               background: centerPillBg,
               color: centerPillColor,
@@ -1491,7 +1533,7 @@ export function PoolBoard({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 5,
+            gap: 4,
             flexShrink: 0,
           }}
         >
@@ -1509,9 +1551,9 @@ export function PoolBoard({
               aria-label="Replay last shot"
               title="Replay last shot"
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 10,
+                width: 29,
+                height: 29,
+                borderRadius: 9,
                 background: "rgba(255, 255, 255, 0.09)",
                 border: "1px solid rgba(255, 255, 255, 0.12)",
                 color: "#F4EFE7",
@@ -1521,7 +1563,7 @@ export function PoolBoard({
                 cursor: "pointer",
               }}
             >
-              <Play size={14} />
+              <Play size={13} />
             </button>
           )}
           {isActive && isParticipant && (
@@ -1531,9 +1573,9 @@ export function PoolBoard({
               aria-label="Forfeit match"
               title="Forfeit match"
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 10,
+                width: 29,
+                height: 29,
+                borderRadius: 9,
                 background: confirmForfeit
                   ? "rgba(240, 113, 96, 0.25)"
                   : "rgba(255, 255, 255, 0.09)",
@@ -1547,7 +1589,7 @@ export function PoolBoard({
                 cursor: "pointer",
               }}
             >
-              <Flag size={14} />
+              <Flag size={13} />
             </button>
           )}
         </div>
@@ -1582,7 +1624,11 @@ export function PoolBoard({
             cursor: isPullingStick
               ? "grabbing"
               : canShootNow
-                ? "crosshair"
+                ? hoverZone === "stick"
+                  ? "grab"
+                  : hoverZone === "cue"
+                    ? "move"
+                    : "crosshair"
                 : "default",
           }}
         />

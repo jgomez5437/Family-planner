@@ -179,6 +179,7 @@ export function GamesTab({
     if (selectedGame.gameType === "pool") {
       return (
         <PoolBoard
+          key={selectedGame.id}
           game={selectedGame}
           currentUser={currentUser}
           submitting={busyGameId === selectedGame.id}
