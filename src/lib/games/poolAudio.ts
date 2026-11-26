@@ -3,9 +3,10 @@ import type { PoolSoundKind } from "./poolPhysics";
 const MUTE_STORAGE_KEY = "family-planner:pool-muted";
 
 let sharedCtx: AudioContext | null = null;
+let sharedOut: AudioNode | null = null;
 let noiseBuffer: AudioBuffer | null = null;
 
-function getAudioContext(): AudioContext | null {
+function getAudioContext(): { ctx: AudioContext; out: AudioNode } | null {
   if (typeof window === "undefined") return null;
   const Ctor =
     window.AudioContext ||
@@ -15,6 +16,19 @@ function getAudioContext(): AudioContext | null {
   if (!sharedCtx) {
     try {
       sharedCtx = new Ctor();
+      // Soft master limiter so overlapping break clacks never clip on mobile speakers
+      if (typeof sharedCtx.createDynamicsCompressor === "function") {
+        const comp = sharedCtx.createDynamicsCompressor();
+        comp.threshold.setValueAtTime(-10, sharedCtx.currentTime);
+        comp.knee.setValueAtTime(12, sharedCtx.currentTime);
+        comp.ratio.setValueAtTime(8, sharedCtx.currentTime);
+        comp.attack.setValueAtTime(0.002, sharedCtx.currentTime);
+        comp.release.setValueAtTime(0.08, sharedCtx.currentTime);
+        comp.connect(sharedCtx.destination);
+        sharedOut = comp;
+      } else {
+        sharedOut = sharedCtx.destination;
+      }
     } catch {
       return null;
     }
@@ -22,7 +36,7 @@ function getAudioContext(): AudioContext | null {
   if (sharedCtx.state === "suspended") {
     void sharedCtx.resume().catch(() => {});
   }
-  return sharedCtx;
+  return { ctx: sharedCtx, out: sharedOut || sharedCtx.destination };
 }
 
 function getNoiseBuffer(ctx: AudioContext): AudioBuffer {
@@ -68,8 +82,9 @@ export function playPoolSound(
   muted: boolean
 ): void {
   if (muted) return;
-  const ctx = getAudioContext();
-  if (!ctx || ctx.state !== "running") return;
+  const audio = getAudioContext();
+  if (!audio || audio.ctx.state !== "running") return;
+  const { ctx, out } = audio;
 
   const now = ctx.currentTime;
   const amp = Math.max(0.04, Math.min(1, intensity));
@@ -80,7 +95,7 @@ export function playPoolSound(
     gain.gain.setValueAtTime(0.001, now);
     gain.gain.linearRampToValueAtTime(0.32 * amp, now + 0.0015);
     gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.048);
-    gain.connect(ctx.destination);
+    gain.connect(out);
 
     const pitchJitter = 0.96 + Math.random() * 0.08;
     const osc1 = ctx.createOscillator();
@@ -98,7 +113,7 @@ export function playPoolSound(
     g2.gain.setValueAtTime(0.16 * amp, now);
     g2.gain.exponentialRampToValueAtTime(0.0005, now + 0.024);
     osc2.connect(g2);
-    g2.connect(ctx.destination);
+    g2.connect(out);
     osc2.start(now);
     osc2.stop(now + 0.026);
 
@@ -113,7 +128,7 @@ export function playPoolSound(
     ng.gain.exponentialRampToValueAtTime(0.0008, now + 0.012);
     src.connect(bp);
     bp.connect(ng);
-    ng.connect(ctx.destination);
+    ng.connect(out);
     src.start(now);
     src.stop(now + 0.015);
     return;
@@ -130,7 +145,7 @@ export function playPoolSound(
     g.gain.linearRampToValueAtTime(0.36 * amp, now + 0.002);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
     osc.connect(g);
-    g.connect(ctx.destination);
+    g.connect(out);
     osc.start(now);
     osc.stop(now + 0.07);
 
@@ -145,7 +160,7 @@ export function playPoolSound(
     ng.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
     src.connect(hp);
     hp.connect(ng);
-    ng.connect(ctx.destination);
+    ng.connect(out);
     src.start(now);
     src.stop(now + 0.022);
     return;
@@ -162,7 +177,7 @@ export function playPoolSound(
     g.gain.linearRampToValueAtTime(0.28 * amp, now + 0.003);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.095);
     osc.connect(g);
-    g.connect(ctx.destination);
+    g.connect(out);
     osc.start(now);
     osc.stop(now + 0.1);
     return;
@@ -179,7 +194,7 @@ export function playPoolSound(
     g.gain.linearRampToValueAtTime(0.24 * Math.max(0.35, amp), now + 0.006);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
     osc.connect(g);
-    g.connect(ctx.destination);
+    g.connect(out);
     osc.start(now);
     osc.stop(now + 0.17);
 
@@ -193,7 +208,7 @@ export function playPoolSound(
     g2.gain.linearRampToValueAtTime(0.14 * Math.max(0.35, amp), now + 0.096);
     g2.gain.exponentialRampToValueAtTime(0.001, now + 0.19);
     osc2.connect(g2);
-    g2.connect(ctx.destination);
+    g2.connect(out);
     osc2.start(now + 0.09);
     osc2.stop(now + 0.2);
   }

@@ -316,7 +316,7 @@ function drawBall3D(
       ctx.globalAlpha = Math.min(1, (N[2] - 0.1) * 4.5);
       ctx.transform(U[0], U[1], V[0], V[1], cx + N[0] * r, cy + N[1] * r);
 
-      const medR = r * 0.45;
+      const medR = r * 0.46;
       ctx.beginPath();
       ctx.arc(0, 0, medR, 0, Math.PI * 2);
       ctx.fillStyle = "#FAF7F0";
@@ -325,8 +325,12 @@ function drawBall3D(
       ctx.lineWidth = 0.65;
       ctx.stroke();
 
+      const fontSize = Math.max(
+        5.5,
+        Math.round(r * (ball.id >= 10 ? 0.56 : 0.68))
+      );
       ctx.fillStyle = "#141417";
-      ctx.font = `800 ${Math.max(6, Math.round(r * 0.66))}px Inter, system-ui, sans-serif`;
+      ctx.font = `800 ${fontSize}px Inter, system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(String(ball.id), 0, 0.4);
@@ -725,7 +729,38 @@ function renderPoolTableScene(
   }
   ctx.restore();
 
-  // 4. Six Beveled Cushion Rails with Angled Pocket Jaws
+  // 4. Six Recessed Pockets with Stitched Leather Collars (rendered beneath cushion jaws)
+  for (const p of POCKETS) {
+    const { lx: cx, ly: cy } = tableToLocal(p.x, p.y, vertical);
+
+    // Outer stitched dark leather collar
+    ctx.beginPath();
+    ctx.arc(cx, cy, p.visualRadius + 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#22140B";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 224, 178, 0.14)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // Deep recessed pocket well
+    const holeGrad = ctx.createRadialGradient(
+      cx,
+      cy,
+      2,
+      cx,
+      cy,
+      p.visualRadius
+    );
+    holeGrad.addColorStop(0, "#020202");
+    holeGrad.addColorStop(0.72, "#090706");
+    holeGrad.addColorStop(1, "#221811");
+    ctx.beginPath();
+    ctx.arc(cx, cy, p.visualRadius, 0, Math.PI * 2);
+    ctx.fillStyle = holeGrad;
+    ctx.fill();
+  }
+
+  // 5. Six Beveled Cushion Rails with Angled Pocket Jaws
   const C = 13;
   const JC = 11; // Corner jaw flare
   const JS = 6; // Side jaw flare
@@ -815,7 +850,7 @@ function renderPoolTableScene(
     vertical
   );
 
-  // 5. Inlaid Mother-of-Pearl / Ivory Diamond Sights
+  // 6. Inlaid Mother-of-Pearl / Ivory Diamond Sights
   const diamondCoords: { cx: number; cy: number }[] = [];
   for (const frac of [1 / 8, 2 / 8, 3 / 8, 5 / 8, 6 / 8, 7 / 8]) {
     const tx = TABLE_WIDTH * frac;
@@ -851,37 +886,6 @@ function renderPoolTableScene(
     ctx.fillStyle = "#F5E7C9";
     ctx.fillRect(-3.0, -3.0, 6.0, 6.0);
     ctx.restore();
-  }
-
-  // 6. Six Recessed Pockets with Stitched Leather Collars
-  for (const p of POCKETS) {
-    const { lx: cx, ly: cy } = tableToLocal(p.x, p.y, vertical);
-
-    // Outer stitched dark leather collar
-    ctx.beginPath();
-    ctx.arc(cx, cy, p.visualRadius + 5, 0, Math.PI * 2);
-    ctx.fillStyle = "#22140B";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255, 224, 178, 0.14)";
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    // Deep recessed pocket well
-    const holeGrad = ctx.createRadialGradient(
-      cx,
-      cy,
-      2,
-      cx,
-      cy,
-      p.visualRadius
-    );
-    holeGrad.addColorStop(0, "#020202");
-    holeGrad.addColorStop(0.72, "#090706");
-    holeGrad.addColorStop(1, "#221811");
-    ctx.beginPath();
-    ctx.arc(cx, cy, p.visualRadius, 0, Math.PI * 2);
-    ctx.fillStyle = holeGrad;
-    ctx.fill();
   }
 }
 
@@ -1619,13 +1623,16 @@ export function PoolBoard({
         idx >= maxIdx ? 0 : Math.max(0, Math.min(1, frameFloat - idx));
 
       // Fire synchronized Web Audio impact sounds up to the current physics frame
+      // (skipping stale events > 4 frames old if the browser tab was backgrounded mid-shot)
       const events = animSoundEventsRef.current;
       while (
         animNextSoundIdxRef.current < events.length &&
         events[animNextSoundIdxRef.current].frame <= idx
       ) {
         const ev = events[animNextSoundIdxRef.current];
-        playPoolSound(ev.kind, ev.intensity, mutedRef.current);
+        if (idx - ev.frame <= 4) {
+          playPoolSound(ev.kind, ev.intensity, mutedRef.current);
+        }
         animNextSoundIdxRef.current += 1;
       }
 
@@ -1686,7 +1693,9 @@ export function PoolBoard({
       if (frameFloat >= maxIdx) {
         while (animNextSoundIdxRef.current < events.length) {
           const ev = events[animNextSoundIdxRef.current];
-          playPoolSound(ev.kind, ev.intensity, mutedRef.current);
+          if (maxIdx - ev.frame <= 3) {
+            playPoolSound(ev.kind, ev.intensity, mutedRef.current);
+          }
           animNextSoundIdxRef.current += 1;
         }
         animRafRef.current = null;
