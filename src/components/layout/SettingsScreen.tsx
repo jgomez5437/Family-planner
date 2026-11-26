@@ -907,7 +907,7 @@ export function SettingsScreen({
                   ? "This browser does not support device notifications. In-app alerts still work."
                   : browserPermission === "denied"
                     ? "Blocked in browser settings. Enable notifications for this site to turn this on."
-                    : "Show a notification banner on this device when family members post updates."
+                    : "Show a notification banner on this device for Family Wall updates and game challenges."
               }
               checked={
                 notificationPreferences.browserEnabled &&

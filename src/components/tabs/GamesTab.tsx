@@ -463,35 +463,69 @@ export function GamesTab({
             </div>
           )}
 
-          {selectedGame.status === "declined" && (
+          {(selectedGame.status === "declined" ||
+            selectedGame.status === "cancelled") && (
             <div
               style={{
                 background: "var(--bg-subtle)",
                 border: "1px solid var(--border-subtle)",
                 borderRadius: 14,
-                padding: "12px 14px",
-                marginBottom: 16,
-                fontSize: 13,
-                fontWeight: 600,
-                color: "var(--text-secondary)",
+                padding: "18px 14px",
                 textAlign: "center",
               }}
             >
-              {memberById(selectedGame.opponentId).name} declined this game
-              request.
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 700,
+                  color: "var(--text-primary)",
+                  marginBottom: 4,
+                }}
+              >
+                {selectedGame.status === "declined"
+                  ? `${memberById(selectedGame.opponentId).name} declined this game request.`
+                  : `${memberById(selectedGame.challengerId).name} cancelled this game request.`}
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  marginBottom: 14,
+                }}
+              >
+                You can start a new challenge anytime from the Games lobby.
+              </div>
+              <button
+                type="button"
+                onClick={() => onSelectGame(null)}
+                style={{
+                  background: "var(--accent)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "9px 16px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Back to Games
+              </button>
             </div>
           )}
 
-          {selectedGame.gameType === "tic_tac_toe" && (
-            <TicTacToeBoard
-              game={selectedGame}
-              currentUser={currentUser}
-              submitting={busyGameId === selectedGame.id}
-              onMakeMove={(move) => void handleMove(selectedGame.id, move)}
-              onRematch={() => void handleRematch(selectedGame)}
-              onBack={() => onSelectGame(null)}
-            />
-          )}
+          {selectedGame.status !== "declined" &&
+            selectedGame.status !== "cancelled" &&
+            selectedGame.gameType === "tic_tac_toe" && (
+              <TicTacToeBoard
+                game={selectedGame}
+                currentUser={currentUser}
+                submitting={busyGameId === selectedGame.id}
+                onMakeMove={(move) => void handleMove(selectedGame.id, move)}
+                onRematch={() => void handleRematch(selectedGame)}
+                onBack={() => onSelectGame(null)}
+              />
+            )}
         </div>
       </div>
     );

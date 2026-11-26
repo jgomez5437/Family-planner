@@ -3356,7 +3356,7 @@ export async function respondToGameInviteRecord(
 
   const db = await getReadyDb();
   if (db) {
-    await db
+    const updatedRows = await db
       .update(games)
       .set({
         status: updated.status,
@@ -3364,7 +3364,21 @@ export async function respondToGameInviteRecord(
         state: updated.state,
         updatedAt: now,
       })
-      .where(and(eq(games.id, gameId), eq(games.familyId, familyId)));
+      .where(
+        and(
+          eq(games.id, gameId),
+          eq(games.familyId, familyId),
+          eq(games.status, "pending")
+        )
+      )
+      .returning({ id: games.id });
+    if (updatedRows.length === 0) {
+      return {
+        ok: false,
+        error: "This game invitation is no longer pending.",
+        status: 409,
+      };
+    }
   } else {
     const fam = getMemoryStore().families.get(familyId);
     if (fam) {
@@ -3485,7 +3499,7 @@ export async function makeGameMoveRecord(
 
   const db = await getReadyDb();
   if (db) {
-    await db
+    const updatedRows = await db
       .update(games)
       .set({
         state: updated.state,
@@ -3497,7 +3511,22 @@ export async function makeGameMoveRecord(
         updatedAt: now,
         completedAt: result.completed ? now : null,
       })
-      .where(and(eq(games.id, gameId), eq(games.familyId, familyId)));
+      .where(
+        and(
+          eq(games.id, gameId),
+          eq(games.familyId, familyId),
+          eq(games.status, "active"),
+          eq(games.currentTurnId, movingPlayerId)
+        )
+      )
+      .returning({ id: games.id });
+    if (updatedRows.length === 0) {
+      return {
+        ok: false,
+        error: "This turn was already played. Refreshing board.",
+        status: 409,
+      };
+    }
   } else {
     const fam = getMemoryStore().families.get(familyId);
     if (fam) {
@@ -3622,7 +3651,7 @@ export async function forfeitGameRecord(
 
   const db = await getReadyDb();
   if (db) {
-    await db
+    const updatedRows = await db
       .update(games)
       .set({
         status: updated.status,
@@ -3632,7 +3661,21 @@ export async function forfeitGameRecord(
         updatedAt: now,
         completedAt: now,
       })
-      .where(and(eq(games.id, gameId), eq(games.familyId, familyId)));
+      .where(
+        and(
+          eq(games.id, gameId),
+          eq(games.familyId, familyId),
+          eq(games.status, "active")
+        )
+      )
+      .returning({ id: games.id });
+    if (updatedRows.length === 0) {
+      return {
+        ok: false,
+        error: "This game is no longer active.",
+        status: 409,
+      };
+    }
   } else {
     const fam = getMemoryStore().families.get(familyId);
     if (fam) {

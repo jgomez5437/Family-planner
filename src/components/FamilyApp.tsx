@@ -401,6 +401,13 @@ export default function FamilyApp({
     };
   }, [pollNotifications]);
 
+  // Fetch fresh games immediately when entering the Games tab
+  useEffect(() => {
+    if (tab === "games") {
+      void pollGames();
+    }
+  }, [tab, pollGames]);
+
   // Poll more frequently while actively viewing the Games tab with remote matches/invites
   const hasLiveRemoteGame = useMemo(
     () =>
@@ -1643,6 +1650,15 @@ export default function FamilyApp({
     [gamesBadgeCount]
   );
 
+  function handleSelectTab(nextTab: string) {
+    if (nextTab === "games" && tab === "games") {
+      setSelectedGameId(null);
+    } else if (nextTab !== "games") {
+      setSelectedGameId(null);
+    }
+    setTab(nextTab);
+  }
+
   async function handleCreateGame(input: {
     gameType: GameTypeId;
     opponentId: MemberId;
@@ -1659,7 +1675,9 @@ export default function FamilyApp({
       });
       const json = (await res.json()) as { game?: FamilyGame; error?: string };
       if (!res.ok || !json.game) {
-        return json.error || "Could not create game.";
+        const errMsg = json.error || "Could not create game.";
+        if (input.rematchOfId) fireToast(errMsg);
+        return errMsg;
       }
       const created = json.game;
       setGames((prev) => [created, ...prev.filter((g) => g.id !== created.id)]);
@@ -1669,6 +1687,12 @@ export default function FamilyApp({
       } else {
         setSelectedGameId(created.id);
         const oppName = memberById(created.opponentId).name;
+        const gameName = getGameDefinition(created.gameType)?.name || "a game";
+        pushActivity(
+          `${me.name} challenged ${oppName} to ${gameName}`,
+          created.rematchOfId ? "Rematch request" : "Game invite",
+          currentUser
+        );
         fireToast(
           created.rematchOfId
             ? `Rematch request sent to ${oppName}`
@@ -1677,7 +1701,9 @@ export default function FamilyApp({
       }
       return null;
     } catch {
-      return "Network error while creating game.";
+      const errMsg = "Network error while creating game.";
+      if (input.rematchOfId) fireToast(errMsg);
+      return errMsg;
     } finally {
       pendingGameMutationsRef.current = Math.max(
         0,
@@ -1782,9 +1808,29 @@ export default function FamilyApp({
       const saved = json.game;
       setGames((prev) => [saved, ...prev.filter((g) => g.id !== saved.id)]);
       if (saved.status === "completed") {
+        const gameName = getGameDefinition(saved.gameType)?.name || "Game";
+        const otherPlayerId =
+          saved.players[0] === currentUser
+            ? saved.players[1]
+            : saved.players[0];
+        const otherName = memberById(otherPlayerId).name;
         if (saved.outcome === "draw") {
+          if (saved.mode === "remote") {
+            pushActivity(
+              `${me.name} & ${otherName} tied in ${gameName}`,
+              "Draw",
+              currentUser
+            );
+          }
           fireToast("It's a draw! 🤝");
         } else if (saved.winnerId) {
+          if (saved.mode === "remote" && saved.outcome === "win") {
+            pushActivity(
+              `${memberById(saved.winnerId).name} won ${gameName} against ${otherName}`,
+              gameName,
+              saved.winnerId
+            );
+          }
           const winnerName =
             saved.mode === "remote" && saved.winnerId === currentUser
               ? "You"
@@ -1870,7 +1916,7 @@ export default function FamilyApp({
           <DesktopSidebar
             familyName={familyName}
             tab={tab}
-            setTab={setTab}
+            setTab={handleSelectTab}
             tabBadges={tabBadges}
             currentUser={currentUser}
             onQuickAdd={() => setQuickAddOpen(true)}
@@ -2243,7 +2289,7 @@ export default function FamilyApp({
               return (
                 <button
                   key={t.id}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => handleSelectTab(t.id)}
                   aria-current={active ? "page" : undefined}
                   aria-label={
                     badge > 0 ? `${t.label} (${badge} waiting)` : t.label
