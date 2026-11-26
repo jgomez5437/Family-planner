@@ -884,7 +884,13 @@ export function GamesTab({
                     >
                       <span>
                         {g.moves.length}{" "}
-                        {g.moves.length === 1 ? "move" : "moves"}
+                        {g.gameType === "pool"
+                          ? g.moves.length === 1
+                            ? "shot"
+                            : "shots"
+                          : g.moves.length === 1
+                            ? "move"
+                            : "moves"}
                       </span>
                       <span>·</span>
                       <span suppressHydrationWarning>

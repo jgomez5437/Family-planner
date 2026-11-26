@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Check, Send, Smartphone, Sparkles, Users } from "lucide-react";
+import { Check, Send, Smartphone, Users } from "lucide-react";
 import { btnStyle } from "@/lib/constants";
 import { GAME_DEFINITIONS } from "@/lib/games/registry";
 import { useMembers } from "@/components/MembersContext";
@@ -82,7 +82,7 @@ export function NewGameModal({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))",
+            gridTemplateColumns: "1fr 1fr",
             gap: 8,
             marginBottom: 16,
           }}
@@ -156,40 +156,6 @@ export function NewGameModal({
               </button>
             );
           })}
-          <div
-            style={{
-              padding: "11px 12px",
-              borderRadius: 14,
-              background: "var(--bg-subtle)",
-              border: "1px dashed var(--border-strong)",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              gap: 4,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                fontSize: 12,
-                fontWeight: 700,
-                color: "var(--text-secondary)",
-              }}
-            >
-              <Sparkles size={13} color="var(--accent)" /> More games soon
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--text-faint)",
-                lineHeight: 1.35,
-              }}
-            >
-              Connect Four, Dots &amp; Boxes, and more are easy to plug in next.
-            </div>
-          </div>
         </div>
 
         {/* Play Mode Toggle */}

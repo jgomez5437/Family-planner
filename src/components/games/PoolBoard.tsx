@@ -693,8 +693,9 @@ export function PoolBoard({
     [state.isBreakShot, activeShooterGroup, activeShooterCleared]
   );
 
-  // Canvas Renderer (handles both static aiming state and 60fps animation)
+  // Static Canvas Renderer (only runs when not playing a shot animation)
   useEffect(() => {
+    if (isAnimating) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -704,136 +705,156 @@ export function PoolBoard({
     const ch = vertical ? V_CANVAS_H : H_CANVAS_H;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-    if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
+    if (
+      canvas.width !== Math.round(cw * dpr) ||
+      canvas.height !== Math.round(ch * dpr)
+    ) {
       canvas.width = Math.round(cw * dpr);
       canvas.height = Math.round(ch * dpr);
     }
 
-    const renderStatic = () => {
-      ctx.save();
-      ctx.scale(dpr, dpr);
-      drawPoolTable(ctx, vertical, canPlaceCue && state.isBreakShot);
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    drawPoolTable(ctx, vertical, canPlaceCue && state.isBreakShot);
 
-      // Draw balls
-      for (const b of effectiveBalls) {
-        drawBall(ctx, b, vertical);
-      }
-
-      const cue = effectiveBalls.find((b) => b.id === 0);
-
-      // Ball-in-Hand highlight ring
-      if (canPlaceCue && cue && !cue.pocketed) {
-        const { cx, cy } = tableToCanvas(cue.x, cue.y, vertical);
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(cx, cy, BALL_RADIUS + 7, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(255, 226, 130, 0.92)";
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([6, 4]);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      // Aiming guide & Cue Stick
-      if (canShootNow && cue && !cue.pocketed) {
-        const preview = computeAimPreview(cue, aimAngle, effectiveBalls);
-        const startC = tableToCanvas(preview.startX, preview.startY, vertical);
-        const endC = tableToCanvas(preview.endX, preview.endY, vertical);
-        const legal = isTargetLegal(preview.targetBallId);
-
-        // Aiming dashed ray
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(startC.cx, startC.cy);
-        ctx.lineTo(endC.cx, endC.cy);
-        ctx.strokeStyle = legal
-          ? "rgba(255, 255, 255, 0.78)"
-          : "rgba(248, 113, 113, 0.88)";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([7, 6]);
-        ctx.stroke();
-        ctx.restore();
-
-        // Ghost ball circle at impact
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(endC.cx, endC.cy, BALL_RADIUS, 0, Math.PI * 2);
-        ctx.strokeStyle = legal
-          ? "rgba(255, 255, 255, 0.85)"
-          : "rgba(248, 113, 113, 0.92)";
-        ctx.lineWidth = 2;
-        ctx.fillStyle = legal
-          ? "rgba(255, 255, 255, 0.14)"
-          : "rgba(248, 113, 113, 0.2)";
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-
-        // Target ball direction & cue deflection lines
-        if (
-          preview.targetBallId !== null &&
-          preview.targetDirX !== null &&
-          preview.targetDirY !== null
-        ) {
-          const targetBall = effectiveBalls.find(
-            (b) => b.id === preview.targetBallId
-          );
-          if (targetBall) {
-            const tbStart = tableToCanvas(targetBall.x, targetBall.y, vertical);
-            const tbEnd = tableToCanvas(
-              targetBall.x + preview.targetDirX * 115,
-              targetBall.y + preview.targetDirY * 115,
-              vertical
-            );
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(tbStart.cx, tbStart.cy);
-            ctx.lineTo(tbEnd.cx, tbEnd.cy);
-            ctx.strokeStyle = legal
-              ? "rgba(134, 239, 172, 0.9)"
-              : "rgba(248, 113, 113, 0.9)";
-            ctx.lineWidth = 2.6;
-            ctx.stroke();
-            ctx.restore();
-          }
-
-          if (preview.cueDeflectX !== null && preview.cueDeflectY !== null) {
-            const cdEnd = tableToCanvas(
-              preview.endX + preview.cueDeflectX * 52,
-              preview.endY + preview.cueDeflectY * 52,
-              vertical
-            );
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(endC.cx, endC.cy);
-            ctx.lineTo(cdEnd.cx, cdEnd.cy);
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
-            ctx.lineWidth = 1.6;
-            ctx.stroke();
-            ctx.restore();
-          }
-        }
-
-        // Tapered Cue Stick
-        const canvasAngle = tableAngleToCanvasAngle(aimAngle, vertical);
-        drawCueStick(
-          ctx,
-          startC.cx,
-          startC.cy,
-          canvasAngle,
-          pullPower * 110
-        );
-      }
-
-      ctx.restore();
-    };
-
-    if (!isAnimating) {
-      renderStatic();
-      return;
+    // Draw balls
+    for (const b of effectiveBalls) {
+      drawBall(ctx, b, vertical);
     }
 
-    // 60fps Shot Playback Loop (90ms cue lunge + physics frames)
+    const cue = effectiveBalls.find((b) => b.id === 0);
+
+    // Ball-in-Hand highlight ring
+    if (canPlaceCue && cue && !cue.pocketed) {
+      const { cx, cy } = tableToCanvas(cue.x, cue.y, vertical);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, BALL_RADIUS + 7, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255, 226, 130, 0.92)";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Aiming guide & Cue Stick
+    if (canShootNow && cue && !cue.pocketed) {
+      const preview = computeAimPreview(cue, aimAngle, effectiveBalls);
+      const startC = tableToCanvas(preview.startX, preview.startY, vertical);
+      const endC = tableToCanvas(preview.endX, preview.endY, vertical);
+      const legal = isTargetLegal(preview.targetBallId);
+
+      // Aiming dashed ray
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(startC.cx, startC.cy);
+      ctx.lineTo(endC.cx, endC.cy);
+      ctx.strokeStyle = legal
+        ? "rgba(255, 255, 255, 0.78)"
+        : "rgba(248, 113, 113, 0.88)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 6]);
+      ctx.stroke();
+      ctx.restore();
+
+      // Ghost ball circle at impact
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(endC.cx, endC.cy, BALL_RADIUS, 0, Math.PI * 2);
+      ctx.strokeStyle = legal
+        ? "rgba(255, 255, 255, 0.85)"
+        : "rgba(248, 113, 113, 0.92)";
+      ctx.lineWidth = 2;
+      ctx.fillStyle = legal
+        ? "rgba(255, 255, 255, 0.14)"
+        : "rgba(248, 113, 113, 0.2)";
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // Target ball direction & cue deflection lines
+      if (
+        preview.targetBallId !== null &&
+        preview.targetDirX !== null &&
+        preview.targetDirY !== null
+      ) {
+        const targetBall = effectiveBalls.find(
+          (b) => b.id === preview.targetBallId
+        );
+        if (targetBall) {
+          const tbStart = tableToCanvas(targetBall.x, targetBall.y, vertical);
+          const tbEnd = tableToCanvas(
+            targetBall.x + preview.targetDirX * 115,
+            targetBall.y + preview.targetDirY * 115,
+            vertical
+          );
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(tbStart.cx, tbStart.cy);
+          ctx.lineTo(tbEnd.cx, tbEnd.cy);
+          ctx.strokeStyle = legal
+            ? "rgba(134, 239, 172, 0.9)"
+            : "rgba(248, 113, 113, 0.9)";
+          ctx.lineWidth = 2.6;
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        if (preview.cueDeflectX !== null && preview.cueDeflectY !== null) {
+          const cdEnd = tableToCanvas(
+            preview.endX + preview.cueDeflectX * 52,
+            preview.endY + preview.cueDeflectY * 52,
+            vertical
+          );
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(endC.cx, endC.cy);
+          ctx.lineTo(cdEnd.cx, cdEnd.cy);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      // Tapered Cue Stick
+      const canvasAngle = tableAngleToCanvasAngle(aimAngle, vertical);
+      drawCueStick(ctx, startC.cx, startC.cy, canvasAngle, pullPower * 110);
+    }
+
+    ctx.restore();
+  }, [
+    vertical,
+    effectiveBalls,
+    aimAngle,
+    pullPower,
+    canShootNow,
+    canPlaceCue,
+    state.isBreakShot,
+    isAnimating,
+    isTargetLegal,
+  ]);
+
+  // Dedicated 60fps Shot Playback Loop (isolated from optimistic/server state updates)
+  useEffect(() => {
+    if (!isAnimating) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const cw = vertical ? V_CANVAS_W : H_CANVAS_W;
+    const ch = vertical ? V_CANVAS_H : H_CANVAS_H;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    if (
+      canvas.width !== Math.round(cw * dpr) ||
+      canvas.height !== Math.round(ch * dpr)
+    ) {
+      canvas.width = Math.round(cw * dpr);
+      canvas.height = Math.round(ch * dpr);
+    }
+
     const STRIKE_MS = 95;
     let lastFrameTime = performance.now();
     let frameAccumulator = 0;
@@ -851,7 +872,6 @@ export function PoolBoard({
       const meta = animShotMetaRef.current;
 
       if (elapsedSinceStart < STRIKE_MS && meta && frames[0]) {
-        // Cue stick lunges forward into the cue ball
         for (const b of frames[0]) {
           drawBall(ctx, b, vertical);
         }
@@ -871,7 +891,6 @@ export function PoolBoard({
         return;
       }
 
-      // Advance at 60fps (16.67ms per recorded physics frame)
       frameAccumulator += dt;
       while (frameAccumulator >= 16.666) {
         frameAccumulator -= 16.666;
@@ -904,17 +923,7 @@ export function PoolBoard({
         animRafRef.current = null;
       }
     };
-  }, [
-    vertical,
-    effectiveBalls,
-    aimAngle,
-    pullPower,
-    canShootNow,
-    canPlaceCue,
-    state.isBreakShot,
-    isAnimating,
-    isTargetLegal,
-  ]);
+  }, [isAnimating, vertical]);
 
   // Convert pointer event to canonical table coordinates
   function pointerToTableCoords(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -1135,8 +1144,12 @@ export function PoolBoard({
         }}
       >
         {[p1, p2].map((player) => {
+          const hudBalls =
+            isAnimating && animFramesRef.current[0]
+              ? animFramesRef.current[0]
+              : state.balls;
           const group: BallGroup | null = state.groups[player.id] ?? null;
-          const isTurn = isActive && game.currentTurnId === player.id;
+          const isTurn = !isAnimating && isActive && game.currentTurnId === player.id;
           const isWinner = showCompletedUI && game.winnerId === player.id;
           const groupIds =
             group === "solids"
@@ -1146,7 +1159,7 @@ export function PoolBoard({
                 : [];
           const clearedGroup =
             group !== null &&
-            getRemainingBallsForGroup(state.balls, group).length === 0;
+            getRemainingBallsForGroup(hudBalls, group).length === 0;
 
           return (
             <div
@@ -1222,7 +1235,7 @@ export function PoolBoard({
                   <MiniBallBadge
                     id={8}
                     pocketed={Boolean(
-                      state.balls.find((b) => b.id === 8)?.pocketed
+                      hudBalls.find((b) => b.id === 8)?.pocketed
                     )}
                   />
                 ) : (
@@ -1231,7 +1244,7 @@ export function PoolBoard({
                       key={id}
                       id={id}
                       pocketed={Boolean(
-                        state.balls.find((b) => b.id === id)?.pocketed
+                        hudBalls.find((b) => b.id === id)?.pocketed
                       )}
                     />
                   ))
@@ -1309,9 +1322,11 @@ export function PoolBoard({
             flex: "1 1 160px",
           }}
         >
-          {state.lastShot
-            ? `${memberById(state.lastShot.by).name}: ${state.lastShot.summary}`
-            : "Drag on the table to aim · Pull the Power Meter to strike"}
+          {isAnimating
+            ? "Watching shot unfold…"
+            : state.lastShot
+              ? `${memberById(state.lastShot.by).name}: ${state.lastShot.summary}`
+              : "Drag on the table to aim · Pull the Power Meter to strike"}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

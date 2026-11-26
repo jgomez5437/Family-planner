@@ -172,7 +172,7 @@ export const poolGame: GameDefinition<PoolState, PoolMove> = {
     const eightPocketed = pocketed.includes(8);
     const pocketedSolids = pocketed.filter((id) => id >= 1 && id <= 7);
     const pocketedStripes = pocketed.filter((id) => id >= 9 && id <= 15);
-    const pocketedObjects = [...pocketedSolids, ...pocketedStripes];
+    const pocketedObjects = pocketed.filter((id) => id !== 0 && id !== 8);
 
     const prevShooterGroup = current.groups[playerId] ?? null;
     const shooterClearedBeforeShot =
