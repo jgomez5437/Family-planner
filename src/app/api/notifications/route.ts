@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   clearNotificationsRecord,
   getAuthenticatedSession,
+  getGamesForFamily,
   getMembersForFamily,
   getNotificationsForMember,
   getPostsForFamily,
@@ -16,15 +17,17 @@ export async function GET() {
   }
 
   try {
-    const [items, posts, familyMembers] = await Promise.all([
+    const [items, posts, familyMembers, familyGames] = await Promise.all([
       getNotificationsForMember(session.familyId, session.member.id),
       getPostsForFamily(session.familyId),
       getMembersForFamily(session.familyId),
+      getGamesForFamily(session.familyId),
     ]);
     return NextResponse.json({
       notifications: items,
       posts,
       members: familyMembers,
+      games: familyGames,
     });
   } catch (err) {
     console.error("Fetch notifications error:", err);

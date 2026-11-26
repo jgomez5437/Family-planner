@@ -18,6 +18,7 @@ export function DesktopSidebar({
   familyName,
   tab,
   setTab,
+  tabBadges,
   currentUser,
   onQuickAdd,
   onOpenSettings,
@@ -26,6 +27,7 @@ export function DesktopSidebar({
   familyName: string;
   tab: string;
   setTab: (tab: string) => void;
+  tabBadges?: Partial<Record<string, number>>;
   currentUser: MemberId;
   onQuickAdd: () => void;
   onOpenSettings: (screen?: "root" | "family" | "account") => void;
@@ -112,6 +114,7 @@ export function DesktopSidebar({
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
+          const badge = tabBadges?.[t.id] || 0;
           return (
             <button
               key={t.id}
@@ -132,9 +135,35 @@ export function DesktopSidebar({
               }}
             >
               <Icon size={17} strokeWidth={active ? 2.4 : 2} />
-              <span style={{ fontSize: 13.5, fontWeight: active ? 700 : 500 }}>
+              <span
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: active ? 700 : 500,
+                  flex: 1,
+                }}
+              >
                 {t.label}
               </span>
+              {badge > 0 && (
+                <span
+                  aria-label={`${badge} awaiting your action`}
+                  style={{
+                    minWidth: 20,
+                    height: 20,
+                    padding: "0 6px",
+                    borderRadius: 999,
+                    background: "var(--accent)",
+                    color: "#fff",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    lineHeight: "20px",
+                    textAlign: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  {badge > 9 ? "9+" : badge}
+                </span>
+              )}
             </button>
           );
         })}

@@ -59,6 +59,12 @@ export default function manifest(): MetadataRoute.Manifest {
         url: "/?tab=wall",
         icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
+      {
+        name: "Family Games",
+        short_name: "Games",
+        url: "/?tab=games",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+      },
     ],
   };
 }

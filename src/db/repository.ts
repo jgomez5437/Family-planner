@@ -6,6 +6,7 @@ import {
   doseLogs,
   events,
   families,
+  games,
   medications,
   members,
   notifications,
@@ -26,15 +27,21 @@ import {
 } from "@/lib/auth";
 import { MEMBER_COLOR_PALETTES } from "@/lib/constants";
 import { fmtShortDate, fmtTime, isIsoTimestamp, uid } from "@/lib/dates";
+import { getGameDefinition } from "@/lib/games/registry";
 import type {
   ActivityItem,
   AppTabId,
   ChildProfile,
   DoseLogMap,
   FamilyEvent,
+  FamilyGame,
   FamilyNotification,
   FamilyStatePayload,
   FamilyTask,
+  GameMode,
+  GameOutcome,
+  GameStatus,
+  GameTypeId,
   Medication,
   Member,
   MemberId,
@@ -68,6 +75,7 @@ interface MemoryFamily {
   doseLog: DoseLogMap;
   profiles: ProfilesMap;
   notifications: FamilyNotification[];
+  games: FamilyGame[];
 }
 
 interface MemorySession {
@@ -470,6 +478,7 @@ export async function registerAccount(
       doseLog: {},
       profiles: {},
       notifications: [],
+      games: [],
     };
     store.families.set(familyId, targetFamily);
   } else {
@@ -645,6 +654,7 @@ export async function getFamilyState(
         postRows,
         activityRows,
         notificationRows,
+        gameRows,
       ] = await Promise.all([
         db.select().from(families).where(eq(families.id, familyId)).limit(1),
         db.select().from(members).where(eq(members.familyId, familyId)),
@@ -675,6 +685,12 @@ export async function getFamilyState(
           )
           .orderBy(desc(notifications.createdAt))
           .limit(30),
+        db
+          .select()
+          .from(games)
+          .where(eq(games.familyId, familyId))
+          .orderBy(desc(games.updatedAt))
+          .limit(100),
       ]);
 
       const familyRow = familyRows[0];
@@ -873,6 +889,26 @@ export async function getFamilyState(
         })
       );
 
+      const formattedGames: FamilyGame[] = gameRows.map((g) => ({
+        id: g.id,
+        familyId: g.familyId,
+        gameType: g.gameType as GameTypeId,
+        mode: (g.mode === "pass_and_play" ? "pass_and_play" : "remote") as GameMode,
+        status: g.status as GameStatus,
+        challengerId: g.challengerId,
+        opponentId: g.opponentId,
+        players: g.players,
+        currentTurnId: g.currentTurnId || null,
+        winnerId: g.winnerId || null,
+        outcome: (g.outcome as GameOutcome) || null,
+        state: g.state || {},
+        moves: g.moves || [],
+        rematchOfId: g.rematchOfId || null,
+        createdAt: toIsoTimestamp(g.createdAt),
+        updatedAt: toIsoTimestamp(g.updatedAt),
+        completedAt: g.completedAt ? toIsoTimestamp(g.completedAt) : null,
+      }));
+
       return {
         familyId: familyRow.id,
         familyName: familyRow.name,
@@ -887,6 +923,7 @@ export async function getFamilyState(
         doseLog,
         profiles,
         notifications: formattedNotifications,
+        games: formattedGames,
         dbConnected: true,
       };
     } catch (err) {
@@ -920,6 +957,7 @@ export async function getFamilyState(
     doseLog: fam.doseLog,
     profiles: fam.profiles,
     notifications: userNotifications,
+    games: (fam.games || []).slice(0, 100),
     dbConnected: false,
   };
 }
@@ -1393,6 +1431,9 @@ export async function deleteFamilyMember(
   fam.meds = fam.meds.filter((m) => m.kidId !== memberId);
   fam.notifications = (fam.notifications || []).filter(
     (n) => n.recipientId !== memberId
+  );
+  fam.games = (fam.games || []).filter(
+    (g) => g.challengerId !== memberId && g.opponentId !== memberId
   );
   for (const [token, sess] of store.sessions.entries()) {
     if (sess.memberId === memberId) store.sessions.delete(token);
@@ -3026,3 +3067,598 @@ export async function clearNotificationsRecord(
     );
   }
 }
+
+/* ---------------- Turn-Based Games ---------------- */
+
+function mapDbGameRow(g: typeof games.$inferSelect): FamilyGame {
+  const toIso = (d: Date | string | null | undefined): string => {
+    if (d instanceof Date && !Number.isNaN(d.getTime())) return d.toISOString();
+    if (typeof d === "string" && d.trim()) return d;
+    return new Date().toISOString();
+  };
+  return {
+    id: g.id,
+    familyId: g.familyId,
+    gameType: g.gameType as GameTypeId,
+    mode: (g.mode === "pass_and_play" ? "pass_and_play" : "remote") as GameMode,
+    status: g.status as GameStatus,
+    challengerId: g.challengerId,
+    opponentId: g.opponentId,
+    players: g.players,
+    currentTurnId: g.currentTurnId || null,
+    winnerId: g.winnerId || null,
+    outcome: (g.outcome as GameOutcome) || null,
+    state: g.state || {},
+    moves: g.moves || [],
+    rematchOfId: g.rematchOfId || null,
+    createdAt: toIso(g.createdAt),
+    updatedAt: toIso(g.updatedAt),
+    completedAt: g.completedAt ? toIso(g.completedAt) : null,
+  };
+}
+
+export async function getGamesForFamily(
+  familyId: string,
+  limit = 100
+): Promise<FamilyGame[]> {
+  const db = await getReadyDb();
+  if (db) {
+    try {
+      const rows = await db
+        .select()
+        .from(games)
+        .where(eq(games.familyId, familyId))
+        .orderBy(desc(games.updatedAt))
+        .limit(limit);
+      return rows.map(mapDbGameRow);
+    } catch (err) {
+      console.warn("Error fetching games from Neon DB:", err);
+      return [];
+    }
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  return (fam?.games || []).slice(0, limit);
+}
+
+async function getGameById(
+  familyId: string,
+  gameId: string
+): Promise<FamilyGame | null> {
+  const db = await getReadyDb();
+  if (db) {
+    const rows = await db
+      .select()
+      .from(games)
+      .where(and(eq(games.id, gameId), eq(games.familyId, familyId)))
+      .limit(1);
+    return rows[0] ? mapDbGameRow(rows[0]) : null;
+  }
+
+  const fam = getMemoryStore().families.get(familyId);
+  return (fam?.games || []).find((g) => g.id === gameId) || null;
+}
+
+export interface CreateGameInput {
+  gameType: GameTypeId | string;
+  opponentId: MemberId;
+  mode?: GameMode;
+  rematchOfId?: string | null;
+}
+
+export async function createGameRecord(
+  familyId: string,
+  actorId: MemberId,
+  input: CreateGameInput
+): Promise<
+  | { ok: true; game: FamilyGame }
+  | { ok: false; error: string; status: number }
+> {
+  const gameDef = getGameDefinition(input.gameType);
+  if (!gameDef) {
+    return { ok: false, error: "Unsupported game type.", status: 400 };
+  }
+
+  const mode: GameMode =
+    input.mode === "pass_and_play" ? "pass_and_play" : "remote";
+  const opponentId = (input.opponentId || "").trim();
+  if (!opponentId) {
+    return { ok: false, error: "Please choose an opponent.", status: 400 };
+  }
+  if (opponentId === actorId) {
+    return {
+      ok: false,
+      error: "Choose another family member to play against.",
+      status: 400,
+    };
+  }
+
+  const familyMembers = await getMembersForFamily(familyId);
+  const actor = familyMembers.find((m) => m.id === actorId);
+  const opponent = familyMembers.find((m) => m.id === opponentId);
+  if (!actor || !opponent) {
+    return {
+      ok: false,
+      error: "Selected player was not found in your family.",
+      status: 404,
+    };
+  }
+
+  if (mode === "remote" && !opponent.hasAccount) {
+    return {
+      ok: false,
+      error: `${opponent.name} doesn't have their own sign-in account yet. Try Pass & Play on this device instead!`,
+      status: 400,
+    };
+  }
+
+  let players: [MemberId, MemberId] = [actorId, opponentId];
+  let rematchOfId: string | null = null;
+  if (input.rematchOfId) {
+    const prev = await getGameById(familyId, input.rematchOfId);
+    if (
+      prev &&
+      prev.gameType === gameDef.id &&
+      prev.players.includes(actorId) &&
+      prev.players.includes(opponentId)
+    ) {
+      rematchOfId = prev.id;
+      // Alternate who goes first (X) on rematches for fairness
+      players = [prev.players[1], prev.players[0]];
+    }
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const initialState = gameDef.createInitialState(players);
+  const isPassAndPlay = mode === "pass_and_play";
+  const newGame: FamilyGame = {
+    id: uid("gm"),
+    familyId,
+    gameType: gameDef.id,
+    mode,
+    status: isPassAndPlay ? "active" : "pending",
+    challengerId: actorId,
+    opponentId,
+    players,
+    currentTurnId: isPassAndPlay ? players[0] : null,
+    winnerId: null,
+    outcome: null,
+    state: initialState,
+    moves: [],
+    rematchOfId,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    completedAt: null,
+  };
+
+  const db = await getReadyDb();
+  if (db) {
+    await db.insert(games).values({
+      id: newGame.id,
+      familyId: newGame.familyId,
+      gameType: newGame.gameType,
+      mode: newGame.mode,
+      status: newGame.status,
+      challengerId: newGame.challengerId,
+      opponentId: newGame.opponentId,
+      players: newGame.players,
+      currentTurnId: newGame.currentTurnId,
+      winnerId: null,
+      outcome: null,
+      state: newGame.state,
+      moves: newGame.moves,
+      rematchOfId: newGame.rematchOfId ?? null,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+    });
+  } else {
+    const fam = getMemoryStore().families.get(familyId);
+    if (!fam) {
+      return { ok: false, error: "Family not found.", status: 404 };
+    }
+    fam.games = [newGame, ...(fam.games || [])].slice(0, 150);
+  }
+
+  if (mode === "remote") {
+    await dispatchFamilyNotification({
+      familyId,
+      actorId,
+      recipientIds: [opponentId],
+      category: "game",
+      title: rematchOfId
+        ? `${actor.name} wants a ${gameDef.name} rematch!`
+        : `${actor.name} challenged you to ${gameDef.name}!`,
+      body: "Tap to accept or decline the game request.",
+      target: {
+        tab: "games",
+        entityId: newGame.id,
+      },
+    });
+    await recordActivity(
+      familyId,
+      `${actor.name} challenged ${opponent.name} to ${gameDef.name}`,
+      rematchOfId ? "Rematch request" : "Game invite",
+      actorId
+    );
+  }
+
+  return { ok: true, game: newGame };
+}
+
+export async function respondToGameInviteRecord(
+  familyId: string,
+  gameId: string,
+  actorId: MemberId,
+  decision: "accept" | "decline" | "cancel"
+): Promise<
+  | { ok: true; game: FamilyGame }
+  | { ok: false; error: string; status: number }
+> {
+  const existing = await getGameById(familyId, gameId);
+  if (!existing) {
+    return { ok: false, error: "Game not found.", status: 404 };
+  }
+  if (existing.status !== "pending") {
+    return {
+      ok: false,
+      error: "This game invitation is no longer pending.",
+      status: 409,
+    };
+  }
+
+  const gameDef = getGameDefinition(existing.gameType);
+  if (!gameDef) {
+    return { ok: false, error: "Unsupported game type.", status: 400 };
+  }
+
+  if (decision === "cancel") {
+    if (existing.challengerId !== actorId) {
+      return {
+        ok: false,
+        error: "Only the challenger can cancel a pending invite.",
+        status: 403,
+      };
+    }
+  } else {
+    if (existing.opponentId !== actorId) {
+      return {
+        ok: false,
+        error: "Only the invited player can accept or decline this invite.",
+        status: 403,
+      };
+    }
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const nextStatus: GameStatus =
+    decision === "accept"
+      ? "active"
+      : decision === "decline"
+        ? "declined"
+        : "cancelled";
+  const nextState =
+    decision === "accept" &&
+    (!existing.state || Object.keys(existing.state).length === 0)
+      ? gameDef.createInitialState(existing.players)
+      : existing.state;
+  const nextTurnId = decision === "accept" ? existing.players[0] : null;
+
+  const updated: FamilyGame = {
+    ...existing,
+    status: nextStatus,
+    currentTurnId: nextTurnId,
+    state: nextState,
+    updatedAt: nowIso,
+  };
+
+  const db = await getReadyDb();
+  if (db) {
+    await db
+      .update(games)
+      .set({
+        status: updated.status,
+        currentTurnId: updated.currentTurnId,
+        state: updated.state,
+        updatedAt: now,
+      })
+      .where(and(eq(games.id, gameId), eq(games.familyId, familyId)));
+  } else {
+    const fam = getMemoryStore().families.get(familyId);
+    if (fam) {
+      fam.games = [
+        updated,
+        ...(fam.games || []).filter((g) => g.id !== gameId),
+      ];
+    }
+  }
+
+  if (existing.mode === "remote" && decision !== "cancel") {
+    const actorName = await resolveMemberName(familyId, actorId);
+    if (decision === "accept") {
+      const challengerGoesFirst = updated.currentTurnId === existing.challengerId;
+      await dispatchFamilyNotification({
+        familyId,
+        actorId,
+        recipientIds: [existing.challengerId],
+        category: "game",
+        title: `${actorName} accepted your ${gameDef.name} challenge!`,
+        body: challengerGoesFirst
+          ? "It's your turn to make the first move."
+          : `${actorName} goes first — watch for their opening move.`,
+        target: {
+          tab: "games",
+          entityId: updated.id,
+        },
+      });
+    } else if (decision === "decline") {
+      await dispatchFamilyNotification({
+        familyId,
+        actorId,
+        recipientIds: [existing.challengerId],
+        category: "game",
+        title: `${actorName} declined your ${gameDef.name} challenge`,
+        body: "Challenge another family member anytime.",
+        target: {
+          tab: "games",
+          entityId: updated.id,
+        },
+      });
+    }
+  }
+
+  return { ok: true, game: updated };
+}
+
+export async function makeGameMoveRecord(
+  familyId: string,
+  gameId: string,
+  actorId: MemberId,
+  rawMove: unknown
+): Promise<
+  | { ok: true; game: FamilyGame }
+  | { ok: false; error: string; status: number }
+> {
+  const existing = await getGameById(familyId, gameId);
+  if (!existing) {
+    return { ok: false, error: "Game not found.", status: 404 };
+  }
+  if (existing.status !== "active" || !existing.currentTurnId) {
+    return {
+      ok: false,
+      error: "This game is not currently active.",
+      status: 409,
+    };
+  }
+
+  const gameDef = getGameDefinition(existing.gameType);
+  if (!gameDef) {
+    return { ok: false, error: "Unsupported game type.", status: 400 };
+  }
+
+  if (existing.mode === "remote") {
+    if (existing.currentTurnId !== actorId) {
+      return { ok: false, error: "It's not your turn yet.", status: 403 };
+    }
+  } else {
+    if (!existing.players.includes(actorId)) {
+      return {
+        ok: false,
+        error: "You are not a player in this Pass & Play match.",
+        status: 403,
+      };
+    }
+  }
+
+  const movingPlayerId = existing.currentTurnId;
+  const result = gameDef.validateAndApplyMove({
+    state: existing.state,
+    move: rawMove,
+    playerId: movingPlayerId,
+    players: existing.players,
+  });
+
+  if (!result.ok) {
+    return { ok: false, error: result.error, status: 400 };
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const nextMoves = [
+    ...(existing.moves || []),
+    { by: movingPlayerId, move: rawMove, at: nowIso },
+  ];
+
+  const updated: FamilyGame = {
+    ...existing,
+    state: result.nextState,
+    moves: nextMoves,
+    currentTurnId: result.nextTurnId,
+    status: result.completed ? "completed" : "active",
+    winnerId: result.winnerId,
+    outcome: result.outcome,
+    updatedAt: nowIso,
+    completedAt: result.completed ? nowIso : null,
+  };
+
+  const db = await getReadyDb();
+  if (db) {
+    await db
+      .update(games)
+      .set({
+        state: updated.state,
+        moves: updated.moves,
+        currentTurnId: updated.currentTurnId,
+        status: updated.status,
+        winnerId: updated.winnerId,
+        outcome: updated.outcome,
+        updatedAt: now,
+        completedAt: result.completed ? now : null,
+      })
+      .where(and(eq(games.id, gameId), eq(games.familyId, familyId)));
+  } else {
+    const fam = getMemoryStore().families.get(familyId);
+    if (fam) {
+      fam.games = [
+        updated,
+        ...(fam.games || []).filter((g) => g.id !== gameId),
+      ];
+    }
+  }
+
+  if (existing.mode === "remote") {
+    const otherPlayerId =
+      existing.players[0] === movingPlayerId
+        ? existing.players[1]
+        : existing.players[0];
+    const [moverName, otherName] = await Promise.all([
+      resolveMemberName(familyId, movingPlayerId),
+      resolveMemberName(familyId, otherPlayerId),
+    ]);
+
+    if (result.completed) {
+      if (result.outcome === "win") {
+        await dispatchFamilyNotification({
+          familyId,
+          actorId: movingPlayerId,
+          recipientIds: [otherPlayerId],
+          category: "game",
+          title: `${moverName} won ${gameDef.name}!`,
+          body: "Tap to see the final board or request a rematch.",
+          target: {
+            tab: "games",
+            entityId: updated.id,
+          },
+        });
+        await recordActivity(
+          familyId,
+          `${moverName} won ${gameDef.name} against ${otherName}`,
+          gameDef.name,
+          movingPlayerId
+        );
+      } else if (result.outcome === "draw") {
+        await dispatchFamilyNotification({
+          familyId,
+          actorId: movingPlayerId,
+          recipientIds: [otherPlayerId],
+          category: "game",
+          title: `${gameDef.name} ended in a draw!`,
+          body: `Tie game with ${moverName} — tap for a rematch.`,
+          target: {
+            tab: "games",
+            entityId: updated.id,
+          },
+        });
+        await recordActivity(
+          familyId,
+          `${moverName} & ${otherName} tied in ${gameDef.name}`,
+          "Draw",
+          movingPlayerId
+        );
+      }
+    } else if (result.nextTurnId) {
+      await dispatchFamilyNotification({
+        familyId,
+        actorId: movingPlayerId,
+        recipientIds: [result.nextTurnId],
+        category: "game",
+        title: `Your turn in ${gameDef.name}!`,
+        body: `${moverName} just made a move.`,
+        target: {
+          tab: "games",
+          entityId: updated.id,
+        },
+      });
+    }
+  }
+
+  return { ok: true, game: updated };
+}
+
+export async function forfeitGameRecord(
+  familyId: string,
+  gameId: string,
+  actorId: MemberId
+): Promise<
+  | { ok: true; game: FamilyGame }
+  | { ok: false; error: string; status: number }
+> {
+  const existing = await getGameById(familyId, gameId);
+  if (!existing) {
+    return { ok: false, error: "Game not found.", status: 404 };
+  }
+  if (existing.status !== "active") {
+    return {
+      ok: false,
+      error: "Only active games can be forfeited.",
+      status: 409,
+    };
+  }
+  if (!existing.players.includes(actorId)) {
+    return {
+      ok: false,
+      error: "You are not a player in this game.",
+      status: 403,
+    };
+  }
+
+  const gameDef = getGameDefinition(existing.gameType);
+  const otherPlayerId =
+    existing.players[0] === actorId ? existing.players[1] : existing.players[0];
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  const updated: FamilyGame = {
+    ...existing,
+    status: "completed",
+    currentTurnId: null,
+    winnerId: otherPlayerId,
+    outcome: "forfeit",
+    updatedAt: nowIso,
+    completedAt: nowIso,
+  };
+
+  const db = await getReadyDb();
+  if (db) {
+    await db
+      .update(games)
+      .set({
+        status: updated.status,
+        currentTurnId: null,
+        winnerId: updated.winnerId,
+        outcome: updated.outcome,
+        updatedAt: now,
+        completedAt: now,
+      })
+      .where(and(eq(games.id, gameId), eq(games.familyId, familyId)));
+  } else {
+    const fam = getMemoryStore().families.get(familyId);
+    if (fam) {
+      fam.games = [
+        updated,
+        ...(fam.games || []).filter((g) => g.id !== gameId),
+      ];
+    }
+  }
+
+  if (existing.mode === "remote") {
+    const actorName = await resolveMemberName(familyId, actorId);
+    await dispatchFamilyNotification({
+      familyId,
+      actorId,
+      recipientIds: [otherPlayerId],
+      category: "game",
+      title: `${actorName} forfeited ${gameDef?.name || "the game"}`,
+      body: "You win this round! Tap to view or start a rematch.",
+      target: {
+        tab: "games",
+        entityId: updated.id,
+      },
+    });
+  }
+
+  return { ok: true, game: updated };
+}
+

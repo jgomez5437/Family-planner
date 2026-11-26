@@ -267,8 +267,8 @@ export function NotificationBell({
                     lineHeight: 1.4,
                   }}
                 >
-                  When family members post on the Family Wall, updates will
-                  appear here.
+                  When family members post on the Family Wall or send game
+                  challenges, updates will appear here.
                 </div>
               </div>
             ) : (

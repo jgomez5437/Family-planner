@@ -191,9 +191,10 @@ export type NotificationCategory =
   | "wall_comment"
   | "event"
   | "task"
-  | "medication";
+  | "medication"
+  | "game";
 
-export type AppTabId = "home" | "manager" | "plan" | "wall";
+export type AppTabId = "home" | "manager" | "plan" | "wall" | "games";
 
 export interface NotificationTarget {
   tab: AppTabId;
@@ -213,6 +214,46 @@ export interface FamilyNotification {
   createdAt: string; // ISO 8601 timestamp
 }
 
+export type GameTypeId = "tic_tac_toe";
+
+export type GameMode = "remote" | "pass_and_play";
+
+export type GameStatus =
+  | "pending"
+  | "active"
+  | "completed"
+  | "declined"
+  | "cancelled";
+
+export type GameOutcome = "win" | "draw" | "forfeit" | null;
+
+export interface GameMoveEntry<TMove = unknown> {
+  by: MemberId;
+  move: TMove;
+  at: string; // ISO 8601 timestamp
+}
+
+export interface FamilyGame<TState = Record<string, unknown>> {
+  id: string;
+  familyId: string;
+  gameType: GameTypeId;
+  mode: GameMode;
+  status: GameStatus;
+  challengerId: MemberId;
+  opponentId: MemberId;
+  /** Ordered as [firstMoverId, secondMoverId]. */
+  players: [MemberId, MemberId];
+  currentTurnId: MemberId | null;
+  winnerId: MemberId | null;
+  outcome: GameOutcome;
+  state: TState;
+  moves: GameMoveEntry[];
+  rematchOfId?: string | null;
+  createdAt: string; // ISO 8601 timestamp
+  updatedAt: string; // ISO 8601 timestamp
+  completedAt?: string | null;
+}
+
 export interface FamilyStatePayload {
   familyId: string;
   familyName: string;
@@ -227,5 +268,6 @@ export interface FamilyStatePayload {
   doseLog: DoseLogMap;
   profiles: ProfilesMap;
   notifications: FamilyNotification[];
+  games: FamilyGame[];
   dbConnected?: boolean;
 }

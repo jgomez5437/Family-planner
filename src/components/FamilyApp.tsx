@@ -26,14 +26,21 @@ import {
   type NotificationPreferences,
 } from "@/lib/notifications";
 import { expandAllEvents, expandAllTasks } from "@/lib/recurrence";
+import {
+  countActionableGamesForMember,
+  getGameDefinition,
+} from "@/lib/games/registry";
 import type {
   ActivityItem,
   ChildProfile,
   DoseLogMap,
   FamilyEvent,
+  FamilyGame,
   FamilyNotification,
   FamilyStatePayload,
   FamilyTask,
+  GameMode,
+  GameTypeId,
   Medication,
   Member,
   MemberId,
@@ -67,6 +74,7 @@ import { PlanTab } from "@/components/tabs/PlanTab";
 import { TaskEditModal } from "@/components/plan/TaskItems";
 import { EventDetailModal } from "@/components/plan/EventItems";
 import { WallTab } from "@/components/tabs/WallTab";
+import { GamesTab } from "@/components/tabs/GamesTab";
 import { PwaInstallBanner } from "@/components/pwa/PwaContext";
 import type { PlanTypeFilter } from "@/lib/plan";
 
@@ -131,6 +139,7 @@ export default function FamilyApp({
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(
     null
   );
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [selectedManagerKidId, setSelectedManagerKidId] =
     useState<MemberId | null>(null);
   const [highlightedMedId, setHighlightedMedId] = useState<string | null>(null);
@@ -171,6 +180,8 @@ export default function FamilyApp({
     if (requestedEntity) {
       if (requestedTab === "wall") {
         setHighlightedPostId(requestedEntity);
+      } else if (requestedTab === "games") {
+        setSelectedGameId(requestedEntity);
       }
       url.searchParams.delete("entity");
       mutated = true;
@@ -183,6 +194,7 @@ export default function FamilyApp({
   const [events, setEvents] = useState<FamilyEvent[]>(initialState.events);
   const [tasks, setTasks] = useState<FamilyTask[]>(initialState.tasks);
   const [posts, setPosts] = useState<WallPost[]>(initialState.posts);
+  const [games, setGames] = useState<FamilyGame[]>(initialState.games || []);
   const [activity, setActivity] = useState<ActivityItem[]>(
     initialState.activity
   );
@@ -212,6 +224,8 @@ export default function FamilyApp({
   const notifMutationSeqRef = useRef(0);
   const pendingNotifMutationsRef = useRef(0);
   const memberMutationSeqRef = useRef(0);
+  const gameMutationSeqRef = useRef(0);
+  const pendingGameMutationsRef = useRef(0);
 
   const memberById = (id?: MemberId | null) => findMemberById(id, members);
   const me = memberById(currentUser);
@@ -278,6 +292,7 @@ export default function FamilyApp({
     const postSeqAtStart = postMutationSeqRef.current;
     const notifSeqAtStart = notifMutationSeqRef.current;
     const memberSeqAtStart = memberMutationSeqRef.current;
+    const gameSeqAtStart = gameMutationSeqRef.current;
     try {
       const res = await fetch("/api/notifications", { cache: "no-store" });
       if (!res.ok) return;
@@ -285,6 +300,7 @@ export default function FamilyApp({
         notifications?: FamilyNotification[];
         posts?: WallPost[];
         members?: Member[];
+        games?: FamilyGame[];
       };
       if (
         Array.isArray(json.members) &&
@@ -299,6 +315,13 @@ export default function FamilyApp({
         postMutationSeqRef.current === postSeqAtStart
       ) {
         setPosts(json.posts);
+      }
+      if (
+        Array.isArray(json.games) &&
+        pendingGameMutationsRef.current === 0 &&
+        gameMutationSeqRef.current === gameSeqAtStart
+      ) {
+        setGames(json.games);
       }
       if (
         Array.isArray(json.notifications) &&
@@ -322,6 +345,25 @@ export default function FamilyApp({
             void showBrowserNotification(n);
           }
         }
+      }
+    } catch {
+      /* background polling failure is non-fatal */
+    }
+  }, []);
+
+  const pollGames = useCallback(async () => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    const gameSeqAtStart = gameMutationSeqRef.current;
+    try {
+      const res = await fetch("/api/games", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as { games?: FamilyGame[] };
+      if (
+        Array.isArray(json.games) &&
+        pendingGameMutationsRef.current === 0 &&
+        gameMutationSeqRef.current === gameSeqAtStart
+      ) {
+        setGames(json.games);
       }
     } catch {
       /* background polling failure is non-fatal */
@@ -358,6 +400,27 @@ export default function FamilyApp({
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [pollNotifications]);
+
+  // Poll more frequently while actively viewing the Games tab with remote matches/invites
+  const hasLiveRemoteGame = useMemo(
+    () =>
+      games.some(
+        (g) =>
+          g.mode === "remote" &&
+          (g.status === "pending" || g.status === "active")
+      ),
+    [games]
+  );
+
+  useEffect(() => {
+    if (tab !== "games" || !hasLiveRemoteGame) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void pollGames();
+      }
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [tab, hasLiveRemoteGame, pollGames]);
 
   function fireToast(msg: string) {
     setToast(msg);
@@ -406,10 +469,13 @@ export default function FamilyApp({
         if (resolved.filter) setPlanFilter(resolved.filter);
         if (resolved.tab === "wall" && payload.entityId) {
           setHighlightedPostId(payload.entityId);
+        } else if (resolved.tab === "games") {
+          setSelectedGameId(payload.entityId || null);
+          void pollGames();
         }
       }
     },
-    []
+    [pollGames]
   );
 
   // Handle OS/browser notification clicks from the Service Worker or fallback Notification API
@@ -621,6 +687,18 @@ export default function FamilyApp({
         const next = { ...p };
         delete next[memberId];
         return next;
+      });
+      setGames((gs) => {
+        const remaining = gs.filter(
+          (g) => g.challengerId !== memberId && g.opponentId !== memberId
+        );
+        if (
+          selectedGameId &&
+          !remaining.some((g) => g.id === selectedGameId)
+        ) {
+          setSelectedGameId(null);
+        }
+        return remaining;
       });
       fireToast("Member removed");
       return null;
@@ -1553,6 +1631,205 @@ export default function FamilyApp({
     return expandedTasks.find((t) => t.id === masterId) || master;
   }, [editingTask, tasks, expandedTasks]);
 
+  /* ---- GAMES ACTIONS ---- */
+
+  const gamesBadgeCount = useMemo(
+    () => countActionableGamesForMember(games, currentUser),
+    [games, currentUser]
+  );
+
+  const tabBadges = useMemo(
+    () => (gamesBadgeCount > 0 ? { games: gamesBadgeCount } : {}),
+    [gamesBadgeCount]
+  );
+
+  async function handleCreateGame(input: {
+    gameType: GameTypeId;
+    opponentId: MemberId;
+    mode: GameMode;
+    rematchOfId?: string | null;
+  }): Promise<string | null> {
+    gameMutationSeqRef.current += 1;
+    pendingGameMutationsRef.current += 1;
+    try {
+      const res = await fetch("/api/games", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const json = (await res.json()) as { game?: FamilyGame; error?: string };
+      if (!res.ok || !json.game) {
+        return json.error || "Could not create game.";
+      }
+      const created = json.game;
+      setGames((prev) => [created, ...prev.filter((g) => g.id !== created.id)]);
+      if (created.mode === "pass_and_play") {
+        setSelectedGameId(created.id);
+        fireToast("Pass & Play match started!");
+      } else {
+        setSelectedGameId(created.id);
+        const oppName = memberById(created.opponentId).name;
+        fireToast(
+          created.rematchOfId
+            ? `Rematch request sent to ${oppName}`
+            : `Game request sent to ${oppName}`
+        );
+      }
+      return null;
+    } catch {
+      return "Network error while creating game.";
+    } finally {
+      pendingGameMutationsRef.current = Math.max(
+        0,
+        pendingGameMutationsRef.current - 1
+      );
+    }
+  }
+
+  async function handleRespondGameInvite(
+    gameId: string,
+    decision: "accept" | "decline" | "cancel"
+  ) {
+    gameMutationSeqRef.current += 1;
+    pendingGameMutationsRef.current += 1;
+    try {
+      const res = await fetch(`/api/games/${encodeURIComponent(gameId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: decision }),
+      });
+      const json = (await res.json()) as { game?: FamilyGame; error?: string };
+      if (!res.ok || !json.game) {
+        fireToast(json.error || "Could not update game invite.");
+        void pollGames();
+        return;
+      }
+      const updated = json.game;
+      setGames((prev) => [updated, ...prev.filter((g) => g.id !== updated.id)]);
+      if (decision === "accept") {
+        fireToast("Challenge accepted — game on!");
+      } else if (decision === "decline") {
+        fireToast("Challenge declined");
+      } else {
+        fireToast("Challenge cancelled");
+      }
+    } catch {
+      fireToast("Network error while updating invite.");
+    } finally {
+      pendingGameMutationsRef.current = Math.max(
+        0,
+        pendingGameMutationsRef.current - 1
+      );
+    }
+  }
+
+  async function handleMakeGameMove(gameId: string, move: unknown) {
+    const existing = games.find((g) => g.id === gameId);
+    if (!existing) return;
+
+    const previousGames = games;
+    const gameDef = getGameDefinition(existing.gameType);
+    const movingPlayerId = existing.currentTurnId;
+
+    // Optimistic client move for snappy feel
+    if (gameDef && movingPlayerId && existing.status === "active") {
+      const preview = gameDef.validateAndApplyMove({
+        state: existing.state,
+        move,
+        playerId: movingPlayerId,
+        players: existing.players,
+      });
+      if (!preview.ok) {
+        fireToast(preview.error);
+        return;
+      }
+      const nowIso = new Date().toISOString();
+      const optimistic: FamilyGame = {
+        ...existing,
+        state: preview.nextState,
+        moves: [
+          ...existing.moves,
+          { by: movingPlayerId, move, at: nowIso },
+        ],
+        currentTurnId: preview.nextTurnId,
+        status: preview.completed ? "completed" : "active",
+        winnerId: preview.winnerId,
+        outcome: preview.outcome,
+        updatedAt: nowIso,
+        completedAt: preview.completed ? nowIso : null,
+      };
+      setGames((prev) => [
+        optimistic,
+        ...prev.filter((g) => g.id !== optimistic.id),
+      ]);
+    }
+
+    gameMutationSeqRef.current += 1;
+    pendingGameMutationsRef.current += 1;
+    try {
+      const res = await fetch(`/api/games/${encodeURIComponent(gameId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "move", move }),
+      });
+      const json = (await res.json()) as { game?: FamilyGame; error?: string };
+      if (!res.ok || !json.game) {
+        setGames(previousGames);
+        fireToast(json.error || "Move could not be saved.");
+        void pollGames();
+        return;
+      }
+      const saved = json.game;
+      setGames((prev) => [saved, ...prev.filter((g) => g.id !== saved.id)]);
+      if (saved.status === "completed") {
+        if (saved.outcome === "draw") {
+          fireToast("It's a draw! 🤝");
+        } else if (saved.winnerId) {
+          const winnerName =
+            saved.mode === "remote" && saved.winnerId === currentUser
+              ? "You"
+              : memberById(saved.winnerId).name;
+          fireToast(`${winnerName} won! 🎉`);
+        }
+      }
+    } catch {
+      setGames(previousGames);
+      fireToast("Network error while saving move.");
+    } finally {
+      pendingGameMutationsRef.current = Math.max(
+        0,
+        pendingGameMutationsRef.current - 1
+      );
+    }
+  }
+
+  async function handleForfeitGame(gameId: string) {
+    gameMutationSeqRef.current += 1;
+    pendingGameMutationsRef.current += 1;
+    try {
+      const res = await fetch(`/api/games/${encodeURIComponent(gameId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "forfeit" }),
+      });
+      const json = (await res.json()) as { game?: FamilyGame; error?: string };
+      if (!res.ok || !json.game) {
+        fireToast(json.error || "Could not forfeit game.");
+        return;
+      }
+      const updated = json.game;
+      setGames((prev) => [updated, ...prev.filter((g) => g.id !== updated.id)]);
+      fireToast("Match forfeited");
+    } catch {
+      fireToast("Network error while forfeiting match.");
+    } finally {
+      pendingGameMutationsRef.current = Math.max(
+        0,
+        pendingGameMutationsRef.current - 1
+      );
+    }
+  }
+
   if (sheet) {
     return (
       <MembersProvider members={members}>
@@ -1594,6 +1871,7 @@ export default function FamilyApp({
             familyName={familyName}
             tab={tab}
             setTab={setTab}
+            tabBadges={tabBadges}
             currentUser={currentUser}
             onQuickAdd={() => setQuickAddOpen(true)}
             onOpenSettings={(s) => setSettingsScreen(s || "root")}
@@ -1925,6 +2203,19 @@ export default function FamilyApp({
                 highlightedPostId={highlightedPostId}
               />
             )}
+            {tab === "games" && (
+              <GamesTab
+                games={games}
+                currentUser={currentUser}
+                selectedGameId={selectedGameId}
+                onSelectGame={setSelectedGameId}
+                onCreateGame={handleCreateGame}
+                onRespondInvite={handleRespondGameInvite}
+                onMakeMove={handleMakeGameMove}
+                onForfeitGame={handleForfeitGame}
+                onOpenFamilySettings={() => setSettingsScreen("family")}
+              />
+            )}
           </div>
         </div>
 
@@ -1948,16 +2239,21 @@ export default function FamilyApp({
             {TABS.map((t) => {
               const Icon = t.icon;
               const active = tab === t.id;
+              const badge = (tabBadges as Partial<Record<string, number>>)[t.id] || 0;
               return (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
                   aria-current={active ? "page" : undefined}
+                  aria-label={
+                    badge > 0 ? `${t.label} (${badge} waiting)` : t.label
+                  }
                   style={{
                     flex: 1,
+                    minWidth: 0,
                     background: "none",
                     border: "none",
-                    padding: "8px 4px 5px",
+                    padding: "8px 2px 5px",
                     cursor: "pointer",
                     display: "flex",
                     flexDirection: "column",
@@ -1968,7 +2264,8 @@ export default function FamilyApp({
                 >
                   <span
                     style={{
-                      width: 54,
+                      position: "relative",
+                      width: 44,
                       height: 30,
                       borderRadius: 15,
                       display: "flex",
@@ -1978,10 +2275,40 @@ export default function FamilyApp({
                       transition: "background 0.2s",
                     }}
                   >
-                    <Icon size={21} strokeWidth={active ? 2.4 : 2} />
+                    <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+                    {badge > 0 && (
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          position: "absolute",
+                          top: -1,
+                          right: 1,
+                          minWidth: 16,
+                          height: 16,
+                          padding: "0 4px",
+                          borderRadius: 999,
+                          background: "var(--accent)",
+                          color: "#fff",
+                          fontSize: 10,
+                          fontWeight: 800,
+                          lineHeight: "16px",
+                          textAlign: "center",
+                          boxShadow: "0 0 0 2px var(--bg-nav)",
+                        }}
+                      >
+                        {badge > 9 ? "9+" : badge}
+                      </span>
+                    )}
                   </span>
                   <span
-                    style={{ fontSize: 10.5, fontWeight: active ? 700 : 500 }}
+                    style={{
+                      fontSize: 10,
+                      fontWeight: active ? 700 : 500,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      maxWidth: "100%",
+                    }}
                   >
                     {t.label}
                   </span>

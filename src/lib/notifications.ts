@@ -62,6 +62,14 @@ export const NOTIFICATION_CATEGORIES: NotificationCategoryMeta[] = [
     defaultEnabled: true,
     active: false,
   },
+  {
+    id: "game",
+    label: "Games & Challenges",
+    description: "Game invites, turn reminders, and match results",
+    emoji: "🎮",
+    defaultEnabled: true,
+    active: true,
+  },
 ];
 
 export const ACTIVE_NOTIFICATION_CATEGORIES = NOTIFICATION_CATEGORIES.filter(
