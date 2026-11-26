@@ -28,6 +28,7 @@ import {
   SectionLabel,
 } from "@/components/ui/Primitives";
 import { TicTacToeBoard } from "@/components/games/TicTacToeBoard";
+import { PoolBoard } from "@/components/games/PoolBoard";
 import { NewGameModal } from "@/components/games/NewGameModal";
 import type {
   FamilyGame,
@@ -185,7 +186,12 @@ export function GamesTab({
       selectedGame.challengerId === currentUser;
 
     return (
-      <div style={{ maxWidth: 640, margin: "0 auto" }}>
+      <div
+        style={{
+          maxWidth: selectedGame.gameType === "pool" ? 860 : 640,
+          margin: "0 auto",
+        }}
+      >
         <div
           style={{
             display: "flex",
@@ -526,6 +532,19 @@ export function GamesTab({
                 onBack={() => onSelectGame(null)}
               />
             )}
+
+          {selectedGame.status !== "declined" &&
+            selectedGame.status !== "cancelled" &&
+            selectedGame.gameType === "pool" && (
+              <PoolBoard
+                game={selectedGame}
+                currentUser={currentUser}
+                submitting={busyGameId === selectedGame.id}
+                onMakeMove={(move) => void handleMove(selectedGame.id, move)}
+                onRematch={() => void handleRematch(selectedGame)}
+                onBack={() => onSelectGame(null)}
+              />
+            )}
         </div>
       </div>
     );
@@ -788,8 +807,8 @@ export function GamesTab({
         {activeGames.length === 0 ? (
           <EmptyState
             text="No active games right now"
-            sub="Send a Tic-Tac-Toe challenge to a family member or start a Pass & Play round."
-            actionLabel="Start Tic-Tac-Toe"
+            sub="Challenge a family member to 8-Ball Pool or Tic-Tac-Toe, or start a Pass & Play round."
+            actionLabel="Start a Game"
             onAction={() => setNewGameOpen(true)}
           />
         ) : (
@@ -1290,7 +1309,9 @@ export function GamesTab({
         }}
       >
         <Gamepad2 size={14} />
-        <span>Tic-Tac-Toe is live — more family games coming soon!</span>
+        <span>
+          Tic-Tac-Toe &amp; 8-Ball Pool are live — more family games coming soon!
+        </span>
       </div>
 
       {newGameOpen && (
