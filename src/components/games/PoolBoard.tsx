@@ -2103,7 +2103,7 @@ export function PoolBoard({
           display: "flex",
           alignItems: "center",
           flexDirection: alignRight ? "row-reverse" : "row",
-          gap: stacked ? 8 : 8,
+          gap: 8,
           minWidth: 0,
           flex: 1,
           padding: stacked ? "6px 9px" : "4px 8px",
@@ -2184,7 +2184,7 @@ export function PoolBoard({
               display: "flex",
               alignItems: "center",
               justifyContent: alignRight ? "flex-end" : "flex-start",
-              gap: stacked ? 3 : 3,
+              gap: 3,
               marginTop: 4,
               minHeight: stacked ? 11 : 10,
             }}
@@ -2298,7 +2298,11 @@ export function PoolBoard({
         background: centerPillBg,
         color: centerPillColor,
         whiteSpace: "nowrap",
-        flexShrink: 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        maxWidth: "100%",
+        justifySelf: "center",
+        flexShrink: isStackedHud ? 1 : 0,
         letterSpacing: "0.01em",
       }}
     >
@@ -2344,7 +2348,7 @@ export function PoolBoard({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr auto 1fr",
+                gridTemplateColumns: "auto minmax(0, 1fr) auto",
                 alignItems: "center",
                 gap: 8,
               }}
