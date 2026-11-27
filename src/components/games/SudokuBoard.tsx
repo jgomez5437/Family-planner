@@ -142,6 +142,30 @@ export function SudokuBoard({
     };
   }, []);
 
+  // Lock background page scroll while in full-screen Versus Sudoku (matches PoolBoard)
+  useEffect(() => {
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setConfirmForfeit((open) => {
+          if (open) return false;
+          onBack();
+          return false;
+        });
+      }
+    }
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, [onBack]);
+
   // Reset forfeit confirmation if game is no longer active
   useEffect(() => {
     if (!isActive) setConfirmForfeit(false);
@@ -1149,9 +1173,10 @@ export function SudokuBoard({
                 );
               })}
             </div>
+          </div>
 
-            {/* Floating Pending / Declined / Cancelled Overlay */}
-            {showOverlay && (
+          {/* Floating Pending / Declined / Cancelled Overlay */}
+          {showOverlay && (
               <div
                 style={{
                   position: "absolute",
@@ -1316,10 +1341,9 @@ export function SudokuBoard({
                       Back to Games
                     </button>
                   )}
-                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Bottom Dock: Active Keypad OR Completed Summary */}

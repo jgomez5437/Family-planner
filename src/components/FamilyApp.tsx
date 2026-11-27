@@ -1974,7 +1974,12 @@ export default function FamilyApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "forfeit" }),
       });
-      const json = (await res.json()) as { game?: FamilyGame; error?: string };
+      const json = (await res.json()) as {
+        game?: FamilyGame;
+        error?: string;
+        serverNow?: string;
+      };
+      syncServerClock(json.serverNow);
       if (!res.ok || !json.game) {
         fireToast(json.error || "Could not forfeit game.");
         return;
