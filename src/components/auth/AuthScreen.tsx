@@ -24,11 +24,13 @@ export function AuthScreen({
   initialInviteCode = null,
   invitedFamilyName = null,
   initialInviteInvalid = false,
+  initialNotice = null,
 }: {
   onAuthenticated: (state: FamilyStatePayload) => void;
   initialInviteCode?: string | null;
   invitedFamilyName?: string | null;
   initialInviteInvalid?: boolean;
+  initialNotice?: string | null;
 }) {
   const normalizedInitialInvite = (initialInviteCode || "").trim().toUpperCase();
   const [tab, setTab] = useState<"login" | "register">(
@@ -61,7 +63,12 @@ export function AuthScreen({
       ? "This invite link is no longer valid or has expired. Ask a family member for a new link or enter a valid code below."
       : null
   );
+  const [notice, setNotice] = useState<string | null>(initialNotice);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setNotice(initialNotice);
+  }, [initialNotice]);
 
   useEffect(() => {
     if (normalizedInitialInvite || typeof window === "undefined") return;
@@ -83,6 +90,7 @@ export function AuthScreen({
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setSubmitting(true);
     try {
       const res = await fetch("/api/auth/login", {
@@ -110,6 +118,7 @@ export function AuthScreen({
     e.preventDefault();
     if (avatarProcessing) return;
     setError(null);
+    setNotice(null);
     setSubmitting(true);
     try {
       const res = await fetch("/api/auth/register", {
@@ -220,6 +229,7 @@ export function AuthScreen({
               onClick={() => {
                 setTab("login");
                 setError(null);
+                setNotice(null);
               }}
               style={{
                 border: "none",
@@ -245,6 +255,7 @@ export function AuthScreen({
               onClick={() => {
                 setTab("register");
                 setError(null);
+                setNotice(null);
               }}
               style={{
                 border: "none",
@@ -266,6 +277,28 @@ export function AuthScreen({
               <UserPlus size={15} /> Create Account
             </button>
           </div>
+
+          {notice && (
+            <div
+              role="status"
+              style={{
+                background: "var(--success-soft)",
+                border: "1px solid var(--success-border)",
+                color: "var(--success-ink)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                fontSize: 13,
+                fontWeight: 600,
+                marginBottom: 14,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+              <span>{notice}</span>
+            </div>
+          )}
 
           {error && (
             <div

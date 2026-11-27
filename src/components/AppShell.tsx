@@ -29,6 +29,7 @@ export function AppShell({
 }) {
   const router = useRouter();
   const [state, setState] = useState<FamilyStatePayload | null>(initialState);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(initialInviteCode);
   const [inviteFamilyName, setInviteFamilyName] = useState<string | null>(
     invitedFamilyName
@@ -58,7 +59,9 @@ export function AppShell({
         initialInviteCode={inviteCode}
         invitedFamilyName={inviteFamilyName}
         initialInviteInvalid={inviteInvalid}
+        initialNotice={authNotice}
         onAuthenticated={(nextState) => {
+          setAuthNotice(null);
           setState(nextState);
           setInviteCode(null);
           setInviteFamilyName(null);
@@ -74,7 +77,8 @@ export function AppShell({
     <FamilyApp
       key={`${state.familyId}-${state.currentUser.id}`}
       initialState={state}
-      onSignedOut={() => {
+      onSignedOut={(options) => {
+        setAuthNotice(options?.notice || null);
         setState(null);
         router.refresh();
       }}

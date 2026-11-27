@@ -18,6 +18,7 @@ import { fmtShortDate, fmtTime, todayISO, uid } from "@/lib/dates";
 import { useRelativeTimeTicker } from "@/lib/useRelativeTime";
 import { dosesFor } from "@/lib/meds";
 import {
+  clearNotificationPreferences,
   getDefaultNotificationPreferences,
   isCategoryEnabled,
   loadNotificationPreferences,
@@ -119,7 +120,7 @@ export default function FamilyApp({
   onSignedOut,
 }: {
   initialState: FamilyStatePayload;
-  onSignedOut: () => void;
+  onSignedOut: (options?: { notice?: string }) => void;
 }) {
   const isDesktop = useIsDesktop();
   useRelativeTimeTicker(30000);
@@ -148,6 +149,8 @@ export default function FamilyApp({
   );
   const notificationPrefsRef = useRef<NotificationPreferences>(notificationPrefs);
   notificationPrefsRef.current = notificationPrefs;
+  const onSignedOutRef = useRef(onSignedOut);
+  onSignedOutRef.current = onSignedOut;
 
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -296,6 +299,10 @@ export default function FamilyApp({
     const gameSeqAtStart = gameMutationSeqRef.current;
     try {
       const res = await fetch("/api/notifications", { cache: "no-store" });
+      if (res.status === 401) {
+        onSignedOutRef.current();
+        return;
+      }
       if (!res.ok) return;
       const json = (await res.json()) as {
         notifications?: FamilyNotification[];
@@ -365,6 +372,10 @@ export default function FamilyApp({
     const gameSeqAtStart = gameMutationSeqRef.current;
     try {
       const res = await fetch("/api/games", { cache: "no-store" });
+      if (res.status === 401) {
+        onSignedOutRef.current();
+        return;
+      }
       if (!res.ok) return;
       const json = (await res.json()) as {
         games?: FamilyGame[];
@@ -391,6 +402,15 @@ export default function FamilyApp({
         const res = await fetch(`/api/games/${encodeURIComponent(gameId)}`, {
           cache: "no-store",
         });
+        if (res.status === 401) {
+          onSignedOutRef.current();
+          return;
+        }
+        if (res.status === 404) {
+          setSelectedGameId((cur) => (cur === gameId ? null : cur));
+          setGames((prev) => prev.filter((g) => g.id !== gameId));
+          return;
+        }
         if (!res.ok) return;
         const json = (await res.json()) as {
           game?: FamilyGame;
@@ -671,6 +691,33 @@ export default function FamilyApp({
       /* ignore */
     }
     onSignedOut();
+  }
+
+  async function handleDeleteAccount(password: string): Promise<string | null> {
+    try {
+      const res = await fetch("/api/auth/delete-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        familyDeleted?: boolean;
+        error?: string;
+      };
+      if (!res.ok) {
+        return json.error || "Could not delete your account.";
+      }
+      clearNotificationPreferences(currentUser);
+      onSignedOut({
+        notice: json.familyDeleted
+          ? "Your account and family workspace have been permanently deleted."
+          : "Your account and history have been permanently deleted.",
+      });
+      return null;
+    } catch {
+      return "Network error while deleting your account.";
+    }
   }
 
   async function handleAddMember(data: MemberFormData): Promise<string | null> {
@@ -2611,6 +2658,7 @@ export default function FamilyApp({
             onUpdateMember={handleUpdateMember}
             onDeleteMember={handleDeleteMember}
             onSignOut={handleSignOut}
+            onDeleteAccount={handleDeleteAccount}
           />
         )}
 

@@ -23,6 +23,7 @@ import {
   Share2,
   Smartphone,
   Sun,
+  Trash2,
   User,
   UserPlus,
   Users,
@@ -51,6 +52,7 @@ import type { ThemePreference } from "@/lib/theme";
 import type { Member, MemberId, NotificationCategory } from "@/types/family";
 import { AvatarPicker, AvatarPreview } from "@/components/ui/AvatarPicker";
 import { AvatarDot, FieldLabel } from "@/components/ui/Primitives";
+import { DeleteAccountModal } from "./DeleteAccountModal";
 import { MemberModal, type MemberFormData } from "./MemberModal";
 
 export type SettingsSubScreen =
@@ -75,6 +77,7 @@ export function SettingsScreen({
   onUpdateMember,
   onDeleteMember,
   onSignOut,
+  onDeleteAccount,
 }: {
   initialScreen?: SettingsSubScreen;
   onClose: () => void;
@@ -92,6 +95,7 @@ export function SettingsScreen({
   ) => Promise<string | null>;
   onDeleteMember: (memberId: MemberId) => Promise<string | null>;
   onSignOut: () => void;
+  onDeleteAccount: (password: string) => Promise<string | null>;
 }) {
   const { members, memberById } = useMembers();
   const { isStandalone, isInstalled, isIos, canInstallNative, triggerInstall } =
@@ -102,6 +106,8 @@ export function SettingsScreen({
     setPreference: setAppearance,
   } = useTheme();
   const me = memberById(currentUserId);
+  const isLastAccount =
+    members.filter((m) => m.id !== currentUserId && m.hasAccount).length === 0;
 
   const [screen, setScreen] = useState<SettingsSubScreen>(initialScreen);
   const [accountBackScreen, setAccountBackScreen] =
@@ -120,6 +126,7 @@ export function SettingsScreen({
   const [memberModalState, setMemberModalState] = useState<
     { mode: "add" } | { mode: "edit"; member: Member } | null
   >(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
   // Account edit state
   const [accountName, setAccountName] = useState(me.name);
@@ -157,6 +164,7 @@ export function SettingsScreen({
 
   useEffect(() => {
     setAccountMessage(null);
+    setDeleteModalOpen(false);
   }, [screen]);
 
   const [browserPermission, setBrowserPermission] = useState<
@@ -1172,6 +1180,66 @@ export function SettingsScreen({
             >
               <LogOut size={16} /> Sign Out
             </button>
+
+            {me.hasAccount !== false && (
+              <div
+                style={{
+                  marginTop: 24,
+                  paddingTop: 18,
+                  borderTop: "1px solid var(--border-divider)",
+                }}
+              >
+                <div
+                  style={{
+                    background: "var(--danger-soft)",
+                    border: "1px solid var(--danger-border)",
+                    borderRadius: 14,
+                    padding: 14,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: "var(--danger-ink)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Delete Account
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-secondary)",
+                      lineHeight: 1.45,
+                      marginBottom: 12,
+                    }}
+                  >
+                    Permanently delete your account and erase all of your
+                    posts, comments, reactions, activity, events, and tasks.
+                    {isLastAccount
+                      ? ` Since you are the only login account in ${familyName}, the entire family workspace will also be deleted.`
+                      : ""}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteModalOpen(true)}
+                    style={{
+                      ...btnStyle,
+                      width: "100%",
+                      background: "var(--danger)",
+                      color: "#fff",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <Trash2 size={15} /> Delete Account
+                  </button>
+                </div>
+              </div>
+            )}
           </form>
         )}
 
@@ -1482,6 +1550,16 @@ export function SettingsScreen({
               ? () => onDeleteMember(memberModalState.member.id)
               : undefined
           }
+        />
+      )}
+
+      {deleteModalOpen && (
+        <DeleteAccountModal
+          familyName={familyName}
+          memberName={me.name}
+          isLastAccount={isLastAccount}
+          onClose={() => setDeleteModalOpen(false)}
+          onConfirmDelete={onDeleteAccount}
         />
       )}
     </div>
