@@ -8,7 +8,16 @@ import {
   DOTS_AND_BOXES_SIZE_OPTIONS,
   type DotsAndBoxesSize,
 } from "@/lib/games/dotsAndBoxes";
-import { GAME_DEFINITIONS } from "@/lib/games/registry";
+import {
+  DEFAULT_SUDOKU_OPTIONS,
+  SUDOKU_BOARD_MODE_OPTIONS,
+  SUDOKU_DIFFICULTY_OPTIONS,
+  SUDOKU_TIME_OPTIONS,
+  type SudokuBoardMode,
+  type SudokuDifficulty,
+  type SudokuTimeLimit,
+} from "@/lib/games/sudoku";
+import { GAME_DEFINITIONS, getGameDefinition } from "@/lib/games/registry";
 import { useMembers } from "@/components/MembersContext";
 import { AvatarDot, FieldLabel, ModalShell } from "@/components/ui/Primitives";
 import type { GameMode, GameTypeId, MemberId } from "@/types/family";
@@ -35,6 +44,17 @@ export function NewGameModal({
     DEFAULT_DOTS_AND_BOXES_SIZE
   );
 
+  const [sudokuDifficulty, setSudokuDifficulty] = useState<SudokuDifficulty>(
+    DEFAULT_SUDOKU_OPTIONS.difficulty
+  );
+  const [sudokuBoardMode, setSudokuBoardMode] = useState<SudokuBoardMode>(
+    DEFAULT_SUDOKU_OPTIONS.boardMode
+  );
+  const [sudokuTime, setSudokuTime] = useState<SudokuTimeLimit>(
+    DEFAULT_SUDOKU_OPTIONS.timeLimitMinutes
+  );
+  const remoteOnly = Boolean(getGameDefinition(gameType)?.remoteOnly);
+
   const otherMembers = useMemo(
     () => members.filter((m) => m.id !== currentUser),
     [members, currentUser]
@@ -44,9 +64,10 @@ export function NewGameModal({
     [otherMembers]
   );
 
-  const [mode, setMode] = useState<GameMode>(
+  const [selectedMode, setMode] = useState<GameMode>(
     remoteOpponents.length > 0 ? "remote" : "pass_and_play"
   );
+  const mode: GameMode = remoteOnly ? "remote" : selectedMode;
 
   const availableOpponents =
     mode === "remote" ? remoteOpponents : otherMembers;
@@ -75,7 +96,15 @@ export function NewGameModal({
       opponentId: effectiveOpponentId,
       mode,
       options:
-        gameType === "dots_and_boxes" ? { size: dotsBoardSize } : undefined,
+        gameType === "dots_and_boxes"
+          ? { size: dotsBoardSize }
+          : gameType === "sudoku"
+            ? {
+                difficulty: sudokuDifficulty,
+                boardMode: sudokuBoardMode,
+                timeLimitMinutes: sudokuTime,
+              }
+            : undefined,
     });
     setSubmitting(false);
     if (err) {
@@ -228,6 +257,96 @@ export function NewGameModal({
           </div>
         )}
 
+        {/* Versus Sudoku Settings */}
+        {gameType === "sudoku" && (
+          <div style={{ marginBottom: 16 }}>
+            <FieldLabel>Difficulty</FieldLabel>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 8,
+                marginBottom: 14,
+              }}
+            >
+              {SUDOKU_DIFFICULTY_OPTIONS.map((opt) => (
+                <OptionCard
+                  key={opt.id}
+                  selected={sudokuDifficulty === opt.id}
+                  onClick={() => setSudokuDifficulty(opt.id)}
+                  label={opt.label}
+                  subtitle={opt.subtitle}
+                  center
+                />
+              ))}
+            </div>
+
+            <FieldLabel>Board</FieldLabel>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+                marginBottom: 14,
+              }}
+            >
+              {SUDOKU_BOARD_MODE_OPTIONS.map((opt) => (
+                <OptionCard
+                  key={opt.id}
+                  selected={sudokuBoardMode === opt.id}
+                  onClick={() => setSudokuBoardMode(opt.id)}
+                  label={opt.label}
+                  subtitle={opt.subtitle}
+                />
+              ))}
+            </div>
+
+            <FieldLabel>Time limit</FieldLabel>
+            <div
+              role="radiogroup"
+              aria-label="Time limit"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 4,
+                padding: 4,
+                borderRadius: 13,
+                background: "var(--bg-subtle)",
+                border: "1px solid var(--border-subtle)",
+              }}
+            >
+              {SUDOKU_TIME_OPTIONS.map((t) => {
+                const selected = sudokuTime === t;
+                return (
+                  <button
+                    key={t}
+                    id={`sudoku-time-${t}`}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setSudokuTime(t)}
+                    style={{
+                      padding: "8px 0",
+                      borderRadius: 10,
+                      border: "none",
+                      background: selected ? "var(--bg-surface)" : "transparent",
+                      boxShadow: selected ? "var(--card-shadow)" : "none",
+                      color: selected
+                        ? "var(--accent-ink)"
+                        : "var(--text-secondary)",
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t} min
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Play Mode Toggle */}
         <FieldLabel>How do you want to play?</FieldLabel>
         <div
@@ -279,17 +398,23 @@ export function NewGameModal({
                 lineHeight: 1.3,
               }}
             >
-              Notifies them to accept &amp; take turns on their own device.
+              {remoteOnly
+                ? "Notifies them to accept — the clock starts when they do."
+                : "Notifies them to accept & take turns on their own device."}
             </div>
           </button>
 
           <button
             type="button"
+            disabled={remoteOnly}
+            title={remoteOnly ? "Live races need two devices" : undefined}
             onClick={() => {
               setMode("pass_and_play");
               setError(null);
             }}
             style={{
+              opacity: remoteOnly ? 0.45 : 1,
+              cursor: remoteOnly ? "not-allowed" : "pointer",
               padding: "10px 12px",
               borderRadius: 13,
               background:
@@ -301,7 +426,6 @@ export function NewGameModal({
                   ? "var(--accent)"
                   : "var(--border-default)"
               }`,
-              cursor: "pointer",
               textAlign: "left",
             }}
           >
@@ -328,7 +452,9 @@ export function NewGameModal({
                 lineHeight: 1.3,
               }}
             >
-              Play together on this device — great for kids without logins.
+              {remoteOnly
+                ? "Not available — live races need two devices."
+                : "Play together on this device — great for kids without logins."}
             </div>
           </button>
         </div>
@@ -381,7 +507,7 @@ export function NewGameModal({
                 flexWrap: "wrap",
               }}
             >
-              {mode === "remote" && otherMembers.length > 0 && (
+              {mode === "remote" && !remoteOnly && otherMembers.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setMode("pass_and_play")}
@@ -538,5 +664,57 @@ export function NewGameModal({
         </button>
       </div>
     </ModalShell>
+  );
+}
+
+function OptionCard({
+  selected,
+  onClick,
+  label,
+  subtitle,
+  center,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  label: string;
+  subtitle: string;
+  center?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onClick}
+      style={{
+        padding: "9px 11px",
+        borderRadius: 12,
+        background: selected ? "var(--accent-soft)" : "var(--bg-surface)",
+        border: `1.5px solid ${
+          selected ? "var(--accent)" : "var(--border-default)"
+        }`,
+        cursor: "pointer",
+        textAlign: center ? "center" : "left",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 13.5,
+          fontWeight: 800,
+          color: selected ? "var(--accent-ink)" : "var(--text-primary)",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--text-muted)",
+          marginTop: 2,
+          lineHeight: 1.3,
+        }}
+      >
+        {subtitle}
+      </div>
+    </button>
   );
 }

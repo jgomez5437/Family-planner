@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Check,
   ChevronLeft,
@@ -14,6 +14,7 @@ import {
   Sparkles,
   Trophy,
   X,
+  Zap,
 } from "lucide-react";
 import { CARD_SHADOW } from "@/lib/constants";
 import { formatRelativeTime } from "@/lib/dates";
@@ -30,14 +31,28 @@ import {
 import { TicTacToeBoard } from "@/components/games/TicTacToeBoard";
 import { PoolBoard } from "@/components/games/PoolBoard";
 import { DotsAndBoxesBoard } from "@/components/games/DotsAndBoxesBoard";
+import {
+  SudokuBoard,
+  type SudokuMoveResult,
+} from "@/components/games/SudokuBoard";
 import { NewGameModal } from "@/components/games/NewGameModal";
 import { isDotsAndBoxesState } from "@/lib/games/dotsAndBoxes";
+import { formatSudokuSettings, isSudokuState } from "@/lib/games/sudoku";
 import type {
   FamilyGame,
   GameMode,
   GameTypeId,
   MemberId,
 } from "@/types/family";
+
+function formatShortRemaining(endsAt: string | null, nowMs: number): string {
+  if (!endsAt) return "";
+  const ms = Math.max(0, Date.parse(endsAt) - nowMs);
+  const secs = Math.ceil(ms / 1000);
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
 
 export function GamesTab({
   games,
@@ -47,6 +62,7 @@ export function GamesTab({
   onCreateGame,
   onRespondInvite,
   onMakeMove,
+  onSyncGame,
   onForfeitGame,
   onOpenFamilySettings,
 }: {
@@ -65,7 +81,11 @@ export function GamesTab({
     gameId: string,
     decision: "accept" | "decline" | "cancel"
   ) => Promise<void>;
-  onMakeMove: (gameId: string, move: unknown) => Promise<void>;
+  onMakeMove: (
+    gameId: string,
+    move: unknown
+  ) => Promise<SudokuMoveResult | void>;
+  onSyncGame?: (gameId: string) => void;
   onForfeitGame: (gameId: string) => Promise<void>;
   onOpenFamilySettings: () => void;
 }) {
@@ -73,6 +93,7 @@ export function GamesTab({
   const [newGameOpen, setNewGameOpen] = useState(false);
   const [busyGameId, setBusyGameId] = useState<string | null>(null);
   const [confirmForfeitId, setConfirmForfeitId] = useState<string | null>(null);
+  const [lobbyNowMs, setLobbyNowMs] = useState(() => Date.now());
 
   const selectedGame = useMemo(
     () => (selectedGameId ? games.find((g) => g.id === selectedGameId) || null : null),
@@ -100,12 +121,36 @@ export function GamesTab({
       (g) => g.status === "active" && g.players.includes(currentUser)
     );
     return [...mine].sort((a, b) => {
-      const aMyTurn = a.mode === "remote" && a.currentTurnId === currentUser ? 0 : a.mode === "pass_and_play" ? 1 : 2;
-      const bMyTurn = b.mode === "remote" && b.currentTurnId === currentUser ? 0 : b.mode === "pass_and_play" ? 1 : 2;
-      if (aMyTurn !== bMyTurn) return aMyTurn - bMyTurn;
+      const aLive = Boolean(getGameDefinition(a.gameType)?.simultaneous);
+      const bLive = Boolean(getGameDefinition(b.gameType)?.simultaneous);
+      const aPriority =
+        aLive || (a.mode === "remote" && a.currentTurnId === currentUser)
+          ? 0
+          : a.mode === "pass_and_play"
+            ? 1
+            : 2;
+      const bPriority =
+        bLive || (b.mode === "remote" && b.currentTurnId === currentUser)
+          ? 0
+          : b.mode === "pass_and_play"
+            ? 1
+            : 2;
+      if (aPriority !== bPriority) return aPriority - bPriority;
       return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
     });
   }, [games, currentUser]);
+
+  const hasLobbyTimedGame = useMemo(
+    () => !selectedGame && activeGames.some((g) => g.gameType === "sudoku"),
+    [selectedGame, activeGames]
+  );
+
+  useEffect(() => {
+    if (!hasLobbyTimedGame) return;
+    setLobbyNowMs(Date.now());
+    const id = window.setInterval(() => setLobbyNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [hasLobbyTimedGame]);
 
   const completedGames = useMemo(
     () =>
@@ -145,7 +190,7 @@ export function GamesTab({
   async function handleMove(gameId: string, move: unknown) {
     setBusyGameId(gameId);
     try {
-      await onMakeMove(gameId, move);
+      return await onMakeMove(gameId, move);
     } finally {
       setBusyGameId(null);
     }
@@ -565,6 +610,22 @@ export function GamesTab({
                 onBack={() => onSelectGame(null)}
               />
             )}
+
+          {selectedGame.status !== "declined" &&
+            selectedGame.status !== "cancelled" &&
+            selectedGame.gameType === "sudoku" && (
+              <SudokuBoard
+                key={selectedGame.id}
+                game={selectedGame}
+                currentUser={currentUser}
+                onMakeMove={(move) => handleMove(selectedGame.id, move)}
+                onSyncNow={
+                  onSyncGame ? () => onSyncGame(selectedGame.id) : undefined
+                }
+                onRematch={() => void handleRematch(selectedGame)}
+                onBack={() => onSelectGame(null)}
+              />
+            )}
         </div>
       </div>
     );
@@ -597,7 +658,7 @@ export function GamesTab({
             Family Games
           </div>
           <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-            Challenge family members to turn-based matches.
+            Challenge family members to turn-based matches and live races.
           </div>
         </div>
         <button
@@ -684,6 +745,9 @@ export function GamesTab({
                         {g.gameType === "dots_and_boxes" &&
                         isDotsAndBoxesState(g.state)
                           ? ` (${g.state.rows}×${g.state.cols})`
+                          : ""}
+                        {g.gameType === "sudoku" && isSudokuState(g.state)
+                          ? ` · ${formatSudokuSettings(g.state)}`
                           : ""}
                         {g.rematchOfId ? " · Rematch" : ""}
                       </span>
@@ -788,6 +852,7 @@ export function GamesTab({
                         alignItems: "center",
                         gap: 5,
                         marginTop: 2,
+                        flexWrap: "wrap",
                       }}
                     >
                       <span>
@@ -795,6 +860,9 @@ export function GamesTab({
                         {g.gameType === "dots_and_boxes" &&
                         isDotsAndBoxesState(g.state)
                           ? ` (${g.state.rows}×${g.state.cols})`
+                          : ""}
+                        {g.gameType === "sudoku" && isSudokuState(g.state)
+                          ? ` · ${formatSudokuSettings(g.state)}`
                           : ""}
                       </span>
                       <span>·</span>
@@ -835,7 +903,7 @@ export function GamesTab({
         {activeGames.length === 0 ? (
           <EmptyState
             text="No active games right now"
-            sub="Challenge a family member to Tic-Tac-Toe, 8-Ball Pool, or Dots & Boxes, or start a Pass & Play round."
+            sub="Challenge a family member to Tic-Tac-Toe, 8-Ball Pool, Dots & Boxes, or Versus Sudoku."
             actionLabel="Start a Game"
             onAction={() => setNewGameOpen(true)}
           />
@@ -846,10 +914,17 @@ export function GamesTab({
               g.players[0] === currentUser ? g.players[1] : g.players[0];
             const other = memberById(otherId);
             const isPassAndPlay = g.mode === "pass_and_play";
-            const isMyTurn = !isPassAndPlay && g.currentTurnId === currentUser;
+            const isSimultaneous = Boolean(def?.simultaneous);
+            const isMyTurn =
+              !isPassAndPlay &&
+              (isSimultaneous || g.currentTurnId === currentUser);
             const turnMember = g.currentTurnId
               ? memberById(g.currentTurnId)
               : null;
+            const sudokuRemaining =
+              g.gameType === "sudoku" && isSudokuState(g.state)
+                ? formatShortRemaining(g.state.endsAt, lobbyNowMs)
+                : "";
 
             return (
               <button
@@ -908,6 +983,7 @@ export function GamesTab({
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
+                        flexWrap: "wrap",
                       }}
                     >
                       {g.gameType === "dots_and_boxes" &&
@@ -919,24 +995,30 @@ export function GamesTab({
                             <span>·</span>
                           </>
                         )}
-                      <span>
-                        {g.moves.length}{" "}
-                        {g.gameType === "pool"
-                          ? g.moves.length === 1
-                            ? "shot"
-                            : "shots"
-                          : g.gameType === "dots_and_boxes"
-                            ? g.moves.length === 1
-                              ? "line"
-                              : "lines"
-                            : g.moves.length === 1
-                              ? "move"
-                              : "moves"}
-                      </span>
-                      <span>·</span>
-                      <span suppressHydrationWarning>
-                        {formatRelativeTime(g.updatedAt) || "Just now"}
-                      </span>
+                      {g.gameType === "sudoku" && isSudokuState(g.state) ? (
+                        <span>{formatSudokuSettings(g.state)}</span>
+                      ) : (
+                        <>
+                          <span>
+                            {g.moves.length}{" "}
+                            {g.gameType === "pool"
+                              ? g.moves.length === 1
+                                ? "shot"
+                                : "shots"
+                              : g.gameType === "dots_and_boxes"
+                                ? g.moves.length === 1
+                                  ? "line"
+                                  : "lines"
+                                : g.moves.length === 1
+                                  ? "move"
+                                  : "moves"}
+                          </span>
+                          <span>·</span>
+                          <span suppressHydrationWarning>
+                            {formatRelativeTime(g.updatedAt) || "Just now"}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -965,6 +1047,24 @@ export function GamesTab({
                     >
                       <Smartphone size={11} />
                       {turnMember ? `${turnMember.name}'s turn` : "Pass & Play"}
+                    </span>
+                  ) : isSimultaneous ? (
+                    <span
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        background: "var(--accent)",
+                        color: "#fff",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      <Zap size={11} />{" "}
+                      {sudokuRemaining ? `Live · ${sudokuRemaining}` : "Live"}
                     </span>
                   ) : isMyTurn ? (
                     <span
@@ -1302,6 +1402,25 @@ export function GamesTab({
                               {g.state.scores[p2Id] ?? 0}
                             </span>
                           )}
+                        {g.gameType === "sudoku" && isSudokuState(g.state) && (
+                          <span
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 600,
+                              padding: "2px 7px",
+                              borderRadius: 999,
+                              background: "var(--bg-subtle)",
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {formatSudokuSettings(g.state)}
+                            {g.state.finalCorrect
+                              ? ` · ${g.state.finalCorrect[p1Id] ?? 0}–${
+                                  g.state.finalCorrect[p2Id] ?? 0
+                                }`
+                              : ""}
+                          </span>
+                        )}
                         {isPassAndPlay && (
                           <span
                             style={{
@@ -1374,8 +1493,8 @@ export function GamesTab({
       >
         <Gamepad2 size={14} />
         <span>
-          Tic-Tac-Toe, 8-Ball Pool &amp; Dots &amp; Boxes are live — more family
-          games coming soon!
+          Tic-Tac-Toe, 8-Ball Pool, Dots &amp; Boxes &amp; Versus Sudoku are
+          live — more family games coming soon!
         </span>
       </div>
 

@@ -27,7 +27,15 @@ import {
 } from "@/lib/auth";
 import { MEMBER_COLOR_PALETTES } from "@/lib/constants";
 import { fmtShortDate, fmtTime, isIsoTimestamp, uid } from "@/lib/dates";
-import { getGameDefinition } from "@/lib/games/registry";
+import {
+  getGameDefinition,
+  sanitizeGameForViewer,
+  sanitizeGamesForViewer,
+} from "@/lib/games/registry";
+import type {
+  GameDefinition,
+  MoveValidationResult,
+} from "@/lib/games/types";
 import type {
   ActivityItem,
   AppTabId,
@@ -923,7 +931,7 @@ export async function getFamilyState(
         doseLog,
         profiles,
         notifications: formattedNotifications,
-        games: formattedGames,
+        games: sanitizeGamesForViewer(formattedGames, currentUser.id),
         dbConnected: true,
       };
     } catch (err) {
@@ -957,7 +965,7 @@ export async function getFamilyState(
     doseLog: fam.doseLog,
     profiles: fam.profiles,
     notifications: userNotifications,
-    games: (fam.games || []).slice(0, 100),
+    games: sanitizeGamesForViewer((fam.games || []).slice(0, 100), currentUser.id),
     dbConnected: false,
   };
 }
@@ -3110,7 +3118,7 @@ export async function getGamesForFamily(
         .where(eq(games.familyId, familyId))
         .orderBy(desc(games.updatedAt))
         .limit(limit);
-      return rows.map(mapDbGameRow);
+      return settleExpiredGames(rows.map(mapDbGameRow));
     } catch (err) {
       console.warn("Error fetching games from Neon DB:", err);
       return [];
@@ -3118,7 +3126,19 @@ export async function getGamesForFamily(
   }
 
   const fam = getMemoryStore().families.get(familyId);
-  return (fam?.games || []).slice(0, limit);
+  return settleExpiredGames((fam?.games || []).slice(0, limit));
+}
+
+async function settleExpiredGames(list: FamilyGame[]): Promise<FamilyGame[]> {
+  const out: FamilyGame[] = [];
+  for (const g of list) {
+    if (g.status === "active" && getGameDefinition(g.gameType)?.resolveTimeout) {
+      out.push((await settleExpiredGame(g)) || g);
+    } else {
+      out.push(g);
+    }
+  }
+  return out;
 }
 
 async function getGameById(
@@ -3162,6 +3182,13 @@ export async function createGameRecord(
 
   const mode: GameMode =
     input.mode === "pass_and_play" ? "pass_and_play" : "remote";
+  if (mode === "pass_and_play" && gameDef.remoteOnly) {
+    return {
+      ok: false,
+      error: `${gameDef.name} is a live race — send a challenge instead of Pass & Play.`,
+      status: 400,
+    };
+  }
   const opponentId = (input.opponentId || "").trim();
   if (!opponentId) {
     return { ok: false, error: "Please choose an opponent.", status: 400 };
@@ -3344,12 +3371,19 @@ export async function respondToGameInviteRecord(
       : decision === "decline"
         ? "declined"
         : "cancelled";
-  const nextState =
+  const baseState =
     decision === "accept" &&
     (!existing.state || Object.keys(existing.state).length === 0)
       ? gameDef.createInitialState(existing.players)
       : existing.state;
-  const nextTurnId = decision === "accept" ? existing.players[0] : null;
+  const nextState =
+    decision === "accept" && gameDef.onActivate
+      ? gameDef.onActivate(baseState, now)
+      : baseState;
+  const nextTurnId =
+    decision === "accept" && !gameDef.simultaneous
+      ? existing.players[0]
+      : null;
 
   const updated: FamilyGame = {
     ...existing,
@@ -3404,9 +3438,11 @@ export async function respondToGameInviteRecord(
         recipientIds: [existing.challengerId],
         category: "game",
         title: `${actorName} accepted your ${gameDef.name} challenge!`,
-        body: challengerGoesFirst
-          ? "It's your turn to make the first move."
-          : `${actorName} goes first — watch for their opening move.`,
+        body: gameDef.simultaneous
+          ? "Game on — the clock is running! Jump in now."
+          : challengerGoesFirst
+            ? "It's your turn to make the first move."
+            : `${actorName} goes first — watch for their opening move.`,
         target: {
           tab: "games",
           entityId: updated.id,
@@ -3431,6 +3467,121 @@ export async function respondToGameInviteRecord(
   return { ok: true, game: updated };
 }
 
+/**
+ * Lazily settles a timed game whose clock has run out.
+ * Returns the completed game if it was settled now (or by a concurrent request),
+ * or null if the game is not expired / not timed.
+ */
+async function settleExpiredGame(
+  game: FamilyGame
+): Promise<FamilyGame | null> {
+  if (game.status !== "active") return null;
+  const gameDef = getGameDefinition(game.gameType);
+  if (!gameDef?.resolveTimeout) return null;
+  const now = new Date();
+  const resolved = gameDef.resolveTimeout(game.state, game.players, now);
+  if (!resolved) return null;
+
+  const nowIso = now.toISOString();
+  const settled: FamilyGame = {
+    ...game,
+    state: resolved.nextState,
+    status: "completed",
+    currentTurnId: null,
+    winnerId: resolved.winnerId,
+    outcome: resolved.outcome,
+    updatedAt: nowIso,
+    completedAt: nowIso,
+  };
+
+  const db = await getReadyDb();
+  if (db) {
+    const rows = await db
+      .update(games)
+      .set({
+        state: settled.state,
+        status: "completed",
+        currentTurnId: null,
+        winnerId: settled.winnerId,
+        outcome: settled.outcome,
+        updatedAt: now,
+        completedAt: now,
+      })
+      .where(
+        and(
+          eq(games.id, game.id),
+          eq(games.familyId, game.familyId),
+          eq(games.status, "active")
+        )
+      )
+      .returning({ id: games.id });
+    if (rows.length === 0) {
+      // Someone else settled/finished it first.
+      return getGameById(game.familyId, game.id);
+    }
+  } else {
+    const fam = getMemoryStore().families.get(game.familyId);
+    if (fam) {
+      fam.games = [
+        settled,
+        ...(fam.games || []).filter((g) => g.id !== game.id),
+      ];
+    }
+  }
+
+  if (game.mode === "remote") {
+    const [p1, p2] = game.players;
+    const [n1, n2] = await Promise.all([
+      resolveMemberName(game.familyId, p1),
+      resolveMemberName(game.familyId, p2),
+    ]);
+    const nameOf = (id: MemberId) => (id === p1 ? n1 : n2);
+    for (const recipient of [p1, p2]) {
+      const other = recipient === p1 ? p2 : p1;
+      const title =
+        settled.outcome === "draw"
+          ? `Time's up! ${gameDef.name} ended in a draw`
+          : settled.winnerId === recipient
+            ? `Time's up — you won ${gameDef.name}!`
+            : `Time's up! ${nameOf(settled.winnerId!)} won ${gameDef.name}`;
+      await dispatchFamilyNotification({
+        familyId: game.familyId,
+        actorId: other,
+        recipientIds: [recipient],
+        category: "game",
+        title,
+        body: "Tap to see the final board or request a rematch.",
+        target: { tab: "games", entityId: game.id },
+      });
+    }
+    await recordActivity(
+      game.familyId,
+      settled.outcome === "draw"
+        ? `${n1} & ${n2} tied in ${gameDef.name}`
+        : `${nameOf(settled.winnerId!)} won ${gameDef.name} against ${nameOf(
+            settled.winnerId === p1 ? p2 : p1
+          )}`,
+      settled.outcome === "draw" ? "Draw" : gameDef.name,
+      settled.winnerId || p1
+    );
+  }
+
+  return settled;
+}
+
+/** Loads one game for a viewer, settling expired timers and hiding secrets. */
+export async function getGameForViewer(
+  familyId: string,
+  gameId: string,
+  viewerId: MemberId
+): Promise<FamilyGame | null> {
+  let game = await getGameById(familyId, gameId);
+  if (!game) return null;
+  const settled = await settleExpiredGame(game);
+  if (settled) game = settled;
+  return sanitizeGameForViewer(game, viewerId);
+}
+
 export async function makeGameMoveRecord(
   familyId: string,
   gameId: string,
@@ -3440,107 +3591,136 @@ export async function makeGameMoveRecord(
   | { ok: true; game: FamilyGame }
   | { ok: false; error: string; status: number }
 > {
-  const existing = await getGameById(familyId, gameId);
-  if (!existing) {
-    return { ok: false, error: "Game not found.", status: 404 };
-  }
-  if (existing.status !== "active" || !existing.currentTurnId) {
-    return {
-      ok: false,
-      error: "This game is not currently active.",
-      status: 409,
-    };
-  }
+  const MAX_ATTEMPTS = 4;
+  let existing: FamilyGame | null = null;
+  let movingPlayerId: MemberId = actorId;
+  let result: Extract<MoveValidationResult, { ok: true }> | null = null;
+  let updated: FamilyGame | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let gameDef: GameDefinition<any, any> | null = null;
 
-  const gameDef = getGameDefinition(existing.gameType);
-  if (!gameDef) {
-    return { ok: false, error: "Unsupported game type.", status: 400 };
-  }
-
-  if (existing.mode === "remote") {
-    if (existing.currentTurnId !== actorId) {
-      return { ok: false, error: "It's not your turn yet.", status: 403 };
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    existing = await getGameById(familyId, gameId);
+    if (!existing) {
+      return { ok: false, error: "Game not found.", status: 404 };
     }
-  } else {
-    if (!existing.players.includes(actorId)) {
+    gameDef = getGameDefinition(existing.gameType);
+    if (!gameDef) {
+      return { ok: false, error: "Unsupported game type.", status: 400 };
+    }
+    const simultaneous = Boolean(gameDef.simultaneous);
+
+    if (
+      existing.status !== "active" ||
+      (!simultaneous && !existing.currentTurnId)
+    ) {
       return {
         ok: false,
-        error: "You are not a player in this Pass & Play match.",
-        status: 403,
-      };
-    }
-  }
-
-  const movingPlayerId = existing.currentTurnId;
-  const result = gameDef.validateAndApplyMove({
-    state: existing.state,
-    move: rawMove,
-    playerId: movingPlayerId,
-    players: existing.players,
-  });
-
-  if (!result.ok) {
-    return { ok: false, error: result.error, status: 400 };
-  }
-
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const nextMoves = [
-    ...(existing.moves || []),
-    { by: movingPlayerId, move: rawMove, at: nowIso },
-  ];
-
-  const updated: FamilyGame = {
-    ...existing,
-    state: result.nextState,
-    moves: nextMoves,
-    currentTurnId: result.nextTurnId,
-    status: result.completed ? "completed" : "active",
-    winnerId: result.winnerId,
-    outcome: result.outcome,
-    updatedAt: nowIso,
-    completedAt: result.completed ? nowIso : null,
-  };
-
-  const db = await getReadyDb();
-  if (db) {
-    const updatedRows = await db
-      .update(games)
-      .set({
-        state: updated.state,
-        moves: updated.moves,
-        currentTurnId: updated.currentTurnId,
-        status: updated.status,
-        winnerId: updated.winnerId,
-        outcome: updated.outcome,
-        updatedAt: now,
-        completedAt: result.completed ? now : null,
-      })
-      .where(
-        and(
-          eq(games.id, gameId),
-          eq(games.familyId, familyId),
-          eq(games.status, "active"),
-          eq(games.currentTurnId, movingPlayerId),
-          sql`jsonb_array_length(${games.moves}) = ${(existing.moves || []).length}`
-        )
-      )
-      .returning({ id: games.id });
-    if (updatedRows.length === 0) {
-      return {
-        ok: false,
-        error: "This turn was already played. Refreshing board.",
+        error: "This game is not currently active.",
         status: 409,
       };
     }
-  } else {
-    const fam = getMemoryStore().families.get(familyId);
-    if (fam) {
-      fam.games = [
-        updated,
-        ...(fam.games || []).filter((g) => g.id !== gameId),
-      ];
+
+    if (simultaneous || existing.mode !== "remote") {
+      if (!existing.players.includes(actorId)) {
+        return {
+          ok: false,
+          error: "You are not a player in this match.",
+          status: 403,
+        };
+      }
+    } else if (existing.currentTurnId !== actorId) {
+      return { ok: false, error: "It's not your turn yet.", status: 403 };
     }
+
+    // Timed games: settle first if the clock already ran out.
+    const settled = await settleExpiredGame(existing);
+    if (settled) {
+      return { ok: false, error: "Time's up!", status: 409 };
+    }
+
+    movingPlayerId = simultaneous ? actorId : existing.currentTurnId!;
+    const now = new Date();
+    const attemptResult = gameDef.validateAndApplyMove({
+      state: existing.state,
+      move: rawMove,
+      playerId: movingPlayerId,
+      players: existing.players,
+      now,
+    });
+
+    if (!attemptResult.ok) {
+      return { ok: false, error: attemptResult.error, status: 400 };
+    }
+    result = attemptResult;
+
+    const nowIso = now.toISOString();
+    const nextMoves = [
+      ...(existing.moves || []),
+      { by: movingPlayerId, move: rawMove, at: nowIso },
+    ];
+
+    updated = {
+      ...existing,
+      state: result.nextState,
+      moves: nextMoves,
+      currentTurnId: result.nextTurnId,
+      status: result.completed ? "completed" : "active",
+      winnerId: result.winnerId,
+      outcome: result.outcome,
+      updatedAt: nowIso,
+      completedAt: result.completed ? nowIso : null,
+    };
+
+    const db = await getReadyDb();
+    if (db) {
+      const conditions = [
+        eq(games.id, gameId),
+        eq(games.familyId, familyId),
+        eq(games.status, "active"),
+        sql`jsonb_array_length(${games.moves}) = ${(existing.moves || []).length}`,
+      ];
+      if (!simultaneous) {
+        conditions.push(eq(games.currentTurnId, movingPlayerId));
+      }
+      const updatedRows = await db
+        .update(games)
+        .set({
+          state: updated.state,
+          moves: updated.moves,
+          currentTurnId: updated.currentTurnId,
+          status: updated.status,
+          winnerId: updated.winnerId,
+          outcome: updated.outcome,
+          updatedAt: now,
+          completedAt: result.completed ? now : null,
+        })
+        .where(and(...conditions))
+        .returning({ id: games.id });
+      if (updatedRows.length === 0) {
+        if (simultaneous && attempt < MAX_ATTEMPTS - 1) {
+          continue; // opponent moved at the same time — re-read and re-apply
+        }
+        return {
+          ok: false,
+          error: "This turn was already played. Refreshing board.",
+          status: 409,
+        };
+      }
+    } else {
+      const fam = getMemoryStore().families.get(familyId);
+      if (fam) {
+        fam.games = [
+          updated,
+          ...(fam.games || []).filter((g) => g.id !== gameId),
+        ];
+      }
+    }
+    break;
+  }
+
+  if (!existing || !result || !updated || !gameDef) {
+    return { ok: false, error: "Could not save move.", status: 409 };
   }
 
   if (existing.mode === "remote") {

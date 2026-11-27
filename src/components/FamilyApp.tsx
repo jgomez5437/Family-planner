@@ -370,6 +370,32 @@ export default function FamilyApp({
     }
   }, []);
 
+  const pollSingleGame = useCallback(async (gameId: string) => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    const gameSeqAtStart = gameMutationSeqRef.current;
+    try {
+      const res = await fetch(`/api/games/${encodeURIComponent(gameId)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const json = (await res.json()) as { game?: FamilyGame };
+      if (
+        json.game &&
+        pendingGameMutationsRef.current === 0 &&
+        gameMutationSeqRef.current === gameSeqAtStart
+      ) {
+        const fresh = json.game;
+        setGames((prev) =>
+          prev.some((g) => g.id === fresh.id)
+            ? prev.map((g) => (g.id === fresh.id ? fresh : g))
+            : [fresh, ...prev]
+        );
+      }
+    } catch {
+      /* background polling failure is non-fatal */
+    }
+  }, []);
+
   // Poll for new notifications periodically, on window focus, and when reconnecting
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -428,6 +454,33 @@ export default function FamilyApp({
     }, 5000);
     return () => window.clearInterval(interval);
   }, [tab, hasLiveRemoteGame, pollGames]);
+
+  // Fast ~1s single-game poll while a live/pending simultaneous game (e.g. Versus Sudoku) is open
+  const openRealtimeGameId = useMemo(() => {
+    if (tab !== "games" || !selectedGameId) return null;
+    const g = games.find((item) => item.id === selectedGameId);
+    if (!g) return null;
+    if (g.status !== "active" && g.status !== "pending") return null;
+    return getGameDefinition(g.gameType)?.simultaneous ? g.id : null;
+  }, [tab, selectedGameId, games]);
+
+  useEffect(() => {
+    if (!openRealtimeGameId) return;
+    let inFlight = false;
+    const tick = async () => {
+      if (inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        await pollSingleGame(openRealtimeGameId);
+      } finally {
+        inFlight = false;
+      }
+    };
+    const interval = window.setInterval(() => {
+      void tick();
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [openRealtimeGameId, pollSingleGame]);
 
   function fireToast(msg: string) {
     setToast(msg);
@@ -1750,16 +1803,26 @@ export default function FamilyApp({
     }
   }
 
-  async function handleMakeGameMove(gameId: string, move: unknown) {
+  async function handleMakeGameMove(
+    gameId: string,
+    move: unknown
+  ): Promise<{ ok: boolean; error?: string }> {
     const existing = games.find((g) => g.id === gameId);
-    if (!existing) return;
+    if (!existing) return { ok: false, error: "Game not found." };
 
     const previousGames = games;
     const gameDef = getGameDefinition(existing.gameType);
+    const isSimultaneous = Boolean(gameDef?.simultaneous);
     const movingPlayerId = existing.currentTurnId;
 
-    // Optimistic client move for snappy feel
-    if (gameDef && movingPlayerId && existing.status === "active") {
+    // Optimistic client move for turn-based games (simultaneous games like
+    // Sudoku keep hidden state server-side and render their own pending UI)
+    if (
+      !isSimultaneous &&
+      gameDef &&
+      movingPlayerId &&
+      existing.status === "active"
+    ) {
       const preview = gameDef.validateAndApplyMove({
         state: existing.state,
         move,
@@ -1768,7 +1831,7 @@ export default function FamilyApp({
       });
       if (!preview.ok) {
         fireToast(preview.error);
-        return;
+        return { ok: false, error: preview.error };
       }
       const nowIso = new Date().toISOString();
       const optimistic: FamilyGame = {
@@ -1801,10 +1864,15 @@ export default function FamilyApp({
       });
       const json = (await res.json()) as { game?: FamilyGame; error?: string };
       if (!res.ok || !json.game) {
-        setGames(previousGames);
-        fireToast(json.error || "Move could not be saved.");
-        void pollGames();
-        return;
+        const errMsg = json.error || "Move could not be saved.";
+        if (isSimultaneous) {
+          void pollSingleGame(gameId);
+        } else {
+          setGames(previousGames);
+          fireToast(errMsg);
+          void pollGames();
+        }
+        return { ok: false, error: errMsg };
       }
       const saved = json.game;
       setGames((prev) => [saved, ...prev.filter((g) => g.id !== saved.id)]);
@@ -1847,9 +1915,13 @@ export default function FamilyApp({
           }
         }
       }
+      return { ok: true };
     } catch {
-      setGames(previousGames);
-      fireToast("Network error while saving move.");
+      if (!isSimultaneous) {
+        setGames(previousGames);
+        fireToast("Network error while saving move.");
+      }
+      return { ok: false, error: "Network error while saving move." };
     } finally {
       pendingGameMutationsRef.current = Math.max(
         0,
@@ -2273,6 +2345,7 @@ export default function FamilyApp({
                 onCreateGame={handleCreateGame}
                 onRespondInvite={handleRespondGameInvite}
                 onMakeMove={handleMakeGameMove}
+                onSyncGame={(id) => void pollSingleGame(id)}
                 onForfeitGame={handleForfeitGame}
                 onOpenFamilySettings={() => setSettingsScreen("family")}
               />
