@@ -38,7 +38,13 @@ export interface GameDefinition<
   shortDescription: string;
   rulesSummary: string;
   emoji: string;
-  createInitialState: (players: [MemberId, MemberId]) => TState;
+  createInitialState: (
+    players: [MemberId, MemberId],
+    options?: Record<string, unknown>
+  ) => TState;
+  extractRematchOptions?: (
+    prevState: TState
+  ) => Record<string, unknown> | undefined;
   validateAndApplyMove: (
     ctx: GameMoveContext<TState, TMove>
   ) => MoveValidationResult<TState>;

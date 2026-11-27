@@ -29,7 +29,9 @@ import {
 } from "@/components/ui/Primitives";
 import { TicTacToeBoard } from "@/components/games/TicTacToeBoard";
 import { PoolBoard } from "@/components/games/PoolBoard";
+import { DotsAndBoxesBoard } from "@/components/games/DotsAndBoxesBoard";
 import { NewGameModal } from "@/components/games/NewGameModal";
+import { isDotsAndBoxesState } from "@/lib/games/dotsAndBoxes";
 import type {
   FamilyGame,
   GameMode,
@@ -57,6 +59,7 @@ export function GamesTab({
     opponentId: MemberId;
     mode: GameMode;
     rematchOfId?: string | null;
+    options?: Record<string, unknown>;
   }) => Promise<string | null>;
   onRespondInvite: (
     gameId: string,
@@ -548,6 +551,20 @@ export function GamesTab({
                 onBack={() => onSelectGame(null)}
               />
             )}
+
+          {selectedGame.status !== "declined" &&
+            selectedGame.status !== "cancelled" &&
+            selectedGame.gameType === "dots_and_boxes" && (
+              <DotsAndBoxesBoard
+                key={selectedGame.id}
+                game={selectedGame}
+                currentUser={currentUser}
+                submitting={busyGameId === selectedGame.id}
+                onMakeMove={(move) => void handleMove(selectedGame.id, move)}
+                onRematch={() => void handleRematch(selectedGame)}
+                onBack={() => onSelectGame(null)}
+              />
+            )}
         </div>
       </div>
     );
@@ -664,6 +681,10 @@ export function GamesTab({
                     >
                       <span>
                         {def?.emoji} {def?.name}
+                        {g.gameType === "dots_and_boxes" &&
+                        isDotsAndBoxesState(g.state)
+                          ? ` (${g.state.rows}×${g.state.cols})`
+                          : ""}
                         {g.rematchOfId ? " · Rematch" : ""}
                       </span>
                       <span>·</span>
@@ -771,6 +792,10 @@ export function GamesTab({
                     >
                       <span>
                         {def?.emoji} {def?.name}
+                        {g.gameType === "dots_and_boxes" &&
+                        isDotsAndBoxesState(g.state)
+                          ? ` (${g.state.rows}×${g.state.cols})`
+                          : ""}
                       </span>
                       <span>·</span>
                       <span suppressHydrationWarning>
@@ -810,7 +835,7 @@ export function GamesTab({
         {activeGames.length === 0 ? (
           <EmptyState
             text="No active games right now"
-            sub="Challenge a family member to 8-Ball Pool or Tic-Tac-Toe, or start a Pass & Play round."
+            sub="Challenge a family member to Tic-Tac-Toe, 8-Ball Pool, or Dots & Boxes, or start a Pass & Play round."
             actionLabel="Start a Game"
             onAction={() => setNewGameOpen(true)}
           />
@@ -885,15 +910,28 @@ export function GamesTab({
                         gap: 6,
                       }}
                     >
+                      {g.gameType === "dots_and_boxes" &&
+                        isDotsAndBoxesState(g.state) && (
+                          <>
+                            <span>
+                              {g.state.rows}×{g.state.cols}
+                            </span>
+                            <span>·</span>
+                          </>
+                        )}
                       <span>
                         {g.moves.length}{" "}
                         {g.gameType === "pool"
                           ? g.moves.length === 1
                             ? "shot"
                             : "shots"
-                          : g.moves.length === 1
-                            ? "move"
-                            : "moves"}
+                          : g.gameType === "dots_and_boxes"
+                            ? g.moves.length === 1
+                              ? "line"
+                              : "lines"
+                            : g.moves.length === 1
+                              ? "move"
+                              : "moves"}
                       </span>
                       <span>·</span>
                       <span suppressHydrationWarning>
@@ -1247,6 +1285,23 @@ export function GamesTab({
                         >
                           {outcomeLabel}
                         </span>
+                        {g.gameType === "dots_and_boxes" &&
+                          isDotsAndBoxesState(g.state) && (
+                            <span
+                              style={{
+                                fontSize: 10.5,
+                                fontWeight: 600,
+                                padding: "2px 7px",
+                                borderRadius: 999,
+                                background: "var(--bg-subtle)",
+                                color: "var(--text-secondary)",
+                              }}
+                            >
+                              {g.state.rows}×{g.state.cols} ·{" "}
+                              {g.state.scores[p1Id] ?? 0}–
+                              {g.state.scores[p2Id] ?? 0}
+                            </span>
+                          )}
                         {isPassAndPlay && (
                           <span
                             style={{
@@ -1319,7 +1374,8 @@ export function GamesTab({
       >
         <Gamepad2 size={14} />
         <span>
-          Tic-Tac-Toe &amp; 8-Ball Pool are live — more family games coming soon!
+          Tic-Tac-Toe, 8-Ball Pool &amp; Dots &amp; Boxes are live — more family
+          games coming soon!
         </span>
       </div>
 

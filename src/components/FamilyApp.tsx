@@ -1664,6 +1664,7 @@ export default function FamilyApp({
     opponentId: MemberId;
     mode: GameMode;
     rematchOfId?: string | null;
+    options?: Record<string, unknown>;
   }): Promise<string | null> {
     gameMutationSeqRef.current += 1;
     pendingGameMutationsRef.current += 1;
@@ -1827,8 +1828,12 @@ export default function FamilyApp({
           }
         } else if (saved.winnerId) {
           if (saved.mode === "remote" && saved.outcome === "win") {
+            const loserId =
+              saved.players[0] === saved.winnerId
+                ? saved.players[1]
+                : saved.players[0];
             pushActivity(
-              `${memberById(saved.winnerId).name} won ${gameName} against ${otherName}`,
+              `${memberById(saved.winnerId).name} won ${gameName} against ${memberById(loserId).name}`,
               gameName,
               saved.winnerId
             );

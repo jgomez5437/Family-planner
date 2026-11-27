@@ -37,6 +37,12 @@ export async function POST(request: Request) {
       mode: body?.mode === "pass_and_play" ? "pass_and_play" : "remote",
       rematchOfId:
         typeof body?.rematchOfId === "string" ? body.rematchOfId : null,
+      options:
+        body?.options &&
+        typeof body.options === "object" &&
+        !Array.isArray(body.options)
+          ? (body.options as Record<string, unknown>)
+          : undefined,
     });
 
     if (!result.ok) {
