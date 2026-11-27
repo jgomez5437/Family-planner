@@ -269,6 +269,44 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   animation: pop 0.3s ease;
 }
 
+@keyframes sudokuPop {
+  0% {
+    transform: scale(0.75);
+  }
+  55% {
+    transform: scale(1.16);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes sudokuShake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-4px);
+  }
+  45% {
+    transform: translateX(4px);
+  }
+  70% {
+    transform: translateX(-3px);
+  }
+  88% {
+    transform: translateX(2px);
+  }
+}
+
+.sudoku-pop {
+  animation: sudokuPop 0.28s ease;
+}
+
+.sudoku-shake {
+  animation: sudokuShake 0.36s ease;
+}
+
 button[aria-pressed="true"] svg {
   animation: pop 0.28s ease;
 }

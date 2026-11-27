@@ -9,6 +9,7 @@ import {
   markAllNotificationsReadRecord,
   markNotificationReadRecord,
 } from "@/db/repository";
+import { sanitizeGamesForViewer } from "@/lib/games/registry";
 
 export async function GET() {
   const session = await getAuthenticatedSession();
@@ -27,7 +28,7 @@ export async function GET() {
       notifications: items,
       posts,
       members: familyMembers,
-      games: familyGames,
+      games: sanitizeGamesForViewer(familyGames, session.member.id),
     });
   } catch (err) {
     console.error("Fetch notifications error:", err);

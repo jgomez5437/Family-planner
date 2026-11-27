@@ -4,6 +4,10 @@ import {
   getAuthenticatedSession,
   getGamesForFamily,
 } from "@/db/repository";
+import {
+  sanitizeGameForViewer,
+  sanitizeGamesForViewer,
+} from "@/lib/games/registry";
 
 export async function GET() {
   const session = await getAuthenticatedSession();
@@ -13,7 +17,9 @@ export async function GET() {
 
   try {
     const familyGames = await getGamesForFamily(session.familyId);
-    return NextResponse.json({ games: familyGames });
+    return NextResponse.json({
+      games: sanitizeGamesForViewer(familyGames, session.member.id),
+    });
   } catch (err) {
     console.error("Fetch games error:", err);
     return NextResponse.json(
@@ -52,7 +58,10 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ game: result.game }, { status: 201 });
+    return NextResponse.json(
+      { game: sanitizeGameForViewer(result.game, session.member.id) },
+      { status: 201 }
+    );
   } catch (err) {
     console.error("Create game error:", err);
     return NextResponse.json(

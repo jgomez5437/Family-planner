@@ -1,4 +1,9 @@
-import type { GameOutcome, GameTypeId, MemberId } from "@/types/family";
+import type {
+  FamilyGame,
+  GameOutcome,
+  GameTypeId,
+  MemberId,
+} from "@/types/family";
 
 export type MoveValidationResult<TState = Record<string, unknown>> =
   | {
@@ -22,6 +27,8 @@ export interface GameMoveContext<
   move: TMove;
   playerId: MemberId;
   players: [MemberId, MemberId];
+  /** Server clock for timed games; defaults to `new Date()`. */
+  now?: Date;
 }
 
 /**
@@ -48,4 +55,28 @@ export interface GameDefinition<
   validateAndApplyMove: (
     ctx: GameMoveContext<TState, TMove>
   ) => MoveValidationResult<TState>;
+  /** Only remote play supported (no Pass & Play). */
+  remoteOnly?: boolean;
+  /** Both players may move at any time; `currentTurnId` stays null while active. */
+  simultaneous?: boolean;
+  /** Called when an invite is accepted (e.g. to start a clock). */
+  onActivate?: (state: TState, now: Date) => TState;
+  /**
+   * Strips secrets (e.g. solutions) and the other player's private data
+   * before a game is sent to `viewerId`.
+   */
+  sanitizeForViewer?: (
+    game: FamilyGame<TState>,
+    viewerId: MemberId
+  ) => FamilyGame<TState>;
+  /** Lazy settlement for timed games. Returns null if not yet expired. */
+  resolveTimeout?: (
+    state: TState,
+    players: [MemberId, MemberId],
+    now: Date
+  ) => null | {
+    nextState: TState;
+    winnerId: MemberId | null;
+    outcome: GameOutcome;
+  };
 }

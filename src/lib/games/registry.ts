@@ -7,6 +7,7 @@ import type {
 import { ticTacToeGame } from "./ticTacToe";
 import { poolGame } from "./pool";
 import { dotsAndBoxesGame } from "./dotsAndBoxes";
+import { sudokuGame } from "./sudoku";
 import type { GameDefinition } from "./types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -14,6 +15,7 @@ export const GAME_DEFINITIONS: GameDefinition<any, any>[] = [
   ticTacToeGame,
   poolGame,
   dotsAndBoxesGame,
+  sudokuGame,
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,6 +23,7 @@ export const GAME_DEFINITION_BY_ID: Record<GameTypeId, GameDefinition<any, any>>
   tic_tac_toe: ticTacToeGame,
   pool: poolGame,
   dots_and_boxes: dotsAndBoxesGame,
+  sudoku: sudokuGame,
 };
 
 export function getGameDefinition(
@@ -35,9 +38,29 @@ export function getGameDefinition(
 }
 
 /**
+ * Removes hidden information (e.g. Sudoku solutions, opponent's private board)
+ * before sending a game to `viewerId`.
+ */
+export function sanitizeGameForViewer(
+  game: FamilyGame,
+  viewerId: MemberId
+): FamilyGame {
+  const def = getGameDefinition(game.gameType);
+  return def?.sanitizeForViewer ? def.sanitizeForViewer(game, viewerId) : game;
+}
+
+export function sanitizeGamesForViewer(
+  games: FamilyGame[],
+  viewerId: MemberId
+): FamilyGame[] {
+  return games.map((g) => sanitizeGameForViewer(g, viewerId));
+}
+
+/**
  * Counts games requiring immediate attention from `memberId`:
  * - Pending incoming remote challenges awaiting Accept / Decline
  * - Active remote games where it is currently `memberId`'s turn
+ * - Active real-time (simultaneous) games `memberId` is playing
  */
 export function countActionableGamesForMember(
   games: FamilyGame[],
@@ -49,6 +72,12 @@ export function countActionableGamesForMember(
     if (g.status === "pending" && g.opponentId === memberId) {
       count += 1;
     } else if (g.status === "active" && g.currentTurnId === memberId) {
+      count += 1;
+    } else if (
+      g.status === "active" &&
+      g.players.includes(memberId) &&
+      getGameDefinition(g.gameType)?.simultaneous
+    ) {
       count += 1;
     }
   }
