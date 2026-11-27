@@ -99,6 +99,8 @@ console.log("Shared board…");
     "rejects clue cells"
   );
 
+  check(sudokuGame.rulesSummary === "", "rulesSummary removed");
+
   // Wrong guess -> lockout
   const wrongVal = (sol[cells[0]] % 9) + 1;
   const now = new Date();
@@ -117,9 +119,9 @@ console.log("Shared board…");
     move: { kind: "guess", cell: cells[0], value: sol[cells[0]] },
     playerId: A,
     players,
-    now: new Date(now.getTime() + 1000),
+    now: new Date(now.getTime() + 2500),
   });
-  check(!r.ok, "locked player cannot guess");
+  check(!r.ok, "locked player cannot guess before grace window");
 
   // Correct guess by B
   r = sudokuGame.validateAndApplyMove({
@@ -142,10 +144,24 @@ console.log("Shared board…");
   });
   check(!r.ok, "taken cell rejected");
 
+  // Guess right as 3s lockout ends (within 250ms grace window) succeeds and clears lockout
+  r = sudokuGame.validateAndApplyMove({
+    state: s,
+    move: { kind: "guess", cell: cells[1], value: sol[cells[1]] },
+    playerId: A,
+    players,
+    now: new Date(now.getTime() + 2850),
+  });
+  check(
+    r.ok && r.nextState.lockouts[A] === null,
+    "guess at end of 3s lockout succeeds and clears lockout"
+  );
+  if (r.ok) s = r.nextState;
+
   // Fill the rest: A takes 60%, B the rest -> A wins on board full
   const later = new Date(now.getTime() + 5000);
   let completed = false;
-  for (let k = 1; k < cells.length; k += 1) {
+  for (let k = 2; k < cells.length; k += 1) {
     const who = k % 5 < 3 ? A : B;
     r = sudokuGame.validateAndApplyMove({
       state: s,

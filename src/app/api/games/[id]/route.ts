@@ -28,7 +28,7 @@ export async function GET(
       return NextResponse.json({ error: "Game not found." }, { status: 404 });
     }
     return NextResponse.json(
-      { game },
+      { game, serverNow: new Date().toISOString() },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (err) {
@@ -71,6 +71,7 @@ export async function PATCH(
       }
       return NextResponse.json({
         game: sanitizeGameForViewer(result.game, session.member.id),
+        serverNow: new Date().toISOString(),
       });
     }
 
@@ -83,12 +84,13 @@ export async function PATCH(
       );
       if (!result.ok) {
         return NextResponse.json(
-          { error: result.error },
+          { error: result.error, serverNow: new Date().toISOString() },
           { status: result.status }
         );
       }
       return NextResponse.json({
         game: sanitizeGameForViewer(result.game, session.member.id),
+        serverNow: new Date().toISOString(),
       });
     }
 
@@ -106,6 +108,7 @@ export async function PATCH(
       }
       return NextResponse.json({
         game: sanitizeGameForViewer(result.game, session.member.id),
+        serverNow: new Date().toISOString(),
       });
     }
 

@@ -3,14 +3,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  Check,
+  ChevronLeft,
   Clock,
   Eraser,
   Eye,
   EyeOff,
+  Flag,
   Lock,
   Pencil,
   RotateCcw,
   Trophy,
+  X,
   Zap,
 } from "lucide-react";
 import {
@@ -52,15 +56,23 @@ function sameUnit(a: number, b: number): boolean {
 export function SudokuBoard({
   game,
   currentUser,
+  submitting = false,
+  serverClockOffsetMs = 0,
   onMakeMove,
   onSyncNow,
+  onRespondInvite,
+  onForfeit,
   onRematch,
   onBack,
 }: {
   game: FamilyGame;
   currentUser: MemberId;
+  submitting?: boolean;
+  serverClockOffsetMs?: number;
   onMakeMove: (move: SudokuMove) => Promise<SudokuMoveResult | void>;
   onSyncNow?: () => void;
+  onRespondInvite: (decision: "accept" | "decline" | "cancel") => void;
+  onForfeit: () => void;
   onRematch: () => void;
   onBack: () => void;
 }) {
@@ -81,6 +93,10 @@ export function SudokuBoard({
   const isParticipant = game.players.includes(currentUser);
   const isActive = game.status === "active";
   const isPending = game.status === "pending";
+  const isPendingForMe = isPending && game.opponentId === currentUser;
+  const isPendingByMe = isPending && game.challengerId === currentUser;
+  const isClosedInvite =
+    game.status === "declined" || game.status === "cancelled";
   const isCompleted = game.status === "completed";
   const isShared = state.boardMode === "shared";
 
@@ -100,6 +116,7 @@ export function SudokuBoard({
   const [showSolution, setShowSolution] = useState(
     () => isCompleted && !isParticipant && !isShared
   );
+  const [confirmForfeit, setConfirmForfeit] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const lastAttemptRef = useRef<{ cell: number; value: number } | null>(null);
@@ -125,21 +142,40 @@ export function SudokuBoard({
     };
   }, []);
 
-  // Local 250ms ticker for smooth countdown & lockout bar while active
+  // Reset forfeit confirmation if game is no longer active
+  useEffect(() => {
+    if (!isActive) setConfirmForfeit(false);
+  }, [isActive]);
+
+  // Estimate server clock using the synced offset so timers & lockouts match the server
+  const estimatedServerNowMs = nowMs + serverClockOffsetMs;
+
+  const myLockoutUntilMs =
+    isShared && state.lockouts[currentUser]
+      ? Date.parse(state.lockouts[currentUser]!)
+      : 0;
+  const lockoutRemainingMs =
+    isActive && myLockoutUntilMs > estimatedServerNowMs
+      ? myLockoutUntilMs - estimatedServerNowMs
+      : 0;
+  const isLockedOut = lockoutRemainingMs > 0;
+
+  // Tick faster (100ms) while locked out for a smooth, accurate 3.0s unlock
   useEffect(() => {
     if (!isActive) return;
     setNowMs(Date.now());
+    const intervalMs = isLockedOut ? 100 : 250;
     const timer = window.setInterval(() => {
       setNowMs(Date.now());
-    }, 250);
+    }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [isActive]);
+  }, [isActive, isLockedOut]);
 
   const endsAtMs = state.endsAt ? Date.parse(state.endsAt) : null;
   const remainingMs = isPending
     ? state.timeLimitMinutes * 60_000
     : endsAtMs !== null
-      ? Math.max(0, endsAtMs - nowMs)
+      ? Math.max(0, endsAtMs - estimatedServerNowMs)
       : 0;
 
   // Trigger an immediate server poll once the countdown reaches 0
@@ -154,15 +190,6 @@ export function SudokuBoard({
     }
   }, [isActive, endsAtMs, remainingMs, onSyncNow]);
 
-  // My lockout timer (shared mode)
-  const myLockoutUntilMs =
-    isShared && state.lockouts[currentUser]
-      ? Date.parse(state.lockouts[currentUser]!)
-      : 0;
-  const lockoutRemainingMs =
-    isActive && myLockoutUntilMs > nowMs ? myLockoutUntilMs - nowMs : 0;
-  const isLockedOut = lockoutRemainingMs > 0;
-
   // React to wrong-guess feedback from the server
   useEffect(() => {
     const ev = state.lastEvent;
@@ -170,6 +197,7 @@ export function SudokuBoard({
     lastEventAtRef.current = ev.at;
 
     if (ev.result === "wrong" && ev.by === currentUser) {
+      setNowMs(Date.now());
       const attempted =
         lastAttemptRef.current && lastAttemptRef.current.cell === ev.cell
           ? lastAttemptRef.current.value
@@ -236,9 +264,7 @@ export function SudokuBoard({
       }
     }
     if (pendingEntry && !state.puzzle[pendingEntry.cell]) {
-      const canOverlay = isShared
-        ? !state.claims[pendingEntry.cell]
-        : true;
+      const canOverlay = isShared ? !state.claims[pendingEntry.cell] : true;
       if (canOverlay) {
         out[pendingEntry.cell] = pendingEntry.value;
       }
@@ -294,7 +320,6 @@ export function SudokuBoard({
 
       if (notesMode) {
         if (digit >= 1 && digit <= 9) {
-          // Only allow notes on empty cells
           if (!isShared && (mySeparateBoard?.[selectedCell] || 0) !== 0) {
             return;
           }
@@ -332,7 +357,6 @@ export function SudokuBoard({
       if (currentVal === digit) return;
       if (pendingEntry) return;
 
-      // Clear local notes on this cell (and peer notes for this digit when placing)
       setNotes((prev) => {
         const next: Record<number, number[]> = {};
         for (const [k, arr] of Object.entries(prev)) {
@@ -384,7 +408,6 @@ export function SudokuBoard({
     if (selectedCell === null || !isActive || !isParticipant) return;
     if (state.puzzle[selectedCell] !== 0) return;
     if (isShared) {
-      // In shared mode, Erase clears pencil notes on the selected cell
       setNotes((prev) => {
         if (!prev[selectedCell]) return prev;
         const next = { ...prev };
@@ -500,906 +523,1166 @@ export function SudokuBoard({
   const myFullButWrong = !isShared ? state.fullButWrong?.[currentUser] || 0 : 0;
   const isUrgent = isActive && remainingMs > 0 && remainingMs <= 30_000;
 
-  // Build completion headline
   let completionHeadline = "";
   let completionSub = "";
   if (isCompleted) {
     if (game.outcome === "draw") {
-      completionHeadline = `It's a tie (${p1Primary}–${p2Primary})!`;
+      completionHeadline = `Tie (${p1Primary}–${p2Primary})`;
       completionSub = state.timedOut
-        ? "Time ran out with both players dead even."
-        : "Every square solved in a dead heat.";
+        ? "Time ran out dead even."
+        : "Every square solved in a tie.";
     } else if (game.outcome === "forfeit" && winnerMember) {
       completionHeadline =
         winnerMember.id === currentUser
           ? "You won by forfeit!"
           : `${winnerMember.name} won by forfeit`;
-      completionSub = "The other player resigned the match.";
     } else if (winnerMember) {
       const iWon = winnerMember.id === currentUser;
       completionHeadline = iWon
         ? "You win! 🎉"
         : `${winnerMember.name} wins! 🎉`;
       if (state.timedOut) {
-        completionSub = `Time's up — final correct cells: ${player1.name} ${p1Primary}, ${player2.name} ${p2Primary}.`;
+        completionSub = `Time's up · ${player1.name} ${p1Primary}–${p2Primary} ${player2.name}`;
       } else if (isShared) {
-        completionSub = `Board complete — ${player1.name} ${p1Primary} vs ${player2.name} ${p2Primary}.`;
+        completionSub = `${player1.name} ${p1Primary}–${p2Primary} ${player2.name}`;
       } else {
         completionSub = iWon
-          ? "You solved the puzzle first!"
-          : `${winnerMember.name} solved the puzzle first!`;
+          ? "Solved first!"
+          : `${winnerMember.name} solved first!`;
       }
     }
   }
 
+  const canErase =
+    selectedCell !== null &&
+    state.puzzle[selectedCell] === 0 &&
+    (isShared
+      ? !state.claims[selectedCell] && Boolean(notes[selectedCell]?.length)
+      : (mySeparateBoard?.[selectedCell] || 0) !== 0 ||
+        Boolean(notes[selectedCell]?.length));
+
+  const showOverlay = isPending || isClosedInvite;
+
   return (
-    <div>
-      {/* Match settings pill row */}
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        width: "100vw",
+        height: "100dvh",
+        zIndex: 120,
+        background: "var(--bg-app)",
+        color: "var(--text-primary)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        overscrollBehavior: "none",
+      }}
+    >
+      {/* Compact Top Bar */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          flexWrap: "wrap",
-          marginBottom: 12,
+          flexShrink: 0,
+          background: "var(--bg-surface)",
+          borderBottom: "1px solid var(--border-subtle)",
+          padding: "calc(8px + env(safe-area-inset-top)) 12px 8px",
         }}
       >
-        <span
-          style={{
-            fontSize: 11.5,
-            fontWeight: 700,
-            padding: "4px 10px",
-            borderRadius: 999,
-            background: "var(--bg-subtle)",
-            border: "1px solid var(--border-default)",
-            color: "var(--text-secondary)",
-          }}
-        >
-          {formatSudokuSettings(state)}
-        </span>
-
-        {/* Countdown Clock */}
         <div
-          aria-live="off"
           style={{
-            display: "inline-flex",
+            maxWidth: 560,
+            margin: "0 auto",
+            display: "flex",
             alignItems: "center",
-            gap: 6,
-            padding: "5px 12px",
-            borderRadius: 999,
-            background: isUrgent
-              ? "var(--danger-soft)"
-              : isActive
-                ? "var(--accent-soft)"
-                : "var(--bg-subtle)",
-            border: `1.5px solid ${
-              isUrgent
-                ? "var(--danger)"
-                : isActive
-                  ? "var(--accent-border)"
-                  : "var(--border-default)"
-            }`,
-            color: isUrgent
-              ? "var(--danger)"
-              : isActive
-                ? "var(--accent-ink)"
-                : "var(--text-muted)",
-            fontFamily: "'Baloo 2', sans-serif",
-            fontSize: 16,
-            fontWeight: 800,
-            fontVariantNumeric: "tabular-nums",
-            lineHeight: 1.1,
+            justifyContent: "space-between",
+            gap: 8,
           }}
         >
-          <Clock size={14} strokeWidth={2.5} />
-          <span>
-            {isCompleted
-              ? state.timedOut
-                ? "0:00"
-                : "Done"
-              : formatCountdown(remainingMs)}
-          </span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              minWidth: 0,
+            }}
+          >
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Back to Games"
+              style={{
+                background: "var(--bg-subtle)",
+                border: "1px solid var(--border-default)",
+                borderRadius: 10,
+                width: 34,
+                height: 34,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-primary)",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontFamily: "'Baloo 2', sans-serif",
+                  fontSize: 16,
+                  fontWeight: 800,
+                  lineHeight: 1.1,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                🔢 Versus Sudoku
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {formatSudokuSettings(state)}
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              flexShrink: 0,
+            }}
+          >
+            {/* Countdown Clock */}
+            <div
+              aria-live="off"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: isUrgent
+                  ? "var(--danger-soft)"
+                  : isActive
+                    ? "var(--accent-soft)"
+                    : "var(--bg-subtle)",
+                border: `1.5px solid ${
+                  isUrgent
+                    ? "var(--danger)"
+                    : isActive
+                      ? "var(--accent-border)"
+                      : "var(--border-default)"
+                }`,
+                color: isUrgent
+                  ? "var(--danger)"
+                  : isActive
+                    ? "var(--accent-ink)"
+                    : "var(--text-muted)",
+                fontFamily: "'Baloo 2', sans-serif",
+                fontSize: 15,
+                fontWeight: 800,
+                fontVariantNumeric: "tabular-nums",
+                lineHeight: 1.1,
+              }}
+            >
+              <Clock size={13} strokeWidth={2.5} />
+              <span>
+                {isCompleted
+                  ? state.timedOut
+                    ? "0:00"
+                    : "Done"
+                  : formatCountdown(remainingMs)}
+              </span>
+            </div>
+
+            {isActive && isParticipant && (
+              confirmForfeit ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={onForfeit}
+                    style={{
+                      background: "var(--danger)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 9,
+                      padding: "6px 9px",
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Forfeit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmForfeit(false)}
+                    aria-label="Cancel forfeit"
+                    style={{
+                      background: "var(--bg-subtle)",
+                      color: "var(--text-secondary)",
+                      border: "1px solid var(--border-default)",
+                      borderRadius: 9,
+                      width: 28,
+                      height: 28,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmForfeit(true)}
+                  aria-label="Forfeit match"
+                  title="Forfeit match"
+                  style={{
+                    background: "var(--bg-subtle)",
+                    border: "1px solid var(--border-default)",
+                    borderRadius: 10,
+                    width: 32,
+                    height: 32,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Flag size={13} />
+                </button>
+              )
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Player Score / Progress Header */}
+      {/* Main Centered Zero-Scroll Column */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          flex: "1 1 0",
+          minHeight: 0,
+          width: "100%",
+          maxWidth: 560,
+          margin: "0 auto",
+          padding:
+            "8px 12px max(10px, env(safe-area-inset-bottom))",
+          display: "flex",
+          flexDirection: "column",
           gap: 8,
-          marginBottom: 14,
+          overflow: "hidden",
         }}
       >
-        {[
-          { member: player1, count: p1Primary, id: player1Id },
-          { member: player2, count: p2Primary, id: player2Id },
-        ].map(({ member, count, id }) => {
-          const isMe = id === currentUser;
-          const pct = Math.min(100, Math.round((count / totalEmpty) * 100));
-          const misses = state.misses?.[id] ?? 0;
-          const playerLocked =
-            isActive &&
-            isShared &&
-            state.lockouts?.[id] &&
-            Date.parse(state.lockouts[id]!) > nowMs;
-          const isWinner = isCompleted && game.winnerId === id;
+        {/* Compact Player Score / Progress Strip */}
+        <div
+          style={{
+            flexShrink: 0,
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 8,
+          }}
+        >
+          {[
+            { member: player1, count: p1Primary, id: player1Id },
+            { member: player2, count: p2Primary, id: player2Id },
+          ].map(({ member, count, id }) => {
+            const isMe = id === currentUser;
+            const pct = Math.min(100, Math.round((count / totalEmpty) * 100));
+            const misses = state.misses?.[id] ?? 0;
+            const playerLocked =
+              isActive &&
+              isShared &&
+              state.lockouts?.[id] &&
+              Date.parse(state.lockouts[id]!) > estimatedServerNowMs;
+            const isWinner = isCompleted && game.winnerId === id;
 
-          return (
-            <div
-              key={id}
-              style={{
-                background: isWinner
-                  ? "var(--success-soft)"
-                  : "var(--bg-surface-warm)",
-                border: `1.5px solid ${
-                  isWinner
-                    ? "var(--success-border)"
-                    : isMe
-                      ? "var(--border-strong)"
-                      : "var(--border-subtle)"
-                }`,
-                borderRadius: 14,
-                padding: "10px 11px",
-                minWidth: 0,
-              }}
-            >
+            return (
               <div
+                key={id}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 6,
+                  background: isWinner
+                    ? "var(--success-soft)"
+                    : "var(--bg-surface)",
+                  border: `1.5px solid ${
+                    isWinner
+                      ? "var(--success-border)"
+                      : isMe
+                        ? "var(--border-strong)"
+                        : "var(--border-subtle)"
+                  }`,
+                  borderRadius: 12,
+                  padding: "6px 9px",
+                  minWidth: 0,
                 }}
               >
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 7,
-                    minWidth: 0,
-                  }}
-                >
-                  <AvatarDot id={member.id} size={26} />
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 12.5,
-                        fontWeight: 700,
-                        color: "var(--text-primary)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                      }}
-                    >
-                      <span>{member.name}</span>
-                      {isMe && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: "var(--text-faint)",
-                          }}
-                        >
-                          (you)
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: playerLocked
-                          ? "var(--danger)"
-                          : "var(--text-muted)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                      }}
-                    >
-                      {playerLocked ? (
-                        <>
-                          <Lock size={10} /> Locked…
-                        </>
-                      ) : isShared ? (
-                        <>
-                          <span
-                            style={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: "50%",
-                              background: member.color,
-                              display: "inline-block",
-                            }}
-                          />
-                          {misses > 0 ? `${misses} miss${misses === 1 ? "" : "es"}` : "Racing"}
-                        </>
-                      ) : isCompleted ? (
-                        `${count}/${totalEmpty} correct`
-                      ) : (
-                        `${count}/${totalEmpty} filled`
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    fontFamily: "'Baloo 2', sans-serif",
-                    fontSize: 22,
-                    fontWeight: 800,
-                    color: isShared ? member.color : "var(--text-primary)",
-                    fontVariantNumeric: "tabular-nums",
-                    lineHeight: 1,
-                    flexShrink: 0,
-                  }}
-                >
-                  {isShared ? count : `${pct}%`}
-                </div>
-              </div>
-
-              {/* Progress bar for separate boards */}
-              {!isShared && (
-                <div
-                  style={{
-                    marginTop: 7,
-                    height: 6,
-                    borderRadius: 999,
-                    background: "var(--bg-muted)",
-                    overflow: "hidden",
+                    justifyContent: "space-between",
+                    gap: 6,
                   }}
                 >
                   <div
                     style={{
-                      width: `${pct}%`,
-                      height: "100%",
-                      borderRadius: 999,
-                      background: member.color,
-                      transition: "width 0.25s ease",
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Completion Banner */}
-      {isCompleted && (
-        <div
-          style={{
-            background:
-              game.outcome === "draw"
-                ? "var(--cat-ochre-soft)"
-                : "var(--success-soft)",
-            border: `1px solid ${
-              game.outcome === "draw"
-                ? "var(--border-strong)"
-                : "var(--success-border)"
-            }`,
-            borderRadius: 14,
-            padding: "12px 14px",
-            marginBottom: 14,
-            textAlign: "center",
-          }}
-        >
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              fontFamily: "'Baloo 2', sans-serif",
-              fontSize: 18,
-              fontWeight: 800,
-              color:
-                game.outcome === "draw"
-                  ? "var(--cat-ochre)"
-                  : "var(--success-ink)",
-            }}
-          >
-            <Trophy size={17} /> {completionHeadline}
-          </div>
-          {completionSub && (
-            <div
-              style={{
-                fontSize: 12.5,
-                color: "var(--text-secondary)",
-                marginTop: 3,
-              }}
-            >
-              {completionSub}
-            </div>
-          )}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              gap: 8,
-              marginTop: 11,
-              flexWrap: "wrap",
-            }}
-          >
-            {isParticipant && (
-              <button
-                type="button"
-                onClick={onRematch}
-                style={{
-                  background: "var(--accent)",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 10,
-                  padding: "8px 14px",
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                }}
-              >
-                <RotateCcw size={13} /> Rematch
-              </button>
-            )}
-            {state.solution && (
-              <button
-                type="button"
-                onClick={() => setShowSolution((v) => !v)}
-                style={{
-                  background: "var(--bg-surface)",
-                  color: "var(--text-primary)",
-                  border: "1px solid var(--border-default)",
-                  borderRadius: 10,
-                  padding: "8px 12px",
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                }}
-              >
-                {showSolution ? <EyeOff size={13} /> : <Eye size={13} />}
-                {showSolution ? "Hide Solution" : "Show Solution"}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onBack}
-              style={{
-                background: "var(--bg-surface)",
-                color: "var(--text-secondary)",
-                border: "1px solid var(--border-default)",
-                borderRadius: 10,
-                padding: "8px 12px",
-                fontSize: 12.5,
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              All Games
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Full-but-wrong alert in Separate Boards mode */}
-      {isActive && myFullButWrong > 0 && (
-        <div
-          role="status"
-          style={{
-            background: "var(--danger-soft)",
-            border: "1px solid var(--danger-border)",
-            color: "var(--danger-ink)",
-            borderRadius: 12,
-            padding: "9px 12px",
-            marginBottom: 12,
-            fontSize: 12.5,
-            fontWeight: 700,
-            display: "flex",
-            alignItems: "center",
-            gap: 7,
-          }}
-        >
-          <AlertCircle size={15} />
-          <span>
-            Not quite — {myFullButWrong}{" "}
-            {myFullButWrong === 1 ? "cell doesn't" : "cells don't"} match yet.
-            Keep checking!
-          </span>
-        </div>
-      )}
-
-      {/* 9x9 Sudoku Grid */}
-      <div
-        style={{
-          position: "relative",
-          width: "100%",
-          maxWidth: 440,
-          margin: "0 auto",
-        }}
-      >
-        <div
-          role="grid"
-          aria-label="9 by 9 Sudoku board"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
-            gridTemplateRows: "repeat(9, minmax(0, 1fr))",
-            aspectRatio: "1 / 1",
-            width: "100%",
-            border: "2.5px solid var(--text-primary)",
-            borderRadius: 12,
-            overflow: "hidden",
-            background: "var(--bg-surface)",
-            userSelect: "none",
-            opacity: isPending ? 0.42 : 1,
-          }}
-        >
-          {Array.from({ length: 81 }, (_, idx) => {
-            const row = Math.floor(idx / 9);
-            const col = idx % 9;
-            const isClue = state.puzzle[idx] !== 0;
-            const claimerId = isShared ? state.claims[idx] : null;
-            const claimer = claimerId ? memberById(claimerId) : null;
-            const val = displayValues[idx];
-            const isPendingCell = pendingEntry?.cell === idx;
-            const isWrongFlashing = wrongFlash?.cell === idx;
-            const isPopping = popCells.includes(idx);
-            const isSelected = selectedCell === idx;
-            const isPeer =
-              selectedCell !== null &&
-              selectedCell !== idx &&
-              sameUnit(selectedCell, idx);
-            const isSameDigit =
-              selectedValue !== 0 && val === selectedValue && !isSelected;
-
-            const isCompletedWrong =
-              isCompleted &&
-              !isShared &&
-              !showSolution &&
-              !isClue &&
-              val !== 0 &&
-              state.solution &&
-              val !== state.solution[idx];
-
-            const isRevealedAnswer =
-              isCompleted &&
-              showSolution &&
-              !isClue &&
-              (isShared ? !claimerId : mySeparateBoard?.[idx] !== state.solution?.[idx]);
-
-            // Cell background layering
-            let bg = "var(--bg-surface)";
-            if (isClue) bg = "var(--bg-surface-warm)";
-            if (isPeer) bg = "var(--bg-subtle)";
-            if (claimer) bg = `${claimer.color}20`;
-            if (isSameDigit) bg = "var(--highlight-bg)";
-            if (isSelected) bg = "var(--accent-soft)";
-            if (isCompletedWrong || isWrongFlashing) bg = "var(--danger-soft)";
-
-            // Number text color
-            let textColor = "var(--text-primary)";
-            if (isWrongFlashing || isCompletedWrong) {
-              textColor = "var(--danger)";
-            } else if (isRevealedAnswer) {
-              textColor = "var(--success)";
-            } else if (claimer) {
-              textColor = claimer.color;
-            } else if (!isClue) {
-              textColor = "var(--cat-blue)";
-            }
-
-            const borderRight =
-              col === 8
-                ? "none"
-                : col === 2 || col === 5
-                  ? "2px solid var(--text-primary)"
-                  : "1px solid var(--border-strong)";
-            const borderBottom =
-              row === 8
-                ? "none"
-                : row === 2 || row === 5
-                  ? "2px solid var(--text-primary)"
-                  : "1px solid var(--border-strong)";
-
-            const cellNotes = notes[idx];
-            const shownDigit = isWrongFlashing
-              ? wrongFlash.value || val
-              : val;
-
-            return (
-              <button
-                key={idx}
-                type="button"
-                role="gridcell"
-                aria-label={`Row ${row + 1} Column ${col + 1}${
-                  val ? `, ${val}` : ", empty"
-                }`}
-                aria-selected={isSelected}
-                disabled={isPending}
-                onClick={() => setSelectedCell(idx)}
-                className={
-                  isWrongFlashing
-                    ? "sudoku-shake"
-                    : isPopping
-                      ? "sudoku-pop"
-                      : undefined
-                }
-                style={{
-                  position: "relative",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: 0,
-                  margin: 0,
-                  border: "none",
-                  borderRight,
-                  borderBottom,
-                  borderRadius: 0,
-                  background: bg,
-                  boxShadow: isSelected
-                    ? "inset 0 0 0 2px var(--accent)"
-                    : "none",
-                  cursor: isPending ? "default" : "pointer",
-                  fontFamily: "'Baloo 2', sans-serif",
-                  fontSize: "clamp(16px, 4.6vw, 23px)",
-                  fontWeight: isClue ? 800 : 700,
-                  color: textColor,
-                  lineHeight: 1,
-                  opacity: isPendingCell ? 0.55 : 1,
-                  transition: "background-color 0.12s ease",
-                }}
-              >
-                {shownDigit ? (
-                  <span>{shownDigit}</span>
-                ) : cellNotes && cellNotes.length > 0 ? (
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(3, 1fr)",
-                      gridTemplateRows: "repeat(3, 1fr)",
-                      width: "90%",
-                      height: "90%",
+                      display: "flex",
                       alignItems: "center",
-                      justifyItems: "center",
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: "clamp(7px, 2vw, 10px)",
-                      fontWeight: 700,
-                      color: "var(--text-muted)",
-                      lineHeight: 1,
+                      gap: 6,
+                      minWidth: 0,
                     }}
                   >
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
-                      <span key={d}>
-                        {cellNotes.includes(d) ? d : ""}
-                      </span>
-                    ))}
+                    <AvatarDot id={member.id} size={22} />
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "var(--text-primary)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {member.name}
+                        {isMe ? " (you)" : ""}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10.5,
+                          color: playerLocked
+                            ? "var(--danger)"
+                            : "var(--text-muted)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          lineHeight: 1.15,
+                        }}
+                      >
+                        {playerLocked ? (
+                          <>
+                            <Lock size={9} /> Locked…
+                          </>
+                        ) : isShared ? (
+                          <>
+                            <span
+                              style={{
+                                width: 7,
+                                height: 7,
+                                borderRadius: "50%",
+                                background: member.color,
+                                display: "inline-block",
+                              }}
+                            />
+                            {misses > 0
+                              ? `${misses} miss${misses === 1 ? "" : "es"}`
+                              : "Racing"}
+                          </>
+                        ) : isCompleted ? (
+                          `${count}/${totalEmpty} right`
+                        ) : (
+                          `${count}/${totalEmpty}`
+                        )}
+                      </div>
+                    </div>
                   </div>
-                ) : null}
 
-                {/* Subtle claimer corner dot in shared mode */}
-                {claimer && !isSelected && (
-                  <span
-                    aria-hidden="true"
+                  <div
                     style={{
-                      position: "absolute",
-                      top: 2.5,
-                      right: 2.5,
-                      width: 5,
-                      height: 5,
-                      borderRadius: "50%",
-                      background: claimer.color,
-                      opacity: 0.75,
+                      fontFamily: "'Baloo 2', sans-serif",
+                      fontSize: 20,
+                      fontWeight: 800,
+                      color: isShared ? member.color : "var(--text-primary)",
+                      fontVariantNumeric: "tabular-nums",
+                      lineHeight: 1,
+                      flexShrink: 0,
                     }}
-                  />
+                  >
+                    {isShared ? count : `${pct}%`}
+                  </div>
+                </div>
+
+                {!isShared && (
+                  <div
+                    style={{
+                      marginTop: 5,
+                      height: 4,
+                      borderRadius: 999,
+                      background: "var(--bg-muted)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${pct}%`,
+                        height: "100%",
+                        borderRadius: 999,
+                        background: member.color,
+                        transition: "width 0.25s ease",
+                      }}
+                    />
+                  </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
 
-        {/* Pending Lock Overlay */}
-        {isPending && (
+        {/* Auto-fitting Flexible Stage for the 9x9 Grid */}
+        <div
+          style={{
+            flex: "1 1 0",
+            minHeight: 0,
+            width: "100%",
+            position: "relative",
+            containerType: "size",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           <div
             style={{
-              position: "absolute",
-              inset: 0,
+              position: "relative",
+              width: "min(100cqw, 100cqh, 520px)",
+              height: "min(100cqw, 100cqh, 520px)",
+              maxWidth: "100%",
+              maxHeight: "100%",
+              aspectRatio: "1 / 1",
+              containerType: "inline-size",
+            }}
+          >
+            <div
+              role="grid"
+              aria-label="9 by 9 Sudoku board"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
+                gridTemplateRows: "repeat(9, minmax(0, 1fr))",
+                width: "100%",
+                height: "100%",
+                border: "2.5px solid var(--text-primary)",
+                borderRadius: 12,
+                overflow: "hidden",
+                background: "var(--bg-surface)",
+                userSelect: "none",
+                opacity: showOverlay ? 0.38 : 1,
+                boxShadow: "var(--card-shadow)",
+              }}
+            >
+              {Array.from({ length: 81 }, (_, idx) => {
+                const row = Math.floor(idx / 9);
+                const col = idx % 9;
+                const isClue = state.puzzle[idx] !== 0;
+                const claimerId = isShared ? state.claims[idx] : null;
+                const claimer = claimerId ? memberById(claimerId) : null;
+                const val = displayValues[idx];
+                const isPendingCell = pendingEntry?.cell === idx;
+                const isWrongFlashing = wrongFlash?.cell === idx;
+                const isPopping = popCells.includes(idx);
+                const isSelected = selectedCell === idx;
+                const isPeer =
+                  selectedCell !== null &&
+                  selectedCell !== idx &&
+                  sameUnit(selectedCell, idx);
+                const isSameDigit =
+                  selectedValue !== 0 && val === selectedValue && !isSelected;
+
+                const isCompletedWrong =
+                  isCompleted &&
+                  !isShared &&
+                  !showSolution &&
+                  !isClue &&
+                  val !== 0 &&
+                  state.solution &&
+                  val !== state.solution[idx];
+
+                const isRevealedAnswer =
+                  isCompleted &&
+                  showSolution &&
+                  !isClue &&
+                  (isShared
+                    ? !claimerId
+                    : mySeparateBoard?.[idx] !== state.solution?.[idx]);
+
+                let bg = "var(--bg-surface)";
+                if (isClue) bg = "var(--bg-surface-warm)";
+                if (isPeer) bg = "var(--bg-subtle)";
+                if (claimer) bg = `${claimer.color}20`;
+                if (isSameDigit) bg = "var(--highlight-bg)";
+                if (isSelected) bg = "var(--accent-soft)";
+                if (isCompletedWrong || isWrongFlashing) {
+                  bg = "var(--danger-soft)";
+                }
+
+                let textColor = "var(--text-primary)";
+                if (isWrongFlashing || isCompletedWrong) {
+                  textColor = "var(--danger)";
+                } else if (isRevealedAnswer) {
+                  textColor = "var(--success)";
+                } else if (claimer) {
+                  textColor = claimer.color;
+                } else if (!isClue) {
+                  textColor = "var(--cat-blue)";
+                }
+
+                const borderRight =
+                  col === 8
+                    ? "none"
+                    : col === 2 || col === 5
+                      ? "2px solid var(--text-primary)"
+                      : "1px solid var(--border-strong)";
+                const borderBottom =
+                  row === 8
+                    ? "none"
+                    : row === 2 || row === 5
+                      ? "2px solid var(--text-primary)"
+                      : "1px solid var(--border-strong)";
+
+                const cellNotes = notes[idx];
+                const shownDigit = isWrongFlashing
+                  ? wrongFlash.value || val
+                  : val;
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    role="gridcell"
+                    aria-label={`Row ${row + 1} Column ${col + 1}${
+                      val ? `, ${val}` : ", empty"
+                    }`}
+                    aria-selected={isSelected}
+                    disabled={showOverlay}
+                    onClick={() => setSelectedCell(idx)}
+                    className={
+                      isWrongFlashing
+                        ? "sudoku-shake"
+                        : isPopping
+                          ? "sudoku-pop"
+                          : undefined
+                    }
+                    style={{
+                      position: "relative",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      margin: 0,
+                      border: "none",
+                      borderRight,
+                      borderBottom,
+                      borderRadius: 0,
+                      background: bg,
+                      boxShadow: isSelected
+                        ? "inset 0 0 0 2px var(--accent)"
+                        : "none",
+                      cursor: showOverlay ? "default" : "pointer",
+                      fontFamily: "'Baloo 2', sans-serif",
+                      fontSize: "clamp(13px, 5.8cqw, 25px)",
+                      fontWeight: isClue ? 800 : 700,
+                      color: textColor,
+                      lineHeight: 1,
+                      opacity: isPendingCell ? 0.55 : 1,
+                      transition: "background-color 0.12s ease",
+                    }}
+                  >
+                    {shownDigit ? (
+                      <span>{shownDigit}</span>
+                    ) : cellNotes && cellNotes.length > 0 ? (
+                      <div
+                        aria-hidden="true"
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(3, 1fr)",
+                          gridTemplateRows: "repeat(3, 1fr)",
+                          width: "92%",
+                          height: "92%",
+                          alignItems: "center",
+                          justifyItems: "center",
+                          fontFamily: "'Inter', sans-serif",
+                          fontSize: "clamp(6.5px, 2.2cqw, 10px)",
+                          fontWeight: 700,
+                          color: "var(--text-muted)",
+                          lineHeight: 1,
+                        }}
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
+                          <span key={d}>
+                            {cellNotes.includes(d) ? d : ""}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {claimer && !isSelected && (
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          position: "absolute",
+                          top: 2,
+                          right: 2,
+                          width: 4.5,
+                          height: 4.5,
+                          borderRadius: "50%",
+                          background: claimer.color,
+                          opacity: 0.75,
+                        }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Floating Pending / Declined / Cancelled Overlay */}
+            {showOverlay && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 16,
+                }}
+              >
+                <div
+                  style={{
+                    background: "var(--bg-surface)",
+                    border: "1.5px solid var(--border-strong)",
+                    borderRadius: 16,
+                    padding: "16px 18px",
+                    textAlign: "center",
+                    boxShadow: "var(--menu-shadow)",
+                    maxWidth: 290,
+                    width: "100%",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 34,
+                      height: 34,
+                      borderRadius: "50%",
+                      background: "var(--accent-soft)",
+                      color: "var(--accent)",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Zap size={18} />
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 800,
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {isPendingForMe
+                      ? `${memberById(game.challengerId).name} invited you to play!`
+                      : isPendingByMe
+                        ? `Waiting for ${memberById(game.opponentId).name}…`
+                        : game.status === "declined"
+                          ? `${memberById(game.opponentId).name} declined`
+                          : `${memberById(game.challengerId).name} cancelled`}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginTop: 4,
+                      marginBottom: 14,
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {isPending
+                      ? `The board unlocks and the ${state.timeLimitMinutes}-minute clock starts when accepted.`
+                      : "Start a new challenge anytime from the Games lobby."}
+                  </div>
+
+                  {isPendingForMe ? (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => onRespondInvite("accept")}
+                        style={{
+                          flex: 1,
+                          background: "var(--accent)",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: 10,
+                          padding: "9px 12px",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: submitting ? "wait" : "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <Check size={14} strokeWidth={2.8} /> Accept
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => onRespondInvite("decline")}
+                        style={{
+                          flex: 1,
+                          background: "var(--bg-subtle)",
+                          color: "var(--text-secondary)",
+                          border: "1px solid var(--border-default)",
+                          borderRadius: 10,
+                          padding: "9px 12px",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: submitting ? "wait" : "pointer",
+                        }}
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  ) : isPendingByMe ? (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={onBack}
+                        style={{
+                          flex: 1,
+                          background: "var(--bg-subtle)",
+                          color: "var(--text-primary)",
+                          border: "1px solid var(--border-default)",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        All Games
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => onRespondInvite("cancel")}
+                        style={{
+                          background: "none",
+                          color: "var(--text-muted)",
+                          border: "1px solid var(--border-default)",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          cursor: submitting ? "wait" : "pointer",
+                        }}
+                      >
+                        Cancel Invite
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={onBack}
+                      style={{
+                        background: "var(--accent)",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 10,
+                        padding: "9px 16px",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Back to Games
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom Dock: Active Keypad OR Completed Summary */}
+        {isCompleted ? (
+          <div
+            style={{
+              flexShrink: 0,
+              background:
+                game.outcome === "draw"
+                  ? "var(--cat-ochre-soft)"
+                  : "var(--success-soft)",
+              border: `1px solid ${
+                game.outcome === "draw"
+                  ? "var(--border-strong)"
+                  : "var(--success-border)"
+              }`,
+              borderRadius: 14,
+              padding: "10px 12px",
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
-              justifyContent: "center",
-              padding: 20,
-              pointerEvents: "none",
+              gap: 8,
             }}
           >
             <div
               style={{
-                background: "var(--bg-surface)",
-                border: "1.5px solid var(--border-strong)",
-                borderRadius: 16,
-                padding: "14px 18px",
-                textAlign: "center",
-                boxShadow: "var(--menu-shadow)",
-                maxWidth: 280,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                flexWrap: "wrap",
+                justifyContent: "center",
               }}
             >
-              <div
+              <span
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  width: 34,
-                  height: 34,
-                  borderRadius: "50%",
-                  background: "var(--accent-soft)",
-                  color: "var(--accent)",
-                  marginBottom: 8,
-                }}
-              >
-                <Zap size={18} />
-              </div>
-              <div
-                style={{
-                  fontSize: 13.5,
+                  gap: 5,
+                  fontFamily: "'Baloo 2', sans-serif",
+                  fontSize: 17,
                   fontWeight: 800,
-                  color: "var(--text-primary)",
+                  color:
+                    game.outcome === "draw"
+                      ? "var(--cat-ochre)"
+                      : "var(--success-ink)",
                 }}
               >
-                {game.opponentId === currentUser
-                  ? "Press Accept above to start!"
-                  : `Waiting for ${memberById(game.opponentId).name}…`}
-              </div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--text-muted)",
-                  marginTop: 4,
-                  lineHeight: 1.35,
-                }}
-              >
-                The board unlocks and the {state.timeLimitMinutes}-minute clock
-                starts the moment they accept.
-              </div>
+                <Trophy size={16} /> {completionHeadline}
+              </span>
+              {completionSub && (
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                  · {completionSub}
+                </span>
+              )}
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Inline feedback / lockout bar */}
-      <div
-        style={{
-          maxWidth: 440,
-          margin: "10px auto 0",
-          minHeight: 24,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {isLockedOut ? (
-          <div
-            role="status"
-            style={{
-              width: "100%",
-              background: "var(--danger-soft)",
-              border: "1px solid var(--danger-border)",
-              borderRadius: 10,
-              padding: "6px 10px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: "var(--danger-ink)",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-              }}
-            >
-              <Lock size={12} /> Wrong guess — locked for{" "}
-              {(lockoutRemainingMs / 1000).toFixed(1)}s
-            </span>
             <div
               style={{
-                width: 80,
-                height: 6,
-                borderRadius: 999,
-                background: "var(--danger-border)",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${Math.min(
-                    100,
-                    (lockoutRemainingMs / SUDOKU_WRONG_GUESS_LOCKOUT_MS) * 100
-                  )}%`,
-                  height: "100%",
-                  background: "var(--danger)",
-                  transition: "width 0.15s linear",
-                }}
-              />
-            </div>
-          </div>
-        ) : inlineNotice ? (
-          <div
-            role="status"
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: "var(--accent-ink)",
-              background: "var(--accent-soft)",
-              padding: "4px 11px",
-              borderRadius: 999,
-            }}
-          >
-            {inlineNotice}
-          </div>
-        ) : isActive && isParticipant ? (
-          <div style={{ fontSize: 11.5, color: "var(--text-faint)" }}>
-            {isShared
-              ? "Tap an empty square and guess — wrong guess locks you out for 3s."
-              : "Fill every square correctly before your opponent to win."}
-          </div>
-        ) : null}
-      </div>
-
-      {/* Controls & Number Pad */}
-      {isActive && isParticipant && (
-        <div style={{ maxWidth: 440, margin: "10px auto 0" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              marginBottom: 8,
-            }}
-          >
-            <button
-              type="button"
-              aria-pressed={notesMode}
-              onClick={() => setNotesMode((v) => !v)}
-              style={{
-                flex: 1,
-                padding: "8px 12px",
-                borderRadius: 11,
-                border: `1.5px solid ${
-                  notesMode ? "var(--accent)" : "var(--border-default)"
-                }`,
-                background: notesMode
-                  ? "var(--accent-soft)"
-                  : "var(--bg-subtle)",
-                color: notesMode
-                  ? "var(--accent-ink)"
-                  : "var(--text-secondary)",
-                fontSize: 12.5,
-                fontWeight: 700,
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
+                display: "flex",
                 justifyContent: "center",
-                gap: 6,
+                gap: 7,
+                flexWrap: "wrap",
               }}
             >
-              <Pencil size={13} />
-              <span>Notes {notesMode ? "On" : "Off"}</span>
-            </button>
-
-            {(() => {
-              const canErase =
-                selectedCell !== null &&
-                state.puzzle[selectedCell] === 0 &&
-                (isShared
-                  ? !state.claims[selectedCell] &&
-                    Boolean(notes[selectedCell]?.length)
-                  : (mySeparateBoard?.[selectedCell] || 0) !== 0 ||
-                    Boolean(notes[selectedCell]?.length));
-              return (
+              {isParticipant && (
                 <button
                   type="button"
-                  onClick={handleErase}
-                  disabled={!canErase}
+                  onClick={onRematch}
                   style={{
-                    flex: 1,
-                    padding: "8px 12px",
-                    borderRadius: 11,
-                    border: "1.5px solid var(--border-default)",
-                    background: "var(--bg-subtle)",
-                    color: "var(--text-secondary)",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "7px 13px",
                     fontSize: 12.5,
                     fontWeight: 700,
-                    cursor: !canErase ? "not-allowed" : "pointer",
-                    opacity: !canErase ? 0.5 : 1,
+                    cursor: "pointer",
                     display: "inline-flex",
                     alignItems: "center",
-                    justifyContent: "center",
+                    gap: 5,
+                  }}
+                >
+                  <RotateCcw size={13} /> Rematch
+                </button>
+              )}
+              {state.solution && (
+                <button
+                  type="button"
+                  onClick={() => setShowSolution((v) => !v)}
+                  style={{
+                    background: "var(--bg-surface)",
+                    color: "var(--text-primary)",
+                    border: "1px solid var(--border-default)",
+                    borderRadius: 10,
+                    padding: "7px 11px",
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                  }}
+                >
+                  {showSolution ? <EyeOff size={13} /> : <Eye size={13} />}
+                  {showSolution ? "Hide Solution" : "Show Solution"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onBack}
+                style={{
+                  background: "var(--bg-surface)",
+                  color: "var(--text-secondary)",
+                  border: "1px solid var(--border-default)",
+                  borderRadius: 10,
+                  padding: "7px 11px",
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                All Games
+              </button>
+            </div>
+          </div>
+        ) : isActive && isParticipant ? (
+          <div
+            style={{
+              flexShrink: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            {/* Fixed-height Status / Lockout / Mismatch Slot (prevents board resize jump) */}
+            <div
+              style={{
+                height: 26,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {isLockedOut ? (
+                <div
+                  role="status"
+                  style={{
+                    width: "100%",
+                    background: "var(--danger-soft)",
+                    border: "1px solid var(--danger-border)",
+                    borderRadius: 9,
+                    padding: "4px 10px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      color: "var(--danger-ink)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    <Lock size={11} /> Locked for{" "}
+                    {(lockoutRemainingMs / 1000).toFixed(1)}s
+                  </span>
+                  <div
+                    style={{
+                      width: 76,
+                      height: 5,
+                      borderRadius: 999,
+                      background: "var(--danger-border)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          (lockoutRemainingMs / SUDOKU_WRONG_GUESS_LOCKOUT_MS) *
+                            100
+                        )}%`,
+                        height: "100%",
+                        background: "var(--danger)",
+                        transition: "width 0.09s linear",
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : myFullButWrong > 0 ? (
+                <div
+                  role="status"
+                  style={{
+                    width: "100%",
+                    background: "var(--danger-soft)",
+                    border: "1px solid var(--danger-border)",
+                    color: "var(--danger-ink)",
+                    borderRadius: 9,
+                    padding: "4px 10px",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
                     gap: 6,
                   }}
                 >
-                  <Eraser size={13} />
-                  <span>{isShared ? "Clear Notes" : "Erase"}</span>
-                </button>
-              );
-            })()}
-          </div>
-
-          {/* 1-9 Digit Pad */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
-              gap: 5,
-            }}
-          >
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => {
-              const left = Math.max(0, 9 - digitCounts[digit]);
-              const doneInShared = isShared && !notesMode && left === 0;
-              const disabled =
-                !canInteract ||
-                (!notesMode && isLockedOut) ||
-                doneInShared;
-              return (
-                <button
-                  key={digit}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => void submitDigit(digit)}
+                  <AlertCircle size={13} />
+                  <span>
+                    Not quite — {myFullButWrong}{" "}
+                    {myFullButWrong === 1 ? "cell doesn't" : "cells don't"}{" "}
+                    match yet.
+                  </span>
+                </div>
+              ) : inlineNotice ? (
+                <div
+                  role="status"
                   style={{
-                    padding: "9px 0 6px",
-                    borderRadius: 11,
-                    border: "1.5px solid var(--border-default)",
-                    background: notesMode
-                      ? "var(--bg-surface-warm)"
-                      : "var(--bg-surface)",
-                    boxShadow: disabled ? "none" : "0 1px 2px rgba(0,0,0,0.05)",
-                    cursor: disabled ? "not-allowed" : "pointer",
-                    opacity: doneInShared ? 0.32 : disabled ? 0.5 : 1,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 1,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    color: "var(--accent-ink)",
+                    background: "var(--accent-soft)",
+                    padding: "3px 10px",
+                    borderRadius: 999,
                   }}
                 >
-                  <span
+                  {inlineNotice}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Notes & Erase Row */}
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                type="button"
+                aria-pressed={notesMode}
+                onClick={() => setNotesMode((v) => !v)}
+                style={{
+                  flex: 1,
+                  padding: "7px 10px",
+                  borderRadius: 10,
+                  border: `1.5px solid ${
+                    notesMode ? "var(--accent)" : "var(--border-default)"
+                  }`,
+                  background: notesMode
+                    ? "var(--accent-soft)"
+                    : "var(--bg-surface)",
+                  color: notesMode
+                    ? "var(--accent-ink)"
+                    : "var(--text-secondary)",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 5,
+                }}
+              >
+                <Pencil size={12} />
+                <span>Notes {notesMode ? "On" : "Off"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleErase}
+                disabled={!canErase}
+                style={{
+                  flex: 1,
+                  padding: "7px 10px",
+                  borderRadius: 10,
+                  border: "1.5px solid var(--border-default)",
+                  background: "var(--bg-surface)",
+                  color: "var(--text-secondary)",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: !canErase ? "not-allowed" : "pointer",
+                  opacity: !canErase ? 0.5 : 1,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 5,
+                }}
+              >
+                <Eraser size={12} />
+                <span>{isShared ? "Clear Notes" : "Erase"}</span>
+              </button>
+            </div>
+
+            {/* 1-9 Digit Pad */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
+                gap: 4,
+              }}
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => {
+                const left = Math.max(0, 9 - digitCounts[digit]);
+                const doneInShared = isShared && !notesMode && left === 0;
+                const disabled =
+                  !canInteract ||
+                  (!notesMode && isLockedOut) ||
+                  doneInShared;
+                return (
+                  <button
+                    key={digit}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => void submitDigit(digit)}
                     style={{
-                      fontFamily: "'Baloo 2', sans-serif",
-                      fontSize: 19,
-                      fontWeight: 800,
-                      color: notesMode
-                        ? "var(--text-secondary)"
-                        : "var(--text-primary)",
-                      lineHeight: 1.05,
+                      padding: "7px 0 5px",
+                      borderRadius: 10,
+                      border: "1.5px solid var(--border-default)",
+                      background: notesMode
+                        ? "var(--bg-surface-warm)"
+                        : "var(--bg-surface)",
+                      boxShadow: disabled
+                        ? "none"
+                        : "0 1px 2px rgba(0,0,0,0.05)",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      opacity: doneInShared ? 0.32 : disabled ? 0.5 : 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 1,
                     }}
                   >
-                    {digit}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 9.5,
-                      fontWeight: 700,
-                      color: "var(--text-faint)",
-                      lineHeight: 1,
-                    }}
-                  >
-                    {left}
-                  </span>
-                </button>
-              );
-            })}
+                    <span
+                      style={{
+                        fontFamily: "'Baloo 2', sans-serif",
+                        fontSize: 18,
+                        fontWeight: 800,
+                        color: notesMode
+                          ? "var(--text-secondary)"
+                          : "var(--text-primary)",
+                        lineHeight: 1.05,
+                      }}
+                    >
+                      {digit}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: "var(--text-faint)",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {left}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }

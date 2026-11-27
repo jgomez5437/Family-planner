@@ -195,6 +195,7 @@ export default function FamilyApp({
   const [tasks, setTasks] = useState<FamilyTask[]>(initialState.tasks);
   const [posts, setPosts] = useState<WallPost[]>(initialState.posts);
   const [games, setGames] = useState<FamilyGame[]>(initialState.games || []);
+  const [serverClockOffsetMs, setServerClockOffsetMs] = useState(0);
   const [activity, setActivity] = useState<ActivityItem[]>(
     initialState.activity
   );
@@ -351,13 +352,25 @@ export default function FamilyApp({
     }
   }, []);
 
+  const syncServerClock = useCallback((serverNow?: string) => {
+    if (!serverNow) return;
+    const serverMs = Date.parse(serverNow);
+    if (!Number.isNaN(serverMs)) {
+      setServerClockOffsetMs(serverMs - Date.now());
+    }
+  }, []);
+
   const pollGames = useCallback(async () => {
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     const gameSeqAtStart = gameMutationSeqRef.current;
     try {
       const res = await fetch("/api/games", { cache: "no-store" });
       if (!res.ok) return;
-      const json = (await res.json()) as { games?: FamilyGame[] };
+      const json = (await res.json()) as {
+        games?: FamilyGame[];
+        serverNow?: string;
+      };
+      syncServerClock(json.serverNow);
       if (
         Array.isArray(json.games) &&
         pendingGameMutationsRef.current === 0 &&
@@ -368,33 +381,40 @@ export default function FamilyApp({
     } catch {
       /* background polling failure is non-fatal */
     }
-  }, []);
+  }, [syncServerClock]);
 
-  const pollSingleGame = useCallback(async (gameId: string) => {
-    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-    const gameSeqAtStart = gameMutationSeqRef.current;
-    try {
-      const res = await fetch(`/api/games/${encodeURIComponent(gameId)}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const json = (await res.json()) as { game?: FamilyGame };
-      if (
-        json.game &&
-        pendingGameMutationsRef.current === 0 &&
-        gameMutationSeqRef.current === gameSeqAtStart
-      ) {
-        const fresh = json.game;
-        setGames((prev) =>
-          prev.some((g) => g.id === fresh.id)
-            ? prev.map((g) => (g.id === fresh.id ? fresh : g))
-            : [fresh, ...prev]
-        );
+  const pollSingleGame = useCallback(
+    async (gameId: string) => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      const gameSeqAtStart = gameMutationSeqRef.current;
+      try {
+        const res = await fetch(`/api/games/${encodeURIComponent(gameId)}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          game?: FamilyGame;
+          serverNow?: string;
+        };
+        syncServerClock(json.serverNow);
+        if (
+          json.game &&
+          pendingGameMutationsRef.current === 0 &&
+          gameMutationSeqRef.current === gameSeqAtStart
+        ) {
+          const fresh = json.game;
+          setGames((prev) =>
+            prev.some((g) => g.id === fresh.id)
+              ? prev.map((g) => (g.id === fresh.id ? fresh : g))
+              : [fresh, ...prev]
+          );
+        }
+      } catch {
+        /* background polling failure is non-fatal */
       }
-    } catch {
-      /* background polling failure is non-fatal */
-    }
-  }, []);
+    },
+    [syncServerClock]
+  );
 
   // Poll for new notifications periodically, on window focus, and when reconnecting
   useEffect(() => {
@@ -1727,7 +1747,12 @@ export default function FamilyApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const json = (await res.json()) as { game?: FamilyGame; error?: string };
+      const json = (await res.json()) as {
+        game?: FamilyGame;
+        error?: string;
+        serverNow?: string;
+      };
+      syncServerClock(json.serverNow);
       if (!res.ok || !json.game) {
         const errMsg = json.error || "Could not create game.";
         if (input.rematchOfId) fireToast(errMsg);
@@ -1778,7 +1803,12 @@ export default function FamilyApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: decision }),
       });
-      const json = (await res.json()) as { game?: FamilyGame; error?: string };
+      const json = (await res.json()) as {
+        game?: FamilyGame;
+        error?: string;
+        serverNow?: string;
+      };
+      syncServerClock(json.serverNow);
       if (!res.ok || !json.game) {
         fireToast(json.error || "Could not update game invite.");
         void pollGames();
@@ -1862,7 +1892,12 @@ export default function FamilyApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "move", move }),
       });
-      const json = (await res.json()) as { game?: FamilyGame; error?: string };
+      const json = (await res.json()) as {
+        game?: FamilyGame;
+        error?: string;
+        serverNow?: string;
+      };
+      syncServerClock(json.serverNow);
       if (!res.ok || !json.game) {
         const errMsg = json.error || "Move could not be saved.";
         if (isSimultaneous) {
@@ -2243,7 +2278,11 @@ export default function FamilyApp({
             className={
               tab === "games" &&
               selectedGameId &&
-              games.some((g) => g.id === selectedGameId && g.gameType === "pool")
+              games.some(
+                (g) =>
+                  g.id === selectedGameId &&
+                  (g.gameType === "pool" || g.gameType === "sudoku")
+              )
                 ? undefined
                 : "fade-up"
             }
@@ -2341,6 +2380,7 @@ export default function FamilyApp({
                 games={games}
                 currentUser={currentUser}
                 selectedGameId={selectedGameId}
+                serverClockOffsetMs={serverClockOffsetMs}
                 onSelectGame={setSelectedGameId}
                 onCreateGame={handleCreateGame}
                 onRespondInvite={handleRespondGameInvite}
