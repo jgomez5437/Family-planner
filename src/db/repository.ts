@@ -3144,6 +3144,7 @@ export interface CreateGameInput {
   opponentId: MemberId;
   mode?: GameMode;
   rematchOfId?: string | null;
+  options?: Record<string, unknown>;
 }
 
 export async function createGameRecord(
@@ -3194,6 +3195,7 @@ export async function createGameRecord(
 
   let players: [MemberId, MemberId] = [actorId, opponentId];
   let rematchOfId: string | null = null;
+  let resolvedOptions = input.options;
   if (input.rematchOfId) {
     const prev = await getGameById(familyId, input.rematchOfId);
     if (
@@ -3203,14 +3205,17 @@ export async function createGameRecord(
       prev.players.includes(opponentId)
     ) {
       rematchOfId = prev.id;
-      // Alternate who goes first (X) on rematches for fairness
+      // Alternate who goes first on rematches for fairness
       players = [prev.players[1], prev.players[0]];
+      if (!resolvedOptions && gameDef.extractRematchOptions) {
+        resolvedOptions = gameDef.extractRematchOptions(prev.state);
+      }
     }
   }
 
   const now = new Date();
   const nowIso = now.toISOString();
-  const initialState = gameDef.createInitialState(players);
+  const initialState = gameDef.createInitialState(players, resolvedOptions);
   const isPassAndPlay = mode === "pass_and_play";
   const newGame: FamilyGame = {
     id: uid("gm"),
@@ -3550,12 +3555,22 @@ export async function makeGameMoveRecord(
 
     if (result.completed) {
       if (result.outcome === "win") {
+        const winnerId = result.winnerId || movingPlayerId;
+        const loserId =
+          existing.players[0] === winnerId
+            ? existing.players[1]
+            : existing.players[0];
+        const winnerName = winnerId === movingPlayerId ? moverName : otherName;
+        const loserName = loserId === movingPlayerId ? moverName : otherName;
         await dispatchFamilyNotification({
           familyId,
           actorId: movingPlayerId,
           recipientIds: [otherPlayerId],
           category: "game",
-          title: `${moverName} won ${gameDef.name}!`,
+          title:
+            winnerId === otherPlayerId
+              ? `You won ${gameDef.name}!`
+              : `${winnerName} won ${gameDef.name}!`,
           body: "Tap to see the final board or request a rematch.",
           target: {
             tab: "games",
@@ -3564,9 +3579,9 @@ export async function makeGameMoveRecord(
         });
         await recordActivity(
           familyId,
-          `${moverName} won ${gameDef.name} against ${otherName}`,
+          `${winnerName} won ${gameDef.name} against ${loserName}`,
           gameDef.name,
-          movingPlayerId
+          winnerId
         );
       } else if (result.outcome === "draw") {
         await dispatchFamilyNotification({

@@ -6,18 +6,21 @@ import type {
 } from "@/types/family";
 import { ticTacToeGame } from "./ticTacToe";
 import { poolGame } from "./pool";
+import { dotsAndBoxesGame } from "./dotsAndBoxes";
 import type { GameDefinition } from "./types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const GAME_DEFINITIONS: GameDefinition<any, any>[] = [
   ticTacToeGame,
   poolGame,
+  dotsAndBoxesGame,
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const GAME_DEFINITION_BY_ID: Record<GameTypeId, GameDefinition<any, any>> = {
   tic_tac_toe: ticTacToeGame,
   pool: poolGame,
+  dots_and_boxes: dotsAndBoxesGame,
 };
 
 export function getGameDefinition(

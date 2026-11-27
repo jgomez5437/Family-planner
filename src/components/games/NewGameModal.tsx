@@ -3,6 +3,11 @@
 import React, { useMemo, useState } from "react";
 import { Check, Send, Smartphone, Users } from "lucide-react";
 import { btnStyle } from "@/lib/constants";
+import {
+  DEFAULT_DOTS_AND_BOXES_SIZE,
+  DOTS_AND_BOXES_SIZE_OPTIONS,
+  type DotsAndBoxesSize,
+} from "@/lib/games/dotsAndBoxes";
 import { GAME_DEFINITIONS } from "@/lib/games/registry";
 import { useMembers } from "@/components/MembersContext";
 import { AvatarDot, FieldLabel, ModalShell } from "@/components/ui/Primitives";
@@ -20,11 +25,15 @@ export function NewGameModal({
     gameType: GameTypeId;
     opponentId: MemberId;
     mode: GameMode;
+    options?: Record<string, unknown>;
   }) => Promise<string | null>;
   onOpenFamilySettings: () => void;
 }) {
   const { members } = useMembers();
   const [gameType, setGameType] = useState<GameTypeId>("tic_tac_toe");
+  const [dotsBoardSize, setDotsBoardSize] = useState<DotsAndBoxesSize>(
+    DEFAULT_DOTS_AND_BOXES_SIZE
+  );
 
   const otherMembers = useMemo(
     () => members.filter((m) => m.id !== currentUser),
@@ -65,6 +74,8 @@ export function NewGameModal({
       gameType,
       opponentId: effectiveOpponentId,
       mode,
+      options:
+        gameType === "dots_and_boxes" ? { size: dotsBoardSize } : undefined,
     });
     setSubmitting(false);
     if (err) {
@@ -82,7 +93,7 @@ export function NewGameModal({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "repeat(auto-fit, minmax(125px, 1fr))",
             gap: 8,
             marginBottom: 16,
           }}
@@ -157,6 +168,64 @@ export function NewGameModal({
             );
           })}
         </div>
+
+        {/* Dots & Boxes Board Size Picker */}
+        {gameType === "dots_and_boxes" && (
+          <div style={{ marginBottom: 16 }}>
+            <FieldLabel>Board size</FieldLabel>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 8,
+              }}
+            >
+              {DOTS_AND_BOXES_SIZE_OPTIONS.map((opt) => {
+                const selected = dotsBoardSize === opt.size;
+                return (
+                  <button
+                    key={opt.size}
+                    type="button"
+                    onClick={() => setDotsBoardSize(opt.size)}
+                    style={{
+                      padding: "9px 10px",
+                      borderRadius: 12,
+                      background: selected
+                        ? "var(--accent-soft)"
+                        : "var(--bg-surface)",
+                      border: `1.5px solid ${
+                        selected ? "var(--accent)" : "var(--border-default)"
+                      }`,
+                      cursor: "pointer",
+                      textAlign: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13.5,
+                        fontWeight: 800,
+                        color: selected
+                          ? "var(--accent-ink)"
+                          : "var(--text-primary)",
+                      }}
+                    >
+                      {opt.label}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginTop: 2,
+                      }}
+                    >
+                      {opt.subtitle}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Play Mode Toggle */}
         <FieldLabel>How do you want to play?</FieldLabel>
