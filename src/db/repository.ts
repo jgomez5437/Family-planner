@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { getReadyDb } from "./index";
 import {
   activities,
@@ -41,6 +42,7 @@ import type {
   AppTabId,
   ChildProfile,
   DoseLogMap,
+  EventHistoryEntry,
   FamilyEvent,
   FamilyGame,
   FamilyNotification,
@@ -1400,12 +1402,11 @@ export async function deleteFamilyMember(
         status: 403,
       };
     }
-
-    const loginAccounts = famMembers.filter((m) => Boolean(m.passwordHash));
-    if (target.passwordHash && loginAccounts.length <= 1) {
+    if (target.passwordHash) {
       return {
         ok: false,
-        error: "You cannot remove the only login account in the family.",
+        error:
+          "Registered accounts must be deleted from Account settings with password confirmation.",
         status: 400,
       };
     }
@@ -1430,12 +1431,11 @@ export async function deleteFamilyMember(
       status: 403,
     };
   }
-
-  const loginAccounts = fam.members.filter((m) => Boolean(m.passwordHash));
-  if (target.passwordHash && loginAccounts.length <= 1) {
+  if (target.passwordHash) {
     return {
       ok: false,
-      error: "You cannot remove the only login account in the family.",
+      error:
+        "Registered accounts must be deleted from Account settings with password confirmation.",
       status: 400,
     };
   }
@@ -1453,6 +1453,522 @@ export async function deleteFamilyMember(
     if (sess.memberId === memberId) store.sessions.delete(token);
   }
   return { ok: true };
+}
+
+function scrubEventForDeletedMember(
+  participants: MemberId[],
+  history: EventHistoryEntry[],
+  memberId: MemberId
+): {
+  changed: boolean;
+  participants: MemberId[];
+  history: EventHistoryEntry[];
+} {
+  const nextParticipants = participants.filter((id) => id !== memberId);
+  const nextHistory = history.filter((h) => h.by !== memberId);
+  const changed =
+    nextParticipants.length !== participants.length ||
+    nextHistory.length !== history.length;
+  return { changed, participants: nextParticipants, history: nextHistory };
+}
+
+function scrubTaskForDeletedMember(
+  task: {
+    assignedTo: MemberId | null;
+    completedBy?: MemberId | null;
+    completedAt?: string | null;
+    linkedEventId?: string | null;
+    linkedEventTitle?: string | null;
+    overrides?: Record<string, TaskOverride> | null;
+  },
+  memberId: MemberId,
+  deletedEventIds: Set<string>
+): {
+  changed: boolean;
+  assignedTo: MemberId | null;
+  completedBy: MemberId | null;
+  completedAt: string | null;
+  linkedEventId: string | null;
+  linkedEventTitle: string | null;
+  overrides: Record<string, TaskOverride>;
+} {
+  let changed = false;
+  let assignedTo = task.assignedTo ?? null;
+  if (assignedTo === memberId) {
+    assignedTo = null;
+    changed = true;
+  }
+
+  let completedBy = task.completedBy ?? null;
+  let completedAt = task.completedAt ?? null;
+  if (completedBy === memberId) {
+    completedBy = null;
+    completedAt = null;
+    changed = true;
+  }
+
+  let linkedEventId = task.linkedEventId ?? null;
+  let linkedEventTitle = task.linkedEventTitle ?? null;
+  if (linkedEventId && deletedEventIds.has(linkedEventId)) {
+    linkedEventId = null;
+    linkedEventTitle = null;
+    changed = true;
+  }
+
+  const rawOverrides = task.overrides || {};
+  const nextOverrides: Record<string, TaskOverride> = {};
+  for (const [occDate, ov] of Object.entries(rawOverrides)) {
+    const nextOv: TaskOverride = { ...ov };
+    if (nextOv.assignedTo === memberId) {
+      nextOv.assignedTo = null;
+      changed = true;
+    }
+    if (nextOv.completedBy === memberId) {
+      nextOv.completedBy = null;
+      nextOv.completedAt = null;
+      changed = true;
+    }
+    if (nextOv.linkedEventId && deletedEventIds.has(nextOv.linkedEventId)) {
+      nextOv.linkedEventId = null;
+      nextOv.linkedEventTitle = null;
+      changed = true;
+    }
+    nextOverrides[occDate] = nextOv;
+  }
+
+  return {
+    changed,
+    assignedTo,
+    completedBy,
+    completedAt,
+    linkedEventId,
+    linkedEventTitle,
+    overrides: nextOverrides,
+  };
+}
+
+export async function deleteUserAccount(
+  familyId: string,
+  memberId: MemberId,
+  password: string
+): Promise<
+  | { ok: true; familyDeleted: boolean }
+  | { ok: false; error: string; status: number }
+> {
+  if (!password) {
+    return {
+      ok: false,
+      error: "Please enter your password to confirm account deletion.",
+      status: 400,
+    };
+  }
+
+  const db = await getReadyDb();
+  if (db) {
+    const famMembers = await db
+      .select()
+      .from(members)
+      .where(eq(members.familyId, familyId))
+      .orderBy(asc(members.createdAt));
+
+    const target = famMembers.find((m) => m.id === memberId);
+    if (!target) {
+      return { ok: false, error: "Account not found.", status: 404 };
+    }
+    if (!target.passwordHash || !verifyPassword(password, target.passwordHash)) {
+      return {
+        ok: false,
+        error: "Incorrect password. Please try again.",
+        status: 401,
+      };
+    }
+
+    const otherLoginAccounts = famMembers.filter(
+      (m) => m.id !== memberId && Boolean(m.passwordHash)
+    );
+
+    if (otherLoginAccounts.length === 0) {
+      await db.delete(families).where(eq(families.id, familyId));
+      return { ok: true, familyDeleted: true };
+    }
+
+    const [famEvents, famTasks, famPosts, famGames] = await Promise.all([
+      db.select().from(events).where(eq(events.familyId, familyId)),
+      db.select().from(tasks).where(eq(tasks.familyId, familyId)),
+      db
+        .select({ id: posts.id, author: posts.author })
+        .from(posts)
+        .where(eq(posts.familyId, familyId)),
+      db
+        .select({
+          id: games.id,
+          challengerId: games.challengerId,
+          opponentId: games.opponentId,
+        })
+        .from(games)
+        .where(eq(games.familyId, familyId)),
+    ]);
+
+    const deletedEventIds = new Set(
+      famEvents.filter((e) => e.createdBy === memberId).map((e) => e.id)
+    );
+    const deletedTaskIds = famTasks
+      .filter((t) => t.createdBy === memberId)
+      .map((t) => t.id);
+    const deletedPlanEntityIds = [...deletedEventIds, ...deletedTaskIds];
+    const deletedPostIds = famPosts
+      .filter((p) => p.author === memberId)
+      .map((p) => p.id);
+    const allPostIds = famPosts.map((p) => p.id);
+    const deletedGameIds = famGames
+      .filter((g) => g.challengerId === memberId || g.opponentId === memberId)
+      .map((g) => g.id);
+
+    const ops: BatchItem<"pg">[] = [];
+
+    if (allPostIds.length > 0) {
+      ops.push(
+        db
+          .delete(postComments)
+          .where(
+            and(
+              eq(postComments.by, memberId),
+              inArray(postComments.postId, allPostIds)
+            )
+          )
+      );
+      ops.push(
+        db
+          .delete(postReactions)
+          .where(
+            and(
+              eq(postReactions.memberId, memberId),
+              inArray(postReactions.postId, allPostIds)
+            )
+          )
+      );
+    }
+
+    ops.push(
+      db
+        .delete(posts)
+        .where(and(eq(posts.familyId, familyId), eq(posts.author, memberId)))
+    );
+
+    if (deletedEventIds.size > 0) {
+      ops.push(
+        db
+          .delete(activities)
+          .where(
+            and(
+              eq(activities.familyId, familyId),
+              or(
+                eq(activities.by, memberId),
+                inArray(activities.targetEventId, [...deletedEventIds])
+              )
+            )
+          )
+      );
+    } else {
+      ops.push(
+        db
+          .delete(activities)
+          .where(
+            and(eq(activities.familyId, familyId), eq(activities.by, memberId))
+          )
+      );
+    }
+
+    const notifConds = [
+      eq(notifications.recipientId, memberId),
+      eq(notifications.actorId, memberId),
+    ];
+    if (deletedPostIds.length > 0) {
+      notifConds.push(
+        and(
+          eq(notifications.targetTab, "wall"),
+          inArray(notifications.targetEntityId, deletedPostIds)
+        )!
+      );
+    }
+    if (deletedPlanEntityIds.length > 0) {
+      notifConds.push(
+        and(
+          inArray(notifications.targetTab, ["plan", "events", "tasks"]),
+          inArray(notifications.targetEntityId, deletedPlanEntityIds)
+        )!
+      );
+    }
+    if (deletedGameIds.length > 0) {
+      notifConds.push(
+        and(
+          eq(notifications.targetTab, "games"),
+          inArray(notifications.targetEntityId, deletedGameIds)
+        )!
+      );
+    }
+
+    ops.push(
+      db
+        .delete(notifications)
+        .where(and(eq(notifications.familyId, familyId), or(...notifConds)))
+    );
+
+    ops.push(
+      db
+        .delete(doseLogs)
+        .where(and(eq(doseLogs.familyId, familyId), eq(doseLogs.givenBy, memberId)))
+    );
+
+    ops.push(
+      db
+        .delete(events)
+        .where(and(eq(events.familyId, familyId), eq(events.createdBy, memberId)))
+    );
+
+    for (const ev of famEvents) {
+      if (deletedEventIds.has(ev.id)) continue;
+      const scrubbed = scrubEventForDeletedMember(
+        ev.participants || [],
+        ev.history || [],
+        memberId
+      );
+      if (scrubbed.changed) {
+        ops.push(
+          db
+            .update(events)
+            .set({
+              participants: scrubbed.participants,
+              history: scrubbed.history,
+            })
+            .where(and(eq(events.id, ev.id), eq(events.familyId, familyId)))
+        );
+      }
+    }
+
+    ops.push(
+      db
+        .delete(tasks)
+        .where(and(eq(tasks.familyId, familyId), eq(tasks.createdBy, memberId)))
+    );
+
+    for (const task of famTasks) {
+      if (task.createdBy === memberId) continue;
+      const scrubbed = scrubTaskForDeletedMember(
+        task,
+        memberId,
+        deletedEventIds
+      );
+      if (scrubbed.changed) {
+        ops.push(
+          db
+            .update(tasks)
+            .set({
+              assignedTo: scrubbed.assignedTo,
+              completedBy: scrubbed.completedBy,
+              completedAt: scrubbed.completedAt,
+              linkedEventId: scrubbed.linkedEventId,
+              linkedEventTitle: scrubbed.linkedEventTitle,
+              overrides: scrubbed.overrides,
+            })
+            .where(and(eq(tasks.id, task.id), eq(tasks.familyId, familyId)))
+        );
+      }
+    }
+
+    ops.push(
+      db
+        .delete(games)
+        .where(
+          and(
+            eq(games.familyId, familyId),
+            or(
+              eq(games.challengerId, memberId),
+              eq(games.opponentId, memberId)
+            )
+          )
+        )
+    );
+
+    const needsAdminPromotion =
+      target.role === "admin" &&
+      !otherLoginAccounts.some((m) => m.role === "admin");
+    if (needsAdminPromotion) {
+      ops.push(
+        db
+          .update(members)
+          .set({ role: "admin" })
+          .where(
+            and(
+              eq(members.id, otherLoginAccounts[0].id),
+              eq(members.familyId, familyId)
+            )
+          )
+      );
+    }
+
+    ops.push(
+      db
+        .delete(members)
+        .where(and(eq(members.id, memberId), eq(members.familyId, familyId)))
+    );
+
+    await db.batch([ops[0], ...ops.slice(1)]);
+    return { ok: true, familyDeleted: false };
+  }
+
+  // In-memory store fallback
+  const store = getMemoryStore();
+  const fam = store.families.get(familyId);
+  if (!fam) return { ok: false, error: "Family not found.", status: 404 };
+
+  const target = fam.members.find((m) => m.id === memberId);
+  if (!target) {
+    return { ok: false, error: "Account not found.", status: 404 };
+  }
+  if (!target.passwordHash || !verifyPassword(password, target.passwordHash)) {
+    return {
+      ok: false,
+      error: "Incorrect password. Please try again.",
+      status: 401,
+    };
+  }
+
+  const otherLoginAccounts = fam.members.filter(
+    (m) => m.id !== memberId && Boolean(m.passwordHash)
+  );
+
+  if (otherLoginAccounts.length === 0) {
+    store.families.delete(familyId);
+    for (const [token, sess] of store.sessions.entries()) {
+      if (sess.familyId === familyId) store.sessions.delete(token);
+    }
+    return { ok: true, familyDeleted: true };
+  }
+
+  const deletedEventIds = new Set(
+    fam.events.filter((e) => e.createdBy === memberId).map((e) => e.id)
+  );
+  const deletedPlanEntityIds = new Set([
+    ...deletedEventIds,
+    ...fam.tasks.filter((t) => t.createdBy === memberId).map((t) => t.id),
+  ]);
+  const deletedPostIds = new Set(
+    fam.posts.filter((p) => p.author === memberId).map((p) => p.id)
+  );
+  const deletedGameIds = new Set(
+    (fam.games || [])
+      .filter((g) => g.challengerId === memberId || g.opponentId === memberId)
+      .map((g) => g.id)
+  );
+
+  const needsAdminPromotion =
+    target.role === "admin" &&
+    !otherLoginAccounts.some((m) => m.role === "admin");
+  if (needsAdminPromotion) {
+    otherLoginAccounts[0].role = "admin";
+  }
+
+  fam.members = fam.members.filter((m) => m.id !== memberId);
+  delete fam.profiles[memberId];
+  fam.meds = fam.meds.filter((m) => m.kidId !== memberId);
+
+  for (const [key, entry] of Object.entries(fam.doseLog)) {
+    if (entry.by === memberId) {
+      delete fam.doseLog[key];
+    }
+  }
+
+  fam.posts = fam.posts
+    .filter((p) => p.author !== memberId)
+    .map((p) => {
+      const nextReactions: Record<string, MemberId[]> = {};
+      for (const [emoji, ids] of Object.entries(p.reactions || {})) {
+        nextReactions[emoji] = (ids || []).filter((id) => id !== memberId);
+      }
+      return {
+        ...p,
+        reactions: nextReactions,
+        comments: (p.comments || []).filter((c) => c.by !== memberId),
+      };
+    });
+
+  fam.events = fam.events
+    .filter((e) => e.createdBy !== memberId)
+    .map((e) => {
+      const scrubbed = scrubEventForDeletedMember(
+        e.participants || [],
+        e.history || [],
+        memberId
+      );
+      return scrubbed.changed
+        ? {
+            ...e,
+            participants: scrubbed.participants,
+            history: scrubbed.history,
+          }
+        : e;
+    });
+
+  fam.tasks = fam.tasks
+    .filter((t) => t.createdBy !== memberId)
+    .map((t) => {
+      const scrubbed = scrubTaskForDeletedMember(t, memberId, deletedEventIds);
+      return scrubbed.changed
+        ? {
+            ...t,
+            assignedTo: scrubbed.assignedTo,
+            completedBy: scrubbed.completedBy,
+            completedAt: scrubbed.completedAt,
+            linkedEventId: scrubbed.linkedEventId ?? undefined,
+            linkedEventTitle: scrubbed.linkedEventTitle ?? undefined,
+            overrides: scrubbed.overrides,
+          }
+        : t;
+    });
+
+  fam.activity = fam.activity.filter(
+    (a) =>
+      a.by !== memberId &&
+      (!a.targetEventId || !deletedEventIds.has(a.targetEventId)) &&
+      (!a.target?.id || !deletedEventIds.has(a.target.id))
+  );
+
+  fam.notifications = (fam.notifications || []).filter((n) => {
+    if (n.recipientId === memberId || n.actorId === memberId) return false;
+    if (
+      n.target?.tab === "wall" &&
+      n.target.entityId &&
+      deletedPostIds.has(n.target.entityId)
+    ) {
+      return false;
+    }
+    if (
+      n.target?.tab === "plan" &&
+      n.target.entityId &&
+      deletedPlanEntityIds.has(n.target.entityId)
+    ) {
+      return false;
+    }
+    if (
+      n.target?.tab === "games" &&
+      n.target.entityId &&
+      deletedGameIds.has(n.target.entityId)
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  fam.games = (fam.games || []).filter(
+    (g) => g.challengerId !== memberId && g.opponentId !== memberId
+  );
+
+  for (const [token, sess] of store.sessions.entries()) {
+    if (sess.memberId === memberId) store.sessions.delete(token);
+  }
+
+  return { ok: true, familyDeleted: false };
 }
 
 /* ---------------- Events ---------------- */

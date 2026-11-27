@@ -143,6 +143,15 @@ export function saveNotificationPreferences(
   }
 }
 
+export function clearNotificationPreferences(memberId: MemberId): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(prefsStorageKey(memberId));
+  } catch {
+    /* ignore storage quota / privacy mode errors */
+  }
+}
+
 export function isCategoryEnabled(
   prefs: NotificationPreferences,
   category: NotificationCategory
