@@ -917,6 +917,8 @@ export async function getFamilyState(
         completedAt: g.completedAt ? toIsoTimestamp(g.completedAt) : null,
       }));
 
+      const settledGames = await settleExpiredGames(formattedGames);
+
       return {
         familyId: familyRow.id,
         familyName: familyRow.name,
@@ -931,7 +933,7 @@ export async function getFamilyState(
         doseLog,
         profiles,
         notifications: formattedNotifications,
-        games: sanitizeGamesForViewer(formattedGames, currentUser.id),
+        games: sanitizeGamesForViewer(settledGames, currentUser.id),
         dbConnected: true,
       };
     } catch (err) {
@@ -951,6 +953,10 @@ export async function getFamilyState(
     .filter((n) => n.recipientId === currentUser.id)
     .slice(0, 30);
 
+  const settledMemoryGames = await settleExpiredGames(
+    (fam.games || []).slice(0, 100)
+  );
+
   return {
     familyId: fam.id,
     familyName: fam.name,
@@ -965,7 +971,7 @@ export async function getFamilyState(
     doseLog: fam.doseLog,
     profiles: fam.profiles,
     notifications: userNotifications,
-    games: sanitizeGamesForViewer((fam.games || []).slice(0, 100), currentUser.id),
+    games: sanitizeGamesForViewer(settledMemoryGames, currentUser.id),
     dbConnected: false,
   };
 }
@@ -3826,6 +3832,15 @@ export async function forfeitGameRecord(
       ok: false,
       error: "You are not a player in this game.",
       status: 403,
+    };
+  }
+
+  const settled = await settleExpiredGame(existing);
+  if (settled) {
+    return {
+      ok: false,
+      error: "This game has already ended.",
+      status: 409,
     };
   }
 

@@ -710,8 +710,15 @@ export function GamesTab({
                   flexWrap: "wrap",
                 }}
               >
-                <div
+                <button
+                  type="button"
+                  onClick={() => onSelectGame(g.id)}
                   style={{
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    textAlign: "left",
+                    cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
@@ -738,6 +745,7 @@ export function GamesTab({
                         alignItems: "center",
                         gap: 5,
                         marginTop: 2,
+                        flexWrap: "wrap",
                       }}
                     >
                       <span>
@@ -757,7 +765,7 @@ export function GamesTab({
                       </span>
                     </div>
                   </div>
-                </div>
+                </button>
 
                 <div style={{ display: "flex", gap: 7, flexShrink: 0 }}>
                   <button
@@ -825,12 +833,20 @@ export function GamesTab({
                   gap: 10,
                 }}
               >
-                <div
+                <button
+                  type="button"
+                  onClick={() => onSelectGame(g.id)}
                   style={{
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    textAlign: "left",
+                    cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
                     minWidth: 0,
+                    flex: 1,
                   }}
                 >
                   <AvatarDot id={opponent.id} size={34} />
@@ -871,7 +887,7 @@ export function GamesTab({
                       </span>
                     </div>
                   </div>
-                </div>
+                </button>
                 <button
                   type="button"
                   disabled={busy}

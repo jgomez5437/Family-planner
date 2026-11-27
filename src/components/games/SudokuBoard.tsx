@@ -95,13 +95,16 @@ export function SudokuBoard({
     cell: number;
     value: number;
   } | null>(null);
-  const [popCell, setPopCell] = useState<number | null>(null);
+  const [popCells, setPopCells] = useState<number[]>([]);
   const [inlineNotice, setInlineNotice] = useState<string | null>(null);
-  const [showSolution, setShowSolution] = useState(false);
+  const [showSolution, setShowSolution] = useState(
+    () => isCompleted && !isParticipant && !isShared
+  );
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const lastAttemptRef = useRef<{ cell: number; value: number } | null>(null);
   const lastEventAtRef = useRef<string | null>(state.lastEvent?.at || null);
+  const prevClaimsRef = useRef<(MemberId | null)[]>(state.claims);
   const syncedTimeoutRef = useRef(false);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,7 +163,7 @@ export function SudokuBoard({
     isActive && myLockoutUntilMs > nowMs ? myLockoutUntilMs - nowMs : 0;
   const isLockedOut = lockoutRemainingMs > 0;
 
-  // React to incoming server events (wrong guess shake, opponent claim pop, clean up notes)
+  // React to wrong-guess feedback from the server
   useEffect(() => {
     const ev = state.lastEvent;
     if (!ev || ev.at === lastEventAtRef.current) return;
@@ -174,28 +177,48 @@ export function SudokuBoard({
       setWrongFlash({ cell: ev.cell, value: attempted });
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       flashTimerRef.current = setTimeout(() => setWrongFlash(null), 650);
-    } else if (ev.result === "correct") {
-      setPopCell(ev.cell);
-      if (popTimerRef.current) clearTimeout(popTimerRef.current);
-      popTimerRef.current = setTimeout(() => setPopCell(null), 420);
-      const placedVal = state.sharedValues[ev.cell];
-      setNotes((prev) => {
-        if (!prev[ev.cell] && !placedVal) return prev;
-        const next: Record<number, number[]> = {};
-        for (const [k, arr] of Object.entries(prev)) {
+    }
+  }, [state.lastEvent, currentUser]);
+
+  // Detect all newly claimed cells (even if multiple arrive in one poll) for pop & note cleanup
+  useEffect(() => {
+    if (!isShared) {
+      prevClaimsRef.current = state.claims;
+      return;
+    }
+    const prev = prevClaimsRef.current;
+    const newlyClaimed: number[] = [];
+    for (let i = 0; i < 81; i += 1) {
+      if (!prev[i] && state.claims[i]) newlyClaimed.push(i);
+    }
+    prevClaimsRef.current = state.claims;
+    if (newlyClaimed.length === 0) return;
+
+    setPopCells(newlyClaimed);
+    if (popTimerRef.current) clearTimeout(popTimerRef.current);
+    popTimerRef.current = setTimeout(() => setPopCells([]), 420);
+
+    setNotes((cur) => {
+      if (Object.keys(cur).length === 0) return cur;
+      let next = cur;
+      for (const cell of newlyClaimed) {
+        const placedVal = state.sharedValues[cell];
+        const updated: Record<number, number[]> = {};
+        for (const [k, arr] of Object.entries(next)) {
           const idx = Number(k);
-          if (idx === ev.cell) continue;
-          if (placedVal && sameUnit(idx, ev.cell)) {
+          if (idx === cell) continue;
+          if (placedVal && sameUnit(idx, cell)) {
             const filtered = arr.filter((d) => d !== placedVal);
-            if (filtered.length > 0) next[idx] = filtered;
+            if (filtered.length > 0) updated[idx] = filtered;
           } else {
-            next[idx] = arr;
+            updated[idx] = arr;
           }
         }
-        return next;
-      });
-    }
-  }, [state.lastEvent, state.sharedValues, currentUser]);
+        next = updated;
+      }
+      return next;
+    });
+  }, [isShared, state.claims, state.sharedValues]);
 
   // Current displayed values for the 81 cells
   const mySeparateBoard = state.boards[currentUser];
@@ -448,13 +471,27 @@ export function SudokuBoard({
     selectedCell !== null ? displayValues[selectedCell] : 0;
 
   const totalEmpty = Math.max(1, state.emptyCount || 1);
-  const p1Primary = isCompleted && state.finalCorrect
-    ? state.finalCorrect[player1Id] ?? 0
+  const completedCorrectCount = (pid: MemberId): number => {
+    if (state.finalCorrect) return state.finalCorrect[pid] ?? 0;
+    if (isShared) return state.scores[pid] ?? 0;
+    const sol = state.solution;
+    const board = state.boards[pid];
+    if (sol && board) {
+      let n = 0;
+      for (let i = 0; i < 81; i += 1) {
+        if (board[i] && board[i] === sol[i]) n += 1;
+      }
+      return n;
+    }
+    return state.filled[pid] ?? 0;
+  };
+  const p1Primary = isCompleted
+    ? completedCorrectCount(player1Id)
     : isShared
       ? state.scores[player1Id] ?? 0
       : state.filled[player1Id] ?? 0;
-  const p2Primary = isCompleted && state.finalCorrect
-    ? state.finalCorrect[player2Id] ?? 0
+  const p2Primary = isCompleted
+    ? completedCorrectCount(player2Id)
     : isShared
       ? state.scores[player2Id] ?? 0
       : state.filled[player2Id] ?? 0;
@@ -911,7 +948,7 @@ export function SudokuBoard({
             const val = displayValues[idx];
             const isPendingCell = pendingEntry?.cell === idx;
             const isWrongFlashing = wrongFlash?.cell === idx;
-            const isPopping = popCell === idx;
+            const isPopping = popCells.includes(idx);
             const isSelected = selectedCell === idx;
             const isPeer =
               selectedCell !== null &&
@@ -1258,36 +1295,42 @@ export function SudokuBoard({
               <span>Notes {notesMode ? "On" : "Off"}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleErase}
-              disabled={selectedCell === null || state.puzzle[selectedCell] !== 0}
-              style={{
-                flex: 1,
-                padding: "8px 12px",
-                borderRadius: 11,
-                border: "1.5px solid var(--border-default)",
-                background: "var(--bg-subtle)",
-                color: "var(--text-secondary)",
-                fontSize: 12.5,
-                fontWeight: 700,
-                cursor:
-                  selectedCell === null || state.puzzle[selectedCell] !== 0
-                    ? "not-allowed"
-                    : "pointer",
-                opacity:
-                  selectedCell === null || state.puzzle[selectedCell] !== 0
-                    ? 0.5
-                    : 1,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
-              }}
-            >
-              <Eraser size={13} />
-              <span>{isShared ? "Clear Notes" : "Erase"}</span>
-            </button>
+            {(() => {
+              const canErase =
+                selectedCell !== null &&
+                state.puzzle[selectedCell] === 0 &&
+                (isShared
+                  ? !state.claims[selectedCell] &&
+                    Boolean(notes[selectedCell]?.length)
+                  : (mySeparateBoard?.[selectedCell] || 0) !== 0 ||
+                    Boolean(notes[selectedCell]?.length));
+              return (
+                <button
+                  type="button"
+                  onClick={handleErase}
+                  disabled={!canErase}
+                  style={{
+                    flex: 1,
+                    padding: "8px 12px",
+                    borderRadius: 11,
+                    border: "1.5px solid var(--border-default)",
+                    background: "var(--bg-subtle)",
+                    color: "var(--text-secondary)",
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: !canErase ? "not-allowed" : "pointer",
+                    opacity: !canErase ? 0.5 : 1,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Eraser size={13} />
+                  <span>{isShared ? "Clear Notes" : "Erase"}</span>
+                </button>
+              );
+            })()}
           </div>
 
           {/* 1-9 Digit Pad */}
