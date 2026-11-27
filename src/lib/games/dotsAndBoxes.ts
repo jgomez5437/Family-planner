@@ -230,10 +230,13 @@ export const dotsAndBoxesGame: GameDefinition<
 
     const [p1, p2] = players;
     const nextScores: Record<MemberId, number> = {
-      [p1]: current.scores[p1] ?? 0,
-      [p2]: current.scores[p2] ?? 0,
+      [p1]: 0,
+      [p2]: 0,
     };
-    nextScores[playerId] = (nextScores[playerId] ?? 0) + claimedBoxes.length;
+    for (const owner of nextBoxes) {
+      if (owner === p1) nextScores[p1] += 1;
+      else if (owner === p2) nextScores[p2] += 1;
+    }
 
     const allClaimed = nextBoxes.every((owner) => owner !== null);
     const keptTurn = !allClaimed && claimedBoxes.length > 0;

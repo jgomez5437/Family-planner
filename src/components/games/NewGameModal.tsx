@@ -186,6 +186,7 @@ export function NewGameModal({
                   <button
                     key={opt.size}
                     type="button"
+                    aria-pressed={selected}
                     onClick={() => setDotsBoardSize(opt.size)}
                     style={{
                       padding: "9px 10px",

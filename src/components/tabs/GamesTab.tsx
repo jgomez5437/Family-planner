@@ -556,6 +556,7 @@ export function GamesTab({
             selectedGame.status !== "cancelled" &&
             selectedGame.gameType === "dots_and_boxes" && (
               <DotsAndBoxesBoard
+                key={selectedGame.id}
                 game={selectedGame}
                 currentUser={currentUser}
                 submitting={busyGameId === selectedGame.id}

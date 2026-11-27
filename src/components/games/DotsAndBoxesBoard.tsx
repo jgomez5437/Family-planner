@@ -46,14 +46,19 @@ export function DotsAndBoxesBoard({
   const boxesLeft = Math.max(0, totalBoxes - (p1Score + p2Score));
 
   const isPassAndPlay = game.mode === "pass_and_play";
+  const isParticipant = game.players.includes(currentUser);
   const isActive = game.status === "active";
   const isCompleted = game.status === "completed";
   const canMoveNow =
     isActive &&
     !submitting &&
+    isParticipant &&
     (isPassAndPlay || game.currentTurnId === currentUser);
 
   const effectiveHoveredKey = canMoveNow ? hoveredKey : null;
+  const lastClaimedBoxes = Array.isArray(state.lastMove?.claimedBoxes)
+    ? state.lastMove.claimedBoxes
+    : [];
 
   const activeTurnMember = game.currentTurnId
     ? memberById(game.currentTurnId)
@@ -86,7 +91,7 @@ export function DotsAndBoxesBoard({
   } else if (isActive && activeTurnMember) {
     const bonusClaimedCount =
       state.lastMove?.keptTurn && state.lastMove.by === activeTurnMember.id
-        ? state.lastMove.claimedBoxes.length
+        ? lastClaimedBoxes.length
         : 0;
     const boxWord = bonusClaimedCount === 1 ? "box" : "boxes";
 
@@ -407,7 +412,7 @@ export function DotsAndBoxesBoard({
       const ownerId = state.boxes[bIdx];
       const owner = ownerId ? memberById(ownerId) : null;
       const isNewlyClaimed = Boolean(
-        ownerId && state.lastMove?.claimedBoxes.includes(bIdx)
+        ownerId && lastClaimedBoxes.includes(bIdx)
       );
 
       gridCells.push(
@@ -674,32 +679,34 @@ export function DotsAndBoxesBoard({
             flexWrap: "wrap",
           }}
         >
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={onRematch}
-            style={{
-              flex: "1 1 160px",
-              maxWidth: 220,
-              background: "var(--accent)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 12,
-              padding: "11px 16px",
-              fontSize: 13.5,
-              fontWeight: 700,
-              cursor: submitting ? "wait" : "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 7,
-              boxShadow: "0 4px 12px rgba(232,98,44,0.28)",
-              opacity: submitting ? 0.7 : 1,
-            }}
-          >
-            <RotateCcw size={15} />
-            {isPassAndPlay ? "Play Again" : "Send Rematch"}
-          </button>
+          {isParticipant && (
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={onRematch}
+              style={{
+                flex: "1 1 160px",
+                maxWidth: 220,
+                background: "var(--accent)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 12,
+                padding: "11px 16px",
+                fontSize: 13.5,
+                fontWeight: 700,
+                cursor: submitting ? "wait" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                boxShadow: "0 4px 12px rgba(232,98,44,0.28)",
+                opacity: submitting ? 0.7 : 1,
+              }}
+            >
+              <RotateCcw size={15} />
+              {isPassAndPlay ? "Play Again" : "Send Rematch"}
+            </button>
+          )}
           <button
             type="button"
             onClick={onBack}
