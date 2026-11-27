@@ -58,6 +58,7 @@ export function GamesTab({
   games,
   currentUser,
   selectedGameId,
+  serverClockOffsetMs = 0,
   onSelectGame,
   onCreateGame,
   onRespondInvite,
@@ -69,6 +70,7 @@ export function GamesTab({
   games: FamilyGame[];
   currentUser: MemberId;
   selectedGameId: string | null;
+  serverClockOffsetMs?: number;
   onSelectGame: (gameId: string | null) => void;
   onCreateGame: (input: {
     gameType: GameTypeId;
@@ -245,6 +247,29 @@ export function GamesTab({
       );
     }
 
+    if (selectedGame.gameType === "sudoku") {
+      return (
+        <SudokuBoard
+          key={selectedGame.id}
+          game={selectedGame}
+          currentUser={currentUser}
+          submitting={busyGameId === selectedGame.id}
+          serverClockOffsetMs={serverClockOffsetMs}
+          onMakeMove={(move) => handleMove(selectedGame.id, move)}
+          onSyncNow={onSyncGame ? () => onSyncGame(selectedGame.id) : undefined}
+          onRespondInvite={(decision) =>
+            void handleInviteAction(selectedGame.id, decision)
+          }
+          onForfeit={() => void handleForfeit(selectedGame.id)}
+          onRematch={() => void handleRematch(selectedGame)}
+          onBack={() => {
+            setConfirmForfeitId(null);
+            onSelectGame(null);
+          }}
+        />
+      );
+    }
+
     const def = getGameDefinition(selectedGame.gameType);
     const isParticipant = selectedGame.players.includes(currentUser);
     const isPendingForMe =
@@ -399,9 +424,11 @@ export function GamesTab({
                 >
                   {def?.name || "Game"}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  {def?.rulesSummary}
-                </div>
+                {def?.rulesSummary && (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    {def.rulesSummary}
+                  </div>
+                )}
               </div>
             </div>
             <div
@@ -606,22 +633,6 @@ export function GamesTab({
                 currentUser={currentUser}
                 submitting={busyGameId === selectedGame.id}
                 onMakeMove={(move) => void handleMove(selectedGame.id, move)}
-                onRematch={() => void handleRematch(selectedGame)}
-                onBack={() => onSelectGame(null)}
-              />
-            )}
-
-          {selectedGame.status !== "declined" &&
-            selectedGame.status !== "cancelled" &&
-            selectedGame.gameType === "sudoku" && (
-              <SudokuBoard
-                key={selectedGame.id}
-                game={selectedGame}
-                currentUser={currentUser}
-                onMakeMove={(move) => handleMove(selectedGame.id, move)}
-                onSyncNow={
-                  onSyncGame ? () => onSyncGame(selectedGame.id) : undefined
-                }
                 onRematch={() => void handleRematch(selectedGame)}
                 onBack={() => onSelectGame(null)}
               />
@@ -939,7 +950,10 @@ export function GamesTab({
               : null;
             const sudokuRemaining =
               g.gameType === "sudoku" && isSudokuState(g.state)
-                ? formatShortRemaining(g.state.endsAt, lobbyNowMs)
+                ? formatShortRemaining(
+                    g.state.endsAt,
+                    lobbyNowMs + serverClockOffsetMs
+                  )
                 : "";
 
             return (

@@ -7,6 +7,8 @@ export type SudokuBoardMode = "shared" | "separate";
 export type SudokuTimeLimit = 5 | 10 | 15 | 20;
 
 export const SUDOKU_WRONG_GUESS_LOCKOUT_MS = 3000;
+/** Absorbs minor client/server clock or network jitter right as a 3s lockout ends. */
+export const SUDOKU_LOCKOUT_GRACE_MS = 250;
 
 export const SUDOKU_DIFFICULTY_OPTIONS: ReadonlyArray<{
   id: SudokuDifficulty;
@@ -202,8 +204,7 @@ export const sudokuGame: GameDefinition<SudokuState, SudokuMove> = {
   id: "sudoku",
   name: "Versus Sudoku",
   shortDescription: "Real-time Sudoku race on a timer.",
-  rulesSummary:
-    "Same puzzle, live race. Shared board: most correct guesses wins. Separate boards: first to finish wins.",
+  rulesSummary: "",
   emoji: "🔢",
   remoteOnly: true,
   simultaneous: true,
@@ -323,7 +324,10 @@ export const sudokuGame: GameDefinition<SudokuState, SudokuMove> = {
         return { ok: false, error: "Pick a number from 1 to 9." };
       }
       const lockedUntil = state.lockouts[playerId];
-      if (lockedUntil && now.getTime() < Date.parse(lockedUntil)) {
+      if (
+        lockedUntil &&
+        now.getTime() + SUDOKU_LOCKOUT_GRACE_MS < Date.parse(lockedUntil)
+      ) {
         return { ok: false, error: "Locked out — wait a moment!" };
       }
       if (state.claims[cell]) {
@@ -376,6 +380,10 @@ export const sudokuGame: GameDefinition<SudokuState, SudokuMove> = {
         claims,
         sharedValues,
         scores,
+        lockouts: {
+          ...state.lockouts,
+          [playerId]: null,
+        },
         lastEvent: { by: playerId, cell, result: "correct", at: nowIso },
       };
       if (boardFull) {

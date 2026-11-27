@@ -19,6 +19,7 @@ export async function GET() {
     const familyGames = await getGamesForFamily(session.familyId);
     return NextResponse.json({
       games: sanitizeGamesForViewer(familyGames, session.member.id),
+      serverNow: new Date().toISOString(),
     });
   } catch (err) {
     console.error("Fetch games error:", err);
@@ -59,7 +60,10 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { game: sanitizeGameForViewer(result.game, session.member.id) },
+      {
+        game: sanitizeGameForViewer(result.game, session.member.id),
+        serverNow: new Date().toISOString(),
+      },
       { status: 201 }
     );
   } catch (err) {
